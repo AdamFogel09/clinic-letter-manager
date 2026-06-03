@@ -1,0 +1,293 @@
+"use client";
+
+// Patients and letters are now stored in Supabase.
+// Letters are now saved to Supabase. Temporary storage is only fallback for unsaved draft state.
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import StatusCard from "@/components/dashboard/StatusCard";
+import { getLetters } from "@/lib/letterStore";
+import { createClient } from "@/lib/supabase/client";
+import { getAllPatients, patientToDraft, type Patient } from "@/lib/supabase/patients";
+import { getLetterCounts } from "@/lib/supabase/letters";
+
+function calcAge(day: string, month: string, year: string): string {
+  const dy = parseInt(day), mo = parseInt(month), yr = parseInt(year);
+  if (!dy || !mo || !yr || yr < 1900 || yr > new Date().getFullYear()) return "";
+  const birth = new Date(yr, mo - 1, dy);
+  if (isNaN(birth.getTime()) || birth.getMonth() !== mo - 1) return "";
+  const now = new Date();
+  let yrs = now.getFullYear() - birth.getFullYear();
+  if (now.getMonth() < mo - 1 || (now.getMonth() === mo - 1 && now.getDate() < dy)) yrs--;
+  if (yrs < 0) return "";
+  return `${yrs}y`;
+}
+
+function formatDOB(day: string, month: string, year: string): string {
+  if (!day || !month || !year) return "";
+  return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+}
+
+const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  "Draft":             { bg: "#EBF3FB", text: "#4A90D9" },
+  "Ready for Review":  { bg: "#FEF3C7", text: "#D97706" },
+  "Waiting for Anat":  { bg: "#EDE9FE", text: "#7C3AED" },
+  "Reviewed":          { bg: "#FFE4E6", text: "#BE123C" },
+  "Ready for Patient": { bg: "#CCFBF1", text: "#0D9488" },
+  "Sent to Patient":   { bg: "#F0FDF4", text: "#16A34A" },
+};
+
+export default function WorkspacePage() {
+  const router = useRouter();
+
+  const [counts, setCounts] = useState({
+    draft: 0, readyForReview: 0, waitingForAnat: 0,
+    reviewed: 0, readyForPatient: 0,
+  });
+
+  // All patients pre-loaded from Supabase for instant client-side search
+  const [patients, setPatients]       = useState<Patient[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen,  setSearchOpen]  = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    // Letter counts from Supabase (primary); fall back to localStorage
+    getLetterCounts(supabase).then((sc) => {
+      if (Object.keys(sc).length > 0) {
+        setCounts({
+          draft:           sc["Draft"]             || 0,
+          readyForReview:  sc["Ready for Review"]  || 0,
+          waitingForAnat:  sc["Waiting for Anat"]  || 0,
+          reviewed:        sc["Reviewed"]           || 0,
+          readyForPatient: sc["Ready for Patient"]  || 0,
+        });
+      } else {
+        const letters = getLetters();
+        setCounts({
+          draft:           letters.filter((l) => l.status === "Draft").length,
+          readyForReview:  letters.filter((l) => l.status === "Ready for Review").length,
+          waitingForAnat:  letters.filter((l) => l.status === "Waiting for Anat").length,
+          reviewed:        letters.filter((l) => l.status === "Reviewed").length,
+          readyForPatient: letters.filter((l) => l.status === "Ready for Patient").length,
+        });
+      }
+    });
+
+    // Patients from Supabase
+    getAllPatients(supabase).then(setPatients);
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Client-side filter of the pre-loaded patient list
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return patients
+      .filter(
+        (p) =>
+          p.full_name.toLowerCase().includes(q) ||
+          p.patient_id_number.toLowerCase().includes(q)
+      )
+      .slice(0, 6);
+  }, [patients, searchQuery]);
+
+  const startNewLetter = (p: Patient) => {
+    sessionStorage.setItem("draft_patient", JSON.stringify(patientToDraft(p)));
+    sessionStorage.removeItem("letter_draft");
+    sessionStorage.removeItem("letter_draft_id");
+    sessionStorage.removeItem("letter_supabase_id");
+    router.push("/workspace/letter-editor");
+  };
+
+  const viewHistory = (p: Patient) => {
+    const param = encodeURIComponent(p.patient_id_number || p.full_name);
+    router.push(`/workspace/all-letters?q=${param}`);
+  };
+
+  const cards = [
+    { status: "Draft",             badgeBg: "#EBF3FB", badgeText: "#4A90D9", title: "To Complete",       count: counts.draft,           buttonLabel: "Continue", buttonHref: "/workspace/drafts" },
+    { status: "Ready for Review",  badgeBg: "#FEF3C7", badgeText: "#D97706", title: "Ready for Anat",    count: counts.readyForReview,   buttonLabel: "Send",     buttonHref: "/workspace/review" },
+    { status: "Waiting for Anat",  badgeBg: "#EDE9FE", badgeText: "#7C3AED", title: "Waiting for Anat",  count: counts.waitingForAnat,   buttonLabel: "View",     buttonHref: "/workspace/review" },
+    { status: "Reviewed",          badgeBg: "#FFE4E6", badgeText: "#BE123C", title: "Needs Approval",    count: counts.reviewed,         buttonLabel: "Approve",  buttonHref: "/workspace/review" },
+    { status: "Ready for Patient", badgeBg: "#CCFBF1", badgeText: "#0D9488", title: "Ready for Patient", count: counts.readyForPatient,  buttonLabel: "Export",   buttonHref: "/workspace/review" },
+  ];
+
+  return (
+    <div className="flex-1 pb-10">
+      {/* Top bar */}
+      <div className="grid grid-cols-3 items-start px-6 sm:px-8 pt-8 pb-4">
+        <div />
+        <div className="text-center">
+          <h1 className="text-xl sm:text-2xl font-bold" style={{ color: "#1A2B4A" }}>
+            Welcome back, Dr. Sumit
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "#94A3B8" }}>Clinic letter workspace</p>
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <Link href="/workspace/new-patient"
+            className="inline-flex items-center text-sm font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-md"
+            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}>
+            New Patient
+          </Link>
+          <Link href="/workspace/new-letter"
+            className="inline-flex items-center text-sm font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-md"
+            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}>
+            New Letter
+          </Link>
+        </div>
+      </div>
+
+      {/* Patient Search */}
+      <div className="px-6 sm:px-8 mb-5">
+        <div ref={searchRef} className="relative">
+          <div
+            className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white"
+            style={{ border: `1px solid ${searchOpen ? "#1A2B4A" : "#E2E8F0"}`, transition: "border-color 0.15s" }}
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="#94A3B8" strokeWidth={1.75}
+              strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
+              <circle cx="9" cy="9" r="6" /><path d="M17 17l-3.5-3.5" />
+            </svg>
+            <input
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+              onFocus={() => setSearchOpen(true)}
+              placeholder="Search patient by name or ID"
+              className="flex-1 text-sm bg-transparent focus:outline-none"
+              style={{ color: "#1A2B4A" }}
+              autoComplete="off"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+                className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full"
+                style={{ background: "#E2E8F0" }}
+                aria-label="Clear"
+              >
+                <svg viewBox="0 0 12 12" fill="none" stroke="#64748B" strokeWidth={2}
+                  strokeLinecap="round" className="w-2.5 h-2.5">
+                  <path d="M2 2l8 8M10 2l-8 8" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Dropdown */}
+          {searchOpen && searchQuery.trim() && (
+            <div
+              className="absolute left-0 right-0 top-full mt-1.5 rounded-2xl bg-white overflow-hidden z-50"
+              style={{ border: "1px solid #E2E8F0", boxShadow: "0 8px 32px rgb(26 43 74/0.12)" }}
+            >
+              {searchResults.length === 0 ? (
+                <div className="px-5 py-5 text-center">
+                  <p className="text-sm" style={{ color: "#94A3B8" }}>No patient found.</p>
+                </div>
+              ) : (
+                <div className="divide-y" style={{ borderColor: "#F1F5F9" }}>
+                  {searchResults.map((p) => {
+                    const age  = calcAge(p.birthdate_day, p.birthdate_month, p.birthdate_year);
+                    const dob  = formatDOB(p.birthdate_day, p.birthdate_month, p.birthdate_year);
+                    const meta = [age, p.gender].filter(Boolean).join(" · ");
+
+                    // Match latest letter status from localStorage
+                    const letters = getLetters().filter(
+                      (l) => l.patientId === p.patient_id_number || l.patientName === p.full_name
+                    );
+                    const latestLetter = letters.sort(
+                      (a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()
+                    )[0];
+                    const sc = latestLetter
+                      ? (STATUS_COLORS[latestLetter.status] ?? { bg: "#F1F5F9", text: "#475569" })
+                      : null;
+
+                    return (
+                      <div key={p.id} className="px-5 py-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold" style={{ color: "#1A2B4A" }}>
+                                {p.full_name}
+                              </span>
+                              {latestLetter && sc && (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                  style={{ backgroundColor: sc.bg, color: sc.text }}>
+                                  {latestLetter.status}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-1">
+                              {p.patient_id_number && (
+                                <span className="text-xs" style={{ color: "#64748B" }}>{p.patient_id_number}</span>
+                              )}
+                              {dob && (
+                                <span className="text-xs" style={{ color: "#64748B" }}>DOB: {dob}</span>
+                              )}
+                              {meta && (
+                                <span className="text-xs" style={{ color: "#64748B" }}>{meta}</span>
+                              )}
+                              {p.phone && (
+                                <span className="text-xs" style={{ color: "#94A3B8" }}>{p.phone}</span>
+                              )}
+                              {p.email && (
+                                <span className="text-xs" style={{ color: "#94A3B8" }}>{p.email}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button
+                              onClick={() => viewHistory(p)}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all duration-150 hover:-translate-y-px"
+                              style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}
+                            >
+                              View History
+                            </button>
+                            <button
+                              onClick={() => startNewLetter(p)}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 hover:-translate-y-px hover:shadow-sm"
+                              style={{ backgroundColor: "#1A2B4A", color: "#fff" }}
+                            >
+                              New Letter
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Status cards */}
+      <div className="px-6 sm:px-8">
+        <div className="grid grid-cols-1 sm:grid-cols-6 gap-4">
+          {cards.map((card, i) => (
+            <div
+              key={card.title}
+              className={i === 3 ? "sm:col-start-2 sm:col-span-2" : "sm:col-span-2"}
+            >
+              <StatusCard {...card} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

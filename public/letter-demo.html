@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Loading demo letter…</title></head>
+<body>
+<script>
+sessionStorage.setItem("letter_preview", JSON.stringify({
+  name: "Jonathan Smith",
+  patId: "IL-8847231",
+  bDay: "14", bMonth: "03", bYear: "1971",
+  gender: "Male",
+  email: "jonathan.smith@email.com",
+  phone: "+972 50 123 4567",
+  smoking: "Non-smoker",
+  pets: "Dog",
+  occupation: "Accountant",
+  referredBy: "Private",
+  location: "HMC",
+  dateDay: "30", dateMonth: "05", dateYear: "2026",
+
+  diagEN: "Essential hypertension (I10).\nMild asthma, well-controlled (J45.20).",
+  diagHE: "יתר לחץ דם חיוני (I10).\nאסתמה קלה, מבוקרת היטב (J45.20).",
+
+  sumEN: "Mr Jonathan Smith attended the clinic on 30 May 2026 for a routine review appointment. He reports an overall improvement in his general wellbeing. Blood pressure remains well-controlled on current therapy. Asthma symptoms are minimal and are not limiting his daily activities. Spirometry performed today shows stable lung function compared to the previous test in March 2026.",
+  sumHE: "מר ג'ונתן סמית' הגיע למרפאה ב-30 במאי 2026 לביקור מעקב שגרתי. הוא מדווח על שיפור כללי ברווחתו. לחץ הדם נשאר מבוקר היטב תחת הטיפול הנוכחי. תסמיני האסתמה מינימליים ואינם מגבילים את פעילויות יומיומו.",
+
+  medHistory: "Known essential hypertension diagnosed 2018, currently managed with Amlodipine. Mild intermittent asthma since childhood, well-controlled on short-acting bronchodilator. Hypercholesterolaemia, on statin therapy since 2021. No known cardiovascular events.",
+  famHistory: "Father: ischaemic heart disease, deceased aged 71. Mother: type 2 diabetes mellitus, alive aged 76. No family history of malignancy reported.",
+
+  medications: [
+    "Salbutamol (Ventolin) 100mcg inhaler — 2 puffs PRN",
+    "Amlodipine 5mg — once daily",
+    "Atorvastatin 20mg — once daily at night"
+  ],
+
+  allergies: ["Penicillin — rash"],
+  vaccinations: ["Influenza", "Covid 19"],
+
+  appearance: "Comfortable at rest",
+  clubbing: "No",
+  lymph: "No",
+  bp: "128/78",
+  pulse: "72",
+  rr: "14",
+  spo2: "98",
+  heartSounds: "Normal",
+  heartOther: "",
+  lungAusc: "Clear",
+  lungOther: "",
+  otherFindings: "",
+
+  testResults: {
+    ekg: "Normal sinus rhythm. No acute changes.",
+    echo: "",
+    blood: "FBC, U&E, LFTs — within normal limits. Total cholesterol 4.8 mmol/L. HbA1c 38 mmol/mol.",
+    bronchWash: "", bronchBiopsy: "", ebus: "", pleuralFluid: "", pleuralBiopsy: "", otherTest: ""
+  },
+
+  planEN: "1. Continue current antihypertensive medication. Blood pressure review in 3 months.\n2. Repeat spirometry in 6 months to monitor lung function trend.\n3. Annual influenza vaccination recommended.\n4. Referral for dietitian review.",
+  planHE: "1. המשך תרופות נוכחיות ליתר לחץ דם. בדיקת לחץ דם בעוד 3 חודשים.\n2. חזרה על ספירומטריה בעוד 6 חודשים.\n3. חיסון שפעת שנתי מומלץ.\n4. הפניה לדיאטנית.",
+
+  lungRows: [
+    {
+      id: 1, date: "30/05/2026",
+      fev1l: "3.42", fev1p: "94", fvcl: "4.18", fvcp: "96",
+      ratio: "82", fef: "78", tlc: "91", rv: "88",
+      dlco: "90", kco: "92", feno: "18", meta: "", walk: "", hwbmi: "178/82/25.9"
+    },
+    {
+      id: 2, date: "15/03/2026",
+      fev1l: "3.38", fev1p: "93", fvcl: "4.12", fvcp: "95",
+      ratio: "82", fef: "76", tlc: "90", rv: "87",
+      dlco: "89", kco: "91", feno: "20", meta: "", walk: "", hwbmi: "178/83/26.2"
+    }
+  ],
+
+  inhalerSearch: ""
+}));
+window.location.href = "/workspace/letter-preview";
+</script>
+<p style="font-family:sans-serif;color:#64748b;padding:40px">Loading demo letter…</p>
+</body>
+</html>

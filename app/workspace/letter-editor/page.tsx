@@ -1,0 +1,1901 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { upsertLetter } from "@/lib/letterStore";
+import { createClient } from "@/lib/supabase/client";
+import { saveLetter as saveLetterToSupabase, updateLetterStatus, getLetterById, supabaseLetterToStoredLetter } from "@/lib/supabase/letters";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface TRSelected {
+  echo: boolean; blood: boolean; otherTest: boolean;
+  bronchWash: string[]; bronchBiopsy: string[]; ebus: string[];
+  pleuralFluid: string[]; pleuralBiopsy: string[];
+}
+
+interface TestResultsData {
+  ekg:          { value: string; details: string };
+  echo:         string;
+  blood:        { date: string; testType: string; details: string };
+  bronchWash:   { microbiology: string; cytology: string; cellCounts: string };
+  bronchBiopsy: { pathology: string; microbiology: string };
+  ebus:         { cytology: string };
+  pleuralFluid: { cytology: string; microbiology: string; biochemistry: string; cellCounts: string };
+  pleuralBiopsy:{ pathology: string; microbiology: string };
+  otherTest:    string;
+  selected:     TRSelected;
+}
+
+const DEFAULT_TR_SELECTED: TRSelected = {
+  echo: false, blood: false, otherTest: false,
+  bronchWash: [], bronchBiopsy: [], ebus: [],
+  pleuralFluid: [], pleuralBiopsy: [],
+};
+
+const DEFAULT_TEST_RESULTS: TestResultsData = {
+  ekg:          { value: "", details: "" },
+  echo:         "",
+  blood:        { date: "", testType: "", details: "" },
+  bronchWash:   { microbiology: "", cytology: "", cellCounts: "" },
+  bronchBiopsy: { pathology: "", microbiology: "" },
+  ebus:         { cytology: "" },
+  pleuralFluid: { cytology: "", microbiology: "", biochemistry: "", cellCounts: "" },
+  pleuralBiopsy:{ pathology: "", microbiology: "" },
+  otherTest:    "",
+  selected:     { ...DEFAULT_TR_SELECTED },
+};
+
+interface LungRow {
+  id: number;
+  date: string; fev1l: string; fev1p: string; fvcl: string; fvcp: string;
+  ratio: string; fef: string; tlcl: string; tlc: string; rvl: string; rv: string;
+  dlco: string; kco: string; feno: string; meta: string; walk: string; hwbmi: string;
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function calcAge(d: string, m: string, y: string): string {
+  const day = parseInt(d), mon = parseInt(m), yr = parseInt(y);
+  if (!day || !mon || !yr || yr < 1900 || yr > new Date().getFullYear()) return "";
+  const birth = new Date(yr, mon - 1, day);
+  if (isNaN(birth.getTime()) || birth.getMonth() !== mon - 1) return "";
+  const now = new Date();
+  let yrs = now.getFullYear() - birth.getFullYear();
+  let mos = now.getMonth() - birth.getMonth();
+  if (now.getDate() < birth.getDate()) mos--;
+  if (mos < 0) { yrs--; mos += 12; }
+  if (yrs < 0) return "";
+  if (yrs === 0) return `${mos} month${mos !== 1 ? "s" : ""}`;
+  return `${yrs} year${yrs !== 1 ? "s" : ""}, ${mos} month${mos !== 1 ? "s" : ""}`;
+}
+
+// ─── Style constants ──────────────────────────────────────────────────────────
+
+const ic = "w-full px-4 py-2.5 rounded-xl border bg-white text-sm focus:outline-none transition-colors duration-150";
+const is = { borderColor: "#E2E8F0", color: "#1A2B4A" };
+const lc = "block text-xs font-semibold uppercase tracking-wide mb-1.5";
+const ls = { color: "#64748B" };
+const ta = "w-full px-4 py-3 rounded-xl border bg-white text-sm focus:outline-none resize-none transition-colors duration-150";
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function F({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
+  return (
+    <div className={full ? "sm:col-span-2" : ""}>
+      <label className={lc} style={ls}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function TranslateBtn({ onClick, disabled, loading, label = "Translate to Hebrew" }: {
+  onClick?: () => void; disabled?: boolean; loading?: boolean; label?: string;
+}) {
+  const isOff = disabled || loading;
+  return (
+    <button type="button" onClick={onClick} disabled={isOff}
+      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition-all duration-150 ${isOff ? "cursor-not-allowed opacity-60" : "hover:-translate-y-px"}`}
+      style={{ borderColor: isOff ? "#E2E8F0" : "#4A90D9", color: isOff ? "#CBD5E1" : "#4A90D9" }}>
+      {loading ? (
+        <>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="w-3.5 h-3.5 animate-spin">
+            <path d="M8 2a6 6 0 1 1-4.24 1.76"/>
+          </svg>
+          Translating...
+        </>
+      ) : (
+        <>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+            <circle cx="8" cy="8" r="6.5"/>
+            <path d="M1.5 8h13M8 1.5a10 10 0 0 1 0 13M8 1.5a10 10 0 0 0 0 13"/>
+          </svg>
+          {label}
+        </>
+      )}
+    </button>
+  );
+}
+
+function SplitDateInput({ value, onChange, validateFuture = false, onEnterFromLast }: {
+  value: string; onChange: (v: string) => void; validateFuture?: boolean;
+  onEnterFromLast?: (from: HTMLInputElement) => void;
+}) {
+  const parts = (value || "//").split("/");
+  const dd = parts[0] ?? ""; const mm = parts[1] ?? ""; const yyyy = parts[2] ?? "";
+  const mmRef = useRef<HTMLInputElement>(null);
+  const yyyyRef = useRef<HTMLInputElement>(null);
+  const set = (d: string, m: string, y: string) => onChange(`${d}/${m}/${y}`);
+  const err = (() => {
+    if (!dd || !mm || !yyyy || yyyy.length < 4) return null;
+    const dt = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+    if (dt.getMonth() !== parseInt(mm) - 1) return "This date does not exist.";
+    if (validateFuture && dt > new Date()) return "Test date cannot be in the future.";
+    return null;
+  })();
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <input inputMode="numeric" maxLength={2} value={dd} placeholder="DD"
+          onChange={e => { const v = e.target.value.replace(/\D/g,"").slice(0,2); set(v,mm,yyyy); if(v.length===2) mmRef.current?.focus(); }}
+          className="w-14 px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none transition-colors duration-150" style={is}/>
+        <span style={{color:"#CBD5E1"}}>/</span>
+        <input ref={mmRef} inputMode="numeric" maxLength={2} value={mm} placeholder="MM"
+          onChange={e => { const v = e.target.value.replace(/\D/g,"").slice(0,2); set(dd,v,yyyy); if(v.length===2) yyyyRef.current?.focus(); }}
+          className="w-14 px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none transition-colors duration-150" style={is}/>
+        <span style={{color:"#CBD5E1"}}>/</span>
+        <input ref={yyyyRef} inputMode="numeric" maxLength={4} value={yyyy} placeholder="YYYY"
+          onChange={e => { const v = e.target.value.replace(/\D/g,"").slice(0,4); set(dd,mm,v); }}
+          onKeyDown={e => { if (e.key === "Enter" && onEnterFromLast) { e.preventDefault(); onEnterFromLast(e.currentTarget); } }}
+          className="w-20 px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none transition-colors duration-150" style={is}/>
+      </div>
+      {err && <p className="text-xs mt-1.5 font-medium" style={{color:"#BE123C"}}>{err}</p>}
+    </div>
+  );
+}
+
+function NavySelect({ value, onChange, options, placeholder = "Select" }: {
+  value: string; onChange: (v: string) => void; options: string[]; placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border bg-white text-sm focus:outline-none transition-all duration-150"
+        style={{ borderColor: value ? "#1A2B4A" : "#E2E8F0", color: value ? "#1A2B4A" : "#94A3B8" }}>
+        <span style={{ fontWeight: value ? 500 : 400 }}>{value || placeholder}</span>
+        <svg viewBox="0 0 16 16" fill="none" stroke="#1A2B4A" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+          className="w-3.5 h-3.5 flex-shrink-0"
+          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-xl z-30 overflow-hidden"
+          style={{ border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgb(0 0 0/0.07), 0 8px 24px rgb(26 43 74/0.10)" }}>
+          {options.map(opt => (
+            <button key={opt} type="button" onClick={() => { onChange(opt); setOpen(false); }}
+              className="w-full text-left px-4 py-2.5 text-sm transition-colors duration-100"
+              style={{ color: opt === value ? "#1A2B4A" : "#64748B", fontWeight: opt === value ? 600 : 400, backgroundColor: opt === value ? "#F4F6F9" : "transparent" }}
+              onMouseEnter={e => { if (opt !== value) (e.currentTarget as HTMLElement).style.backgroundColor = "#F4F6F9"; }}
+              onMouseLeave={e => { if (opt !== value) (e.currentTarget as HTMLElement).style.backgroundColor = "transparent"; }}>
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function YesNo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex gap-2">
+      {["Yes", "No"].map(opt => (
+        <button key={opt} type="button" onClick={() => onChange(opt)}
+          className="flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all duration-150"
+          style={{ borderColor: value === opt ? "#1A2B4A" : "#E2E8F0", backgroundColor: value === opt ? "#1A2B4A" : "white", color: value === opt ? "white" : "#64748B" }}>
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SectionCard({ title, titleHe, children }: { title: string; titleHe?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white rounded-2xl border p-6"
+      style={{ borderColor: "#E2E8F0", boxShadow: "0 1px 3px 0 rgb(0 0 0/0.06), 0 4px 16px 0 rgb(26 43 74/0.05)" }}>
+      <div className="flex items-baseline justify-between pb-3 mb-5" style={{ borderBottom: "2px solid #1A2B4A" }}>
+        <h2 className="text-base font-bold" style={{ color: "#1A2B4A" }}>{title}</h2>
+        {titleHe && <span className="text-sm font-semibold" style={{ color: "#1A2B4A" }}>{titleHe}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function TestGroup({ title, children, last }: { title: string; children: React.ReactNode; last?: boolean }) {
+  return (
+    <div style={{ borderBottom: last ? "none" : "1px solid #F4F6F9", paddingBottom: last ? 0 : 18 }}>
+      <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: "#64748B", letterSpacing: "0.08em" }}>{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function InhalerIcon() {
+  return (
+    <svg viewBox="0 0 40 56" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 36, height: 50 }}>
+      <rect x="8" y="2" width="24" height="34" rx="6" fill="#CBD5E1" />
+      <rect x="4" y="32" width="32" height="11" rx="5.5" fill="#94A3B8" />
+      <rect x="15" y="43" width="10" height="9" rx="3" fill="#64748B" />
+      <rect x="11" y="10" width="18" height="14" rx="3" fill="white" opacity="0.35" />
+      <circle cx="20" cy="17" r="3" fill="white" opacity="0.45" />
+    </svg>
+  );
+}
+
+// Defined at module level so its identity is stable across re-renders.
+// Defining it inside renderSection() would create a new function on every
+// keystroke, causing React to unmount/remount and lose input focus.
+function SubToggle({ fields, selected, values, onToggle, onChange }: {
+  fields: [string, string][];
+  selected: string[];
+  values: Record<string, string>;
+  onToggle: (field: string) => void;
+  onChange: (field: string, value: string) => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {fields.map(([key, label]) => {
+          const on = selected.includes(key);
+          return (
+            <button key={key} type="button" onClick={() => onToggle(key)}
+              className="px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
+              style={{ borderColor: on ? "#1A2B4A" : "#E2E8F0", backgroundColor: on ? "#1A2B4A" : "white", color: on ? "white" : "#64748B" }}>
+              {on ? `✓ ${label}` : `+ ${label}`}
+            </button>
+          );
+        })}
+      </div>
+      {fields.filter(([k]) => selected.includes(k)).map(([key, label]) => (
+        <div key={key} className="mb-3">
+          <label className={lc} style={ls}>{label}</label>
+          <textarea className={ta} style={is} rows={2}
+            value={values[key] || ""}
+            onChange={e => onChange(key, e.target.value)}
+            placeholder={`Enter ${label.toLowerCase()} results`} />
+        </div>
+      ))}
+      {selected.length === 0 && (
+        <p className="text-xs" style={{ color: "#CBD5E1" }}>Select options above to add results.</p>
+      )}
+    </>
+  );
+}
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+
+const SECTIONS = [
+  { id: "patient",      label: "Patient Details" },
+  { id: "clinical",     label: "Clinical Notes" },
+  { id: "allergies",    label: "Allergies" },
+  { id: "vaccinations", label: "Vaccinations" },
+  { id: "examination",  label: "Examination" },
+  { id: "tests",        label: "Test Results" },
+  { id: "lung",         label: "Lung Function" },
+  { id: "pictures",     label: "Pictures" },
+  { id: "inhalers",     label: "Inhalers" },
+  { id: "review",       label: "Review" },
+];
+
+const GROUP_FIELDS: Record<string, [string, string][]> = {
+  bronchWash:   [["microbiology","Microbiology"],["cytology","Cytology"],["cellCounts","Cell Counts"]],
+  bronchBiopsy: [["pathology","Pathology"],["microbiology","Microbiology"]],
+  ebus:         [["cytology","Cytology"]],
+  pleuralFluid: [["cytology","Cytology"],["microbiology","Microbiology"],["biochemistry","Biochemistry"],["cellCounts","Cell Counts"]],
+  pleuralBiopsy:[["pathology","Pathology"],["microbiology","Microbiology"]],
+};
+
+const LUNG_MAIN:  [string, keyof LungRow][] =[["FEV1 L","fev1l"],["FEV1 %","fev1p"],["FVC L","fvcl"],["FVC %","fvcp"],["FEV1/FVC %","ratio"],["FEF 25-75 %","fef"]];
+const LUNG_EXTRA: [string, keyof LungRow][] = [["TLC L","tlcl"],["TLC %","tlc"],["RV L","rvl"],["RV %","rv"],["DLCO %","dlco"],["KCO %","kco"],["FeNO","feno"],["Metacholine","meta"],["6 Min Walk","walk"],["Ht/Wt/BMI","hwbmi"]];
+const VAX_OPTIONS = ["None","Influenza","Prevenar","Pneumovax","Covid 19","RSV"];
+
+const INHALER_CATALOG = [
+  { name: "Salbutamol 100mcg MDI (Ventolin)", link: "https://www.rightbreathe.com/?search=salbutamol" },
+  { name: "Budesonide/Formoterol 160/4.5mcg Turbuhaler (Symbicort)", link: "https://www.rightbreathe.com/?search=budesonide+formoterol" },
+  { name: "Tiotropium 18mcg Handihaler (Spiriva)", link: "https://www.rightbreathe.com/?search=tiotropium" },
+  { name: "Salmeterol/Fluticasone 25/250mcg MDI (Seretide)", link: "https://www.rightbreathe.com/?search=seretide" },
+  { name: "Beclometasone 50mcg MDI (Qvar)", link: "https://www.rightbreathe.com/?search=qvar" },
+  { name: "Ipratropium 20mcg MDI (Atrovent)", link: "https://www.rightbreathe.com/?search=atrovent" },
+  { name: "Formoterol 12mcg Turbuhaler (Oxis)", link: "https://www.rightbreathe.com/?search=formoterol" },
+  { name: "Indacaterol/Glycopyrronium Breezhaler (Ultibro)", link: "https://www.rightbreathe.com/?search=ultibro" },
+  { name: "Umeclidinium/Vilanterol Ellipta (Anoro)", link: "https://www.rightbreathe.com/?search=anoro" },
+  { name: "Fluticasone 250mcg Accuhaler (Flixotide)", link: "https://www.rightbreathe.com/?search=flixotide" },
+  { name: "Aclidinium 322mcg Genuair (Eklira)", link: "https://www.rightbreathe.com/?search=aclidinium" },
+  { name: "Glycopyrronium 44mcg Breezhaler (Seebri)", link: "https://www.rightbreathe.com/?search=glycopyrronium" },
+];
+
+// ─── Demo AI translation data ────────────────────────────────────────────────
+// Real AI translation later must not send patient name, ID, phone, email, or
+// other identifying details. Only selected medical text and patient gender
+// should be sent. The translation function signature will be:
+//   translateSection(text: string, section: "diagnosis"|"summary"|"plan", gender: string)
+
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function LetterEditorPage() {
+  const router = useRouter();
+  const [active, setActive] = useState("patient");
+
+  // Patient Details
+  const [name, setName] = useState("");
+  const [patId, setPatId] = useState("");
+  const [bDay, setBDay] = useState(""); const [bMonth, setBMonth] = useState(""); const [bYear, setBYear] = useState("");
+  const [gender, setGender] = useState("");
+  const [email, setEmail] = useState(""); const [phone, setPhone] = useState("");
+  const [smoking, setSmoking] = useState(""); const [pets, setPets] = useState("");
+  const [occupation, setOccupation] = useState(""); const [referredBy, setReferredBy] = useState("");
+  const [location, setLocation] = useState("");
+  const [dateDay, setDateDay] = useState(String(new Date().getDate()).padStart(2,"0"));
+  const [dateMonth, setDateMonth] = useState(String(new Date().getMonth()+1).padStart(2,"0"));
+  const [dateYear, setDateYear] = useState(String(new Date().getFullYear()));
+
+  // Diagnosis / Summary / Plan
+  const [diagEN, setDiagEN] = useState(""); const [diagHE, setDiagHE] = useState("");
+  const [sumEN, setSumEN] = useState(""); const [sumHE, setSumHE] = useState("");
+  const [planStepsEN, setPlanStepsEN] = useState<string[]>([""]);
+  const [planStepsHE, setPlanStepsHE] = useState<string[]>([""]);
+
+  // History
+  const [medHistory, setMedHistory] = useState(""); const [famHistory, setFamHistory] = useState("");
+
+  // Medications
+  const [medications, setMedications] = useState<string[]>([]); const [medInput, setMedInput] = useState("");
+
+  // Allergies
+  const [allergies, setAllergies] = useState<string[]>([]); const [allergyInput, setAllergyInput] = useState("");
+
+  // Vaccinations
+  const [vaccinations, setVaccinations] = useState<string[]>([]);
+
+  // Examination
+  const [appearance, setAppearance] = useState(""); const [clubbing, setClubbing] = useState("");
+  const [lymph, setLymph] = useState(""); const [bp, setBp] = useState("");
+  const [pulse, setPulse] = useState(""); const [rr, setRr] = useState(""); const [spo2, setSpo2] = useState("");
+  const [heartSounds, setHeartSounds] = useState(""); const [heartOther, setHeartOther] = useState("");
+  const [lungAusc, setLungAusc] = useState(""); const [lungOther, setLungOther] = useState("");
+  const [otherFindings, setOtherFindings] = useState("");
+
+  // Test results
+  const [testResults, setTestResults] = useState<TestResultsData>(DEFAULT_TEST_RESULTS);
+
+  // Lung function
+  const [lungRows, setLungRows] = useState<LungRow[]>([]);
+
+  // Pictures
+  const [pictures, setPictures] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Inhalers
+  const [inhalerSearch, setInhalerSearch] = useState("");
+  const [inhalerName, setInhalerName] = useState("");
+  const [inhalerLink, setInhalerLink] = useState("");
+  const [inhalerImageUrl, setInhalerImageUrl] = useState("");
+  const [inhalerDropdown, setInhalerDropdown] = useState(false);
+  const [inhalerResults, setInhalerResults] = useState<Array<{name:string;imageUrl:string;pageUrl:string}>>([]);
+  const [inhalerSearching, setInhalerSearching] = useState(false);
+  const [inhalerSearchError, setInhalerSearchError] = useState("");
+
+  // Translation loading / error states (one per bilingual section)
+  const [diagTx,    setDiagTx]    = useState<"idle"|"loading"|"error">("idle");
+  const [diagTxErr, setDiagTxErr] = useState("");
+  const [sumTx,     setSumTx]     = useState<"idle"|"loading"|"error">("idle");
+  const [sumTxErr,  setSumTxErr]  = useState("");
+  const [planTx,    setPlanTx]    = useState<"idle"|"loading"|"error">("idle");
+  const [planTxErr, setPlanTxErr] = useState("");
+  const inhalerRef = useRef<HTMLDivElement>(null);
+
+  // Guards the auto-save effect from firing before the initial restore is complete
+  const [initialized, setInitialized] = useState(false);
+  const [sendingToAnat, setSendingToAnat] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [saveDraftError, setSaveDraftError] = useState("");
+
+  // Supabase IDs — stored as refs to avoid triggering re-renders / auto-save
+  const supabasePatientIdRef = useRef<string | null>(null);
+  const supabaseLetterIdRef  = useRef<string | null>(null);
+
+  // ── Restore draft on mount ────────────────────────────────────────────────
+  // Supabase is now the source of truth for patients and letters.
+  // Temporary storage is used as a fallback during development.
+  useEffect(() => {
+    const run = async () => {
+    const fromNewPatient = sessionStorage.getItem("draft_patient");
+
+    if (fromNewPatient) {
+      // Arrived from the New Patient / New Letter page — prefill patient fields,
+      // start a clean letter, and capture the Supabase patient UUID for linking.
+      try {
+        const p = JSON.parse(fromNewPatient);
+        if (p.supabase_patient_id) supabasePatientIdRef.current = p.supabase_patient_id;
+        if (p.name)       setName(p.name);
+        if (p.id)         setPatId(p.id);
+        if (p.day)        setBDay(p.day);
+        if (p.month)      setBMonth(p.month);
+        if (p.year)       setBYear(p.year);
+        if (p.gender)     setGender(p.gender);
+        if (p.email)      setEmail(p.email);
+        if (p.phone)      setPhone(p.phone);
+        if (p.smoking)    setSmoking(p.smoking);
+        if (p.pets)       setPets(p.pets);
+        if (p.occupation) setOccupation(p.occupation);
+        if (p.referredBy) setReferredBy(p.referredBy);
+        if (p.location)   setLocation(p.location);
+        if (p.dateDay)    setDateDay(p.dateDay);
+        if (p.dateMonth)  setDateMonth(p.dateMonth);
+        if (p.dateYear)   setDateYear(p.dateYear);
+      } catch { /* malformed — ignore */ }
+      sessionStorage.removeItem("draft_patient");
+      // Restore any existing Supabase letter ID (editing an existing letter for this patient)
+      const sid = sessionStorage.getItem("letter_supabase_id");
+      if (sid) supabaseLetterIdRef.current = sid;
+    } else {
+      // If opened from Drafts / Review with load_from_supabase flag, fetch fresh from DB.
+      if (sessionStorage.getItem("load_from_supabase") === "1") {
+        sessionStorage.removeItem("load_from_supabase");
+        const supabaseId = sessionStorage.getItem("letter_supabase_id");
+        if (supabaseId) {
+          supabaseLetterIdRef.current = supabaseId;
+          try {
+            const supabase = createClient();
+            const letter = await getLetterById(supabase, supabaseId);
+            if (letter) {
+              if (letter.patient_id) supabasePatientIdRef.current = letter.patient_id;
+              const stored = supabaseLetterToStoredLetter(letter);
+              if (stored.data) {
+                // Write into sessionStorage so the restoration block below can use it.
+                sessionStorage.setItem("letter_draft", JSON.stringify(stored.data));
+              }
+            }
+          } catch { /* Supabase unavailable — fall through to sessionStorage */ }
+        }
+      }
+
+      // Returning to the editor (e.g. Back from Preview, or just loaded from Supabase above).
+      // Restore Supabase letter ID so future saves go to the correct row.
+      const sid = sessionStorage.getItem("letter_supabase_id");
+      if (sid && !supabaseLetterIdRef.current) supabaseLetterIdRef.current = sid;
+
+      // Restore full draft.
+      const raw = sessionStorage.getItem("letter_draft");
+      if (raw) {
+        try {
+          const d = JSON.parse(raw);
+          if (d.name)         setName(d.name);
+          if (d.patId)        setPatId(d.patId);
+          if (d.bDay)         setBDay(d.bDay);
+          if (d.bMonth)       setBMonth(d.bMonth);
+          if (d.bYear)        setBYear(d.bYear);
+          if (d.gender)       setGender(d.gender);
+          if (d.email)        setEmail(d.email);
+          if (d.phone)        setPhone(d.phone);
+          if (d.smoking)      setSmoking(d.smoking);
+          if (d.pets)         setPets(d.pets);
+          if (d.occupation)   setOccupation(d.occupation);
+          if (d.referredBy)   setReferredBy(d.referredBy);
+          if (d.location)     setLocation(d.location);
+          if (d.dateDay)      setDateDay(d.dateDay);
+          if (d.dateMonth)    setDateMonth(d.dateMonth);
+          if (d.dateYear)     setDateYear(d.dateYear);
+          if (d.diagEN)       setDiagEN(d.diagEN);
+          if (d.diagHE)       setDiagHE(d.diagHE);
+          if (d.sumEN)        setSumEN(d.sumEN);
+          if (d.sumHE)        setSumHE(d.sumHE);
+          if (d.planStepsEN?.length) setPlanStepsEN(d.planStepsEN);
+          else if (d.planEN)        setPlanStepsEN([d.planEN]); // backward compat
+          if (d.planStepsHE?.length) setPlanStepsHE(d.planStepsHE);
+          else if (d.planHE)         setPlanStepsHE([d.planHE]); // backward compat
+          if (d.medHistory)   setMedHistory(d.medHistory);
+          if (d.famHistory)   setFamHistory(d.famHistory);
+          if (d.medications?.length)  setMedications(d.medications);
+          if (d.allergies?.length)    setAllergies(d.allergies);
+          if (d.vaccinations?.length) setVaccinations(d.vaccinations);
+          if (d.appearance)   setAppearance(d.appearance);
+          if (d.clubbing)     setClubbing(d.clubbing);
+          if (d.lymph)        setLymph(d.lymph);
+          if (d.bp)           setBp(d.bp);
+          if (d.pulse)        setPulse(d.pulse);
+          if (d.rr)           setRr(d.rr);
+          if (d.spo2)         setSpo2(d.spo2);
+          if (d.heartSounds)  setHeartSounds(d.heartSounds);
+          if (d.heartOther)   setHeartOther(d.heartOther);
+          if (d.lungAusc)     setLungAusc(d.lungAusc);
+          if (d.lungOther)    setLungOther(d.lungOther);
+          if (d.otherFindings) setOtherFindings(d.otherFindings);
+          if (d.testResults) {
+            if (typeof d.testResults.ekg === 'object') {
+              if (!d.testResults.selected) {
+                // Derive selected state from existing content (format before 'selected' was added)
+                const hasStr = (s: unknown) => typeof s === 'string' && (s as string).trim().length > 0;
+                const sel: TRSelected = { ...DEFAULT_TR_SELECTED };
+                sel.echo = hasStr(d.testResults.echo);
+                sel.blood = hasStr(d.testResults.blood?.date) || hasStr(d.testResults.blood?.testType) || hasStr(d.testResults.blood?.details);
+                sel.otherTest = hasStr(d.testResults.otherTest);
+                for (const [key, fields] of Object.entries(GROUP_FIELDS)) {
+                  (sel as Record<string, unknown>)[key] = fields.map(([f]) => f).filter(f => hasStr((d.testResults as Record<string, Record<string,string>>)[key]?.[f]));
+                }
+                setTestResults({ ...d.testResults, selected: sel });
+              } else {
+                setTestResults(d.testResults);
+              }
+            } else if (typeof d.testResults.ekg === 'string') {
+              setTestResults({
+                ...DEFAULT_TEST_RESULTS,
+                ekg:       { value: d.testResults.ekg ? "Other" : "", details: d.testResults.ekg || "" },
+                echo:      d.testResults.echo || "",
+                otherTest: d.testResults.otherTest || "",
+                selected:  { ...DEFAULT_TR_SELECTED, echo: !!d.testResults.echo, otherTest: !!d.testResults.otherTest },
+              });
+            }
+          }
+          if (d.lungRows?.length) setLungRows(d.lungRows);
+          if (d.pictures?.length) setPictures(d.pictures);
+          if (d.inhalerSearch)   setInhalerSearch(d.inhalerSearch);
+          if (d.inhalerName)     setInhalerName(d.inhalerName);
+          if (d.inhalerLink)     setInhalerLink(d.inhalerLink);
+          if (d.inhalerImageUrl) setInhalerImageUrl(d.inhalerImageUrl);
+        } catch { /* malformed — ignore */ }
+      }
+    }
+
+    setInitialized(true);
+    }; // end run()
+    run();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Auto-save draft on every field change ─────────────────────────────────
+  // Letters are now saved to Supabase. Temporary storage is only fallback for unsaved draft state.
+  useEffect(() => {
+    if (!initialized) return;
+    sessionStorage.setItem("letter_draft", JSON.stringify({
+      name, patId, bDay, bMonth, bYear, gender, email, phone,
+      smoking, pets, occupation, referredBy, location,
+      dateDay, dateMonth, dateYear,
+      diagEN, diagHE, sumEN, sumHE, planStepsEN, planStepsHE,
+      medHistory, famHistory,
+      medications, allergies, vaccinations,
+      appearance, clubbing, lymph, bp, pulse, rr, spo2,
+      heartSounds, heartOther, lungAusc, lungOther, otherFindings,
+      testResults, lungRows, pictures,
+      inhalerSearch, inhalerName, inhalerLink, inhalerImageUrl,
+    }));
+  }, [
+    initialized,
+    name, patId, bDay, bMonth, bYear, gender, email, phone,
+    smoking, pets, occupation, referredBy, location,
+    dateDay, dateMonth, dateYear,
+    diagEN, diagHE, sumEN, sumHE, planStepsEN, planStepsHE,
+    medHistory, famHistory,
+    medications, allergies, vaccinations,
+    appearance, clubbing, lymph, bp, pulse, rr, spo2,
+    heartSounds, heartOther, lungAusc, lungOther, otherFindings,
+    testResults, lungRows, pictures,
+    inhalerSearch, inhalerName, inhalerLink,
+  ]);
+
+  // Close inhaler dropdown on outside click
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (inhalerRef.current && !inhalerRef.current.contains(e.target as Node)) setInhalerDropdown(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  // Date input refs for auto-advance
+  const bMonthRef    = useRef<HTMLInputElement>(null);
+  const bYearRef     = useRef<HTMLInputElement>(null);
+  const dMonthRef    = useRef<HTMLInputElement>(null);
+  const dYearRef     = useRef<HTMLInputElement>(null);
+  const phoneRestRef = useRef<HTMLInputElement>(null);
+
+  // Examination Enter-key navigation refs
+  const bpRef    = useRef<HTMLInputElement>(null);
+  const pulseRef = useRef<HTMLInputElement>(null);
+  const rrRef    = useRef<HTMLInputElement>(null);
+  const spo2Ref  = useRef<HTMLInputElement>(null);
+
+  const age = calcAge(bDay, bMonth, bYear);
+
+  // ─── Handlers ────────────────────────────────────────────────────────────────
+
+  // Lung function Enter-key: focuses the next input inside the same row container.
+  const handleLungKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, rowId: number) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const container = document.querySelector(`[data-lung-row="${rowId}"]`);
+    if (!container) return;
+    const inputs = Array.from(container.querySelectorAll<HTMLInputElement>("input"));
+    const idx = inputs.indexOf(e.currentTarget);
+    if (idx >= 0 && idx < inputs.length - 1) inputs[idx + 1].focus();
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files) return;
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        if (e.target?.result) setPictures(prev => [...prev, e.target!.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleInhalerSearch = async () => {
+    const q = inhalerSearch.trim();
+    if (!q) return;
+    setInhalerSearching(true);
+    setInhalerSearchError("");
+    setInhalerResults([]);
+    setInhalerDropdown(false);
+    try {
+      const res = await fetch("/api/rightbreathe-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      const json = await res.json();
+      if (json.error && (!json.results || json.results.length === 0)) {
+        setInhalerSearchError(json.error);
+      } else if (!json.results || json.results.length === 0) {
+        setInhalerSearchError("No inhalers found. Please add manually.");
+      } else {
+        setInhalerResults(json.results);
+        setInhalerDropdown(true);
+      }
+    } catch {
+      setInhalerSearchError("Could not search RightBreathe. Please add inhaler manually.");
+    } finally {
+      setInhalerSearching(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    // Save/update the draft to Supabase before opening the preview so the preview shows the latest data.
+    try { await handleSaveDraft(); } catch { /* don't block preview on save failure */ }
+
+    localStorage.setItem("letter_preview", JSON.stringify({
+      name, patId, bDay, bMonth, bYear, gender,
+      email, phone, smoking, pets, occupation, referredBy, location,
+      dateDay, dateMonth, dateYear,
+      diagEN, diagHE, sumEN, sumHE,
+      medHistory, famHistory,
+      medications, allergies, vaccinations,
+      appearance, clubbing, lymph, bp, pulse, rr, spo2,
+      heartSounds, heartOther, lungAusc, lungOther, otherFindings,
+      testResults, planStepsEN, planStepsHE, lungRows,
+      pictures, inhalerName, inhalerLink, inhalerImageUrl,
+    }));
+    // Pass Supabase letter ID to the preview tab so it can update status on Send to Anat.
+    if (supabaseLetterIdRef.current) {
+      localStorage.setItem("letter_current_supabase_id", supabaseLetterIdRef.current);
+    }
+    window.open("/workspace/letter-preview", "_blank");
+  };
+
+  const handleSaveDraft = async () => {
+    const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
+    let letterId = sessionStorage.getItem("letter_draft_id");
+    if (!letterId) {
+      letterId = `letter-${Date.now().toString(36)}`;
+      sessionStorage.setItem("letter_draft_id", letterId);
+    }
+    localStorage.setItem("letter_current_id", letterId);
+
+    const letterData = {
+      name, patId, bDay, bMonth, bYear, gender,
+      email, phone, smoking, pets, occupation, referredBy, location,
+      dateDay, dateMonth, dateYear,
+      diagEN, diagHE, sumEN, sumHE,
+      medHistory, famHistory,
+      medications, allergies, vaccinations,
+      appearance, clubbing, lymph, bp, pulse, rr, spo2,
+      heartSounds, heartOther, lungAusc, lungOther, otherFindings,
+      testResults, planStepsEN, planStepsHE, lungRows,
+      pictures, inhalerName, inhalerLink, inhalerImageUrl,
+    };
+
+    // localStorage fallback (always runs — silent backup)
+    if (!letterId) {
+      letterId = `letter-${Date.now().toString(36)}`;
+      sessionStorage.setItem("letter_draft_id", letterId);
+    }
+    localStorage.setItem("letter_current_id", letterId);
+    upsertLetter({
+      id: letterId,
+      patientName: name || "Unnamed Patient",
+      patientId: patId || "",
+      letterDate,
+      status: "Draft",
+      savedAt: new Date().toISOString(),
+      data: letterData as Record<string, unknown>,
+    });
+
+    // Save to Supabase (primary source of truth)
+    try {
+      setSaveDraftError("");
+      const supabase = createClient();
+      const saved = await saveLetterToSupabase(supabase, {
+        letterId:   supabaseLetterIdRef.current  ?? undefined,
+        patientId:  supabasePatientIdRef.current ?? undefined,
+        status:     "Draft",
+        letterDate,
+        letterData: letterData as Record<string, unknown>,
+      });
+      supabaseLetterIdRef.current = saved.id;
+      sessionStorage.setItem("letter_supabase_id", saved.id);
+      localStorage.setItem("letter_current_supabase_id", saved.id);
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 2500);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[handleSaveDraft] Supabase error:", err);
+      setSaveDraftError(`Save failed: ${msg}`);
+      setTimeout(() => setSaveDraftError(""), 6000);
+    }
+  };
+
+  const handleSendToAnat = async () => {
+    if (sendingToAnat) return;
+    setSendingToAnat(true);
+
+    const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
+    const letterData = {
+      name, patId, bDay, bMonth, bYear, gender,
+      email, phone, smoking, pets, occupation, referredBy, location,
+      dateDay, dateMonth, dateYear,
+      diagEN, diagHE, sumEN, sumHE,
+      medHistory, famHistory,
+      medications, allergies, vaccinations,
+      appearance, clubbing, lymph, bp, pulse, rr, spo2,
+      heartSounds, heartOther, lungAusc, lungOther, otherFindings,
+      testResults, planStepsEN, planStepsHE, lungRows,
+      pictures, inhalerName, inhalerLink, inhalerImageUrl,
+    };
+    localStorage.setItem("letter_preview", JSON.stringify(letterData));
+
+    // Save to Supabase with "Waiting for Anat" status (primary source of truth)
+    try {
+      const supabase = createClient();
+      const saved = await saveLetterToSupabase(supabase, {
+        letterId:     supabaseLetterIdRef.current  ?? undefined,
+        patientId:    supabasePatientIdRef.current ?? undefined,
+        status:       "Waiting for Anat",
+        letterDate,
+        letterData:   letterData as Record<string, unknown>,
+        sentToAnatAt: new Date().toISOString(),
+      });
+      if (saved?.id) {
+        supabaseLetterIdRef.current = saved.id;
+        sessionStorage.setItem("letter_supabase_id", saved.id);
+        localStorage.setItem("letter_current_supabase_id", saved.id);
+        // Letter is now in Supabase — clear the local copy of full letter data.
+        localStorage.removeItem("letter_preview");
+      }
+    } catch (err) {
+      console.warn("Supabase save failed, using localStorage fallback:", err);
+    }
+
+    // localStorage fallback
+    let letterId = sessionStorage.getItem("letter_draft_id");
+    if (!letterId) {
+      letterId = `letter-${Date.now().toString(36)}`;
+      sessionStorage.setItem("letter_draft_id", letterId);
+    }
+    localStorage.setItem("letter_current_id", letterId);
+    upsertLetter({
+      id: letterId,
+      patientName: name || "Unnamed Patient",
+      patientId: patId || "",
+      letterDate,
+      status: "Waiting for Anat",
+      savedAt: new Date().toISOString(),
+      data: letterData as Record<string, unknown>,
+    });
+
+    // Later this action will send an email notification to Anat with a secure link.
+    localStorage.setItem("letter_just_sent", "1");
+    setSendingToAnat(false);
+    router.push("/workspace/anat-review");
+  };
+
+  const toggleSimpleGroup = (group: 'echo' | 'blood' | 'otherTest') => {
+    setTestResults(prev => {
+      const on = prev.selected[group] as boolean;
+      if (on) {
+        const next = { ...prev, selected: { ...prev.selected, [group]: false } };
+        if (group === 'echo') next.echo = "";
+        if (group === 'blood') next.blood = { date: "", testType: "", details: "" };
+        if (group === 'otherTest') next.otherTest = "";
+        return next;
+      }
+      return { ...prev, selected: { ...prev.selected, [group]: true } };
+    });
+  };
+
+  const toggleSubField = (group: keyof typeof GROUP_FIELDS, field: string) => {
+    setTestResults(prev => {
+      const current = prev.selected[group as keyof TRSelected] as string[];
+      const on = current.includes(field);
+      if (on) {
+        return {
+          ...prev,
+          [group]: { ...(prev[group as keyof TestResultsData] as object), [field]: "" },
+          selected: { ...prev.selected, [group]: current.filter(f => f !== field) },
+        };
+      }
+      return { ...prev, selected: { ...prev.selected, [group]: [...current, field] } };
+    });
+  };
+
+  // Privacy rule: Do not send patient identifiers to AI.
+  // Only send the selected text section and patient gender.
+  const apiGender = (gender || "other").toLowerCase() as "male" | "female" | "other";
+
+  async function callTranslate(body: Record<string, unknown>) {
+    const res = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceLanguage: "en", targetLanguage: "he", gender: apiGender, ...body }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "Translation failed. Please try again.");
+    return json;
+  }
+
+  const translateDiagnosis = async () => {
+    if (!diagEN.trim()) return;
+    setDiagTx("loading"); setDiagTxErr("");
+    try {
+      const { translatedText } = await callTranslate({ sectionType: "diagnosis", text: diagEN });
+      setDiagHE(translatedText);
+      setDiagTx("idle");
+    } catch (e) {
+      setDiagTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
+      setDiagTx("error");
+    }
+  };
+
+  const translateSummary = async () => {
+    if (!sumEN.trim()) return;
+    setSumTx("loading"); setSumTxErr("");
+    try {
+      const { translatedText } = await callTranslate({ sectionType: "summary", text: sumEN });
+      setSumHE(translatedText);
+      setSumTx("idle");
+    } catch (e) {
+      setSumTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
+      setSumTx("error");
+    }
+  };
+
+  const translatePlan = async () => {
+    const filled = planStepsEN.filter(s => s.trim());
+    if (!filled.length) return;
+    setPlanTx("loading"); setPlanTxErr("");
+    try {
+      const { translatedSteps } = await callTranslate({ sectionType: "plan", planSteps: planStepsEN });
+      setPlanStepsHE(translatedSteps);
+      setPlanTx("idle");
+    } catch (e) {
+      setPlanTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
+      setPlanTx("error");
+    }
+  };
+
+  const addPlanStepEN    = () => setPlanStepsEN(s => [...s, ""]);
+  const removePlanStepEN = (i: number) => setPlanStepsEN(s => s.filter((_, idx) => idx !== i));
+  const updatePlanStepEN = (i: number, v: string) => setPlanStepsEN(s => s.map((x, idx) => idx === i ? v : x));
+  const addPlanStepHE    = () => setPlanStepsHE(s => [...s, ""]);
+  const removePlanStepHE = (i: number) => setPlanStepsHE(s => s.filter((_, idx) => idx !== i));
+  const updatePlanStepHE = (i: number, v: string) => setPlanStepsHE(s => s.map((x, idx) => idx === i ? v : x));
+
+  const addMed = () => { if (medInput.trim()) { setMedications(m => [...m, medInput.trim()]); setMedInput(""); } };
+  const removeMed = (i: number) => setMedications(m => m.filter((_, idx) => idx !== i));
+  const addAllergy = () => { if (allergyInput.trim()) { setAllergies(a => [...a, allergyInput.trim()]); setAllergyInput(""); } };
+  const removeAllergy = (i: number) => setAllergies(a => a.filter((_, idx) => idx !== i));
+
+  const toggleVax = (v: string) => {
+    if (v === "None") { setVaccinations(["None"]); return; }
+    setVaccinations(prev => {
+      const without = prev.filter(x => x !== "None");
+      return without.includes(v) ? without.filter(x => x !== v) : [...without, v];
+    });
+  };
+
+  const addLungRow = () => setLungRows(rows => [...rows, { id: Date.now(), date:"", fev1l:"", fev1p:"", fvcl:"", fvcp:"", ratio:"", fef:"", tlcl:"", tlc:"", rvl:"", rv:"", dlco:"", kco:"", feno:"", meta:"", walk:"", hwbmi:"" }]);
+  const setLungCell = (id: number, key: keyof LungRow, value: string) =>
+    setLungRows(rows => rows.map(r => r.id === id ? { ...r, [key]: value } : r));
+
+  // Split date input helper
+  const splitInput = (
+    placeholder: string, maxLen: number, value: string,
+    onChange: (v: string) => void, nextRef?: React.RefObject<HTMLInputElement | null>
+  ) => (
+    <input inputMode="numeric" placeholder={placeholder} maxLength={maxLen} value={value}
+      onChange={e => { const v = e.target.value.replace(/\D/g,"").slice(0,maxLen); onChange(v); if(v.length===maxLen && nextRef?.current) nextRef.current.focus(); }}
+      className={`${maxLen===4?"w-20":"w-14"} px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none transition-colors duration-150`}
+      style={is} />
+  );
+
+  // ─── Section renders ──────────────────────────────────────────────────────────
+
+  const renderSection = (): React.ReactNode => {
+    switch (active) {
+
+      case "patient": return (
+        <SectionCard title="Patient Details">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            <F label="Name"><input className={ic} style={is} value={name} onChange={e => setName(e.target.value)} placeholder="Patient full name" /></F>
+            <F label="ID"><input className={ic} style={is} value={patId} onChange={e => setPatId(e.target.value)} placeholder="National ID or passport" /></F>
+            <F label="Birthdate">
+              <div className="flex items-center gap-2">
+                {splitInput("DD",2,bDay,setBDay,bMonthRef)}
+                <span style={{color:"#CBD5E1"}}>/</span>
+                <input ref={bMonthRef} inputMode="numeric" placeholder="MM" maxLength={2} value={bMonth}
+                  onChange={e=>{const v=e.target.value.replace(/\D/g,"").slice(0,2);setBMonth(v);if(v.length===2)bYearRef.current?.focus();}}
+                  className="w-14 px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none" style={is}/>
+                <span style={{color:"#CBD5E1"}}>/</span>
+                <input ref={bYearRef} inputMode="numeric" placeholder="YYYY" maxLength={4} value={bYear}
+                  onChange={e=>setBYear(e.target.value.replace(/\D/g,"").slice(0,4))}
+                  className="w-20 px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none" style={is}/>
+              </div>
+              {(() => {
+                if (!bDay || !bMonth || !bYear || bYear.length < 4) return null;
+                const d = new Date(parseInt(bYear), parseInt(bMonth) - 1, parseInt(bDay));
+                if (d.getMonth() !== parseInt(bMonth) - 1)
+                  return <p className="text-xs mt-1.5 font-medium" style={{color:"#BE123C"}}>This date does not exist (e.g. 31 February).</p>;
+                if (d > new Date())
+                  return <p className="text-xs mt-1.5 font-medium" style={{color:"#BE123C"}}>Birthdate cannot be in the future.</p>;
+                return null;
+              })()}
+            </F>
+            <F label="Age / Gender">
+              <div className="flex gap-3">
+                <div className="flex-1 px-4 py-2.5 rounded-xl border bg-white text-sm flex items-center" style={{borderColor:"#E2E8F0",color:age?"#1A2B4A":"#CBD5E1"}}>
+                  {age||"Auto-calculated"}
+                </div>
+                <div className="flex-1"><NavySelect value={gender} onChange={setGender} options={["Male","Female","Other"]} placeholder="Gender"/></div>
+              </div>
+            </F>
+            <F label="Email"><input type="email" className={ic} style={is} value={email} onChange={e=>setEmail(e.target.value)} placeholder="Patient email address"/></F>
+            <F label="Phone">
+              {/* Structure: 05 [X] - [XXXXXXX]  →  saved as e.g. 050-5004009 */}
+              <div className="flex items-center rounded-xl border overflow-hidden" style={{borderColor:"#E2E8F0"}}>
+                {/* Fixed prefix */}
+                <span className="px-3 py-2.5 bg-white text-sm font-semibold flex-shrink-0"
+                  style={{color:"#94A3B8", borderRight:"1px solid #F4F6F9"}}>05</span>
+                {/* 3rd digit — operator code (1 char, auto-advances) */}
+                <input
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={phone.replace(/\D/g,"").slice(2,3)}
+                  onChange={e => {
+                    const d1 = e.target.value.replace(/\D/g,"").slice(0,1);
+                    const d2 = phone.replace(/\D/g,"").slice(3,10);
+                    setPhone(d1 ? ("05"+d1+(d2 ? "-"+d2 : "")) : "");
+                    if (d1) phoneRestRef.current?.focus();
+                  }}
+                  className="w-9 py-2.5 bg-white text-sm focus:outline-none text-center"
+                  style={{color:"#1A2B4A"}}
+                  placeholder="0"
+                />
+                {/* Visual dash separator */}
+                <span className="text-sm select-none" style={{color:"#94A3B8"}}>-</span>
+                {/* Remaining 7 digits */}
+                <input
+                  ref={phoneRestRef}
+                  inputMode="numeric"
+                  maxLength={7}
+                  value={phone.replace(/\D/g,"").slice(3,10)}
+                  onChange={e => {
+                    const d2 = e.target.value.replace(/\D/g,"").slice(0,7);
+                    const d1 = phone.replace(/\D/g,"").slice(2,3);
+                    setPhone(d1 ? ("05"+d1+"-"+d2) : ("05"+d2));
+                  }}
+                  className="flex-1 px-2 py-2.5 bg-white text-sm focus:outline-none"
+                  style={{color:"#1A2B4A"}}
+                  placeholder="0000000"
+                />
+              </div>
+              {phone.replace(/\D/g,"").length > 2 && phone.replace(/\D/g,"").length < 10 && (
+                <p className="text-xs mt-1.5 font-medium" style={{color:"#BE123C"}}>
+                  Phone must be 10 digits (e.g. 050-5004009).
+                </p>
+              )}
+            </F>
+            <F label="Smoking / Vaping"><input className={ic} style={is} value={smoking} onChange={e=>setSmoking(e.target.value)} placeholder="e.g. Non-smoker, 10/day"/></F>
+            <F label="Pets"><input className={ic} style={is} value={pets} onChange={e=>setPets(e.target.value)} placeholder="e.g. Dog, Cat, None"/></F>
+            <F label="Occupation"><input className={ic} style={is} value={occupation} onChange={e=>setOccupation(e.target.value)} placeholder="e.g. Teacher, Retired"/></F>
+            <F label="Referred By"><NavySelect value={referredBy} onChange={setReferredBy} options={["Private","Assuta","Raphael","Harel","Bwell"]}/></F>
+            <F label="Location"><NavySelect value={location} onChange={setLocation} options={["HMC","Alliance Clinic TLV","TeleConsult","Update"]}/></F>
+            <F label="Date">
+              <div className="flex items-center gap-2">
+                {splitInput("DD",2,dateDay,setDateDay,dMonthRef)}
+                <span style={{color:"#CBD5E1"}}>/</span>
+                <input ref={dMonthRef} inputMode="numeric" placeholder="MM" maxLength={2} value={dateMonth}
+                  onChange={e=>{const v=e.target.value.replace(/\D/g,"").slice(0,2);setDateMonth(v);if(v.length===2)dYearRef.current?.focus();}}
+                  className="w-14 px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none" style={is}/>
+                <span style={{color:"#CBD5E1"}}>/</span>
+                <input ref={dYearRef} inputMode="numeric" placeholder="YYYY" maxLength={4} value={dateYear}
+                  onChange={e=>setDateYear(e.target.value.replace(/\D/g,"").slice(0,4))}
+                  className="w-20 px-3 py-2.5 rounded-xl border bg-white text-sm text-center focus:outline-none" style={is}/>
+              </div>
+            </F>
+          </div>
+        </SectionCard>
+      );
+
+      case "clinical": return (
+        <div className="space-y-5">
+
+          {/* ── Diagnosis ── */}
+          <SectionCard title="Diagnosis" titleHe="אבחנה">
+            <div className="space-y-4">
+              <F label="Diagnosis (English)">
+                <textarea className={ta} style={is} rows={3} value={diagEN}
+                  onChange={e => { setDiagEN(e.target.value); setDiagTx("idle"); setDiagTxErr(""); }}
+                  placeholder="Enter diagnosis in English" />
+              </F>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-3">
+                  <TranslateBtn
+                    onClick={translateDiagnosis}
+                    disabled={!diagEN.trim()}
+                    loading={diagTx === "loading"}
+                  />
+                  {!diagEN.trim() && diagTx === "idle" && <p className="text-xs" style={{color:"#CBD5E1"}}>Enter English diagnosis first.</p>}
+                  {diagTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{diagTxErr}</p>}
+                </div>
+                <p className="text-xs" style={{color:"#94A3B8"}}>AI translation is a draft and must be reviewed before finalising.</p>
+              </div>
+              <F label="אבחנה — Diagnosis (Hebrew)">
+                <textarea className={ta} style={{...is, direction:"rtl", textAlign:"right"}} rows={3} value={diagHE}
+                  onChange={e => setDiagHE(e.target.value)} placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
+              </F>
+            </div>
+          </SectionCard>
+
+          {/* ── Summary ── */}
+          <SectionCard title="Summary" titleHe="סיכום">
+            <div className="space-y-4">
+              <F label="Summary (English)">
+                <textarea className={ta} style={is} rows={6} value={sumEN}
+                  onChange={e => { setSumEN(e.target.value); setSumTx("idle"); setSumTxErr(""); }}
+                  placeholder="Enter clinical summary in English" />
+              </F>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-3">
+                  <TranslateBtn
+                    onClick={translateSummary}
+                    disabled={!sumEN.trim()}
+                    loading={sumTx === "loading"}
+                  />
+                  {!sumEN.trim() && sumTx === "idle" && <p className="text-xs" style={{color:"#CBD5E1"}}>Enter English summary first.</p>}
+                  {sumTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{sumTxErr}</p>}
+                </div>
+                <p className="text-xs" style={{color:"#94A3B8"}}>AI translation is a draft and must be reviewed before finalising.</p>
+              </div>
+              <F label="סיכום — Summary (Hebrew)">
+                <textarea className={ta} style={{...is, direction:"rtl", textAlign:"right"}} rows={6} value={sumHE}
+                  onChange={e => setSumHE(e.target.value)} placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
+              </F>
+            </div>
+          </SectionCard>
+
+          {/* ── Plan ── */}
+          <SectionCard title="Plan" titleHe="תכנית">
+            {/* English plan steps */}
+            <div className="mb-5">
+              <label className={lc} style={ls}>Plan in English</label>
+              <div className="space-y-2 mb-3">
+                {planStepsEN.map((step, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs font-semibold flex-shrink-0 text-right" style={{ color: "#94A3B8", minWidth: 22 }}>{i + 1}.</span>
+                    <input
+                      className={`flex-1 ${ic}`} style={is}
+                      value={step} onChange={e => updatePlanStepEN(i, e.target.value)}
+                      placeholder={`Step ${i + 1}`} />
+                    <button type="button" onClick={() => removePlanStepEN(i)}
+                      className="flex-shrink-0 text-sm transition-colors duration-150" style={{ color: "#CBD5E1", lineHeight: 1 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                      onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addPlanStepEN}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
+                style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
+                + Add Step
+              </button>
+            </div>
+
+            {/* Translate Plan button */}
+            <div className="py-3 mb-2 space-y-1.5" style={{ borderTop: "1px solid #F4F6F9", borderBottom: "1px solid #F4F6F9" }}>
+              <div className="flex items-center gap-3">
+                <TranslateBtn
+                  onClick={translatePlan}
+                  disabled={!planStepsEN.some(s => s.trim())}
+                  loading={planTx === "loading"}
+                  label="Translate Plan to Hebrew" />
+                {!planStepsEN.some(s => s.trim()) && planTx === "idle" && (
+                  <p className="text-xs" style={{color:"#CBD5E1"}}>Add English plan steps first.</p>
+                )}
+                {planTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{planTxErr}</p>}
+              </div>
+              <p className="text-xs" style={{color:"#94A3B8"}}>AI translation is a draft and must be reviewed before finalising.</p>
+            </div>
+
+            {/* Hebrew plan steps */}
+            <div style={{ paddingTop: 16 }}>
+              <label className={lc} style={ls}>Plan in Hebrew / תכנית</label>
+              <div className="space-y-2 mb-3">
+                {planStepsHE.map((step, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs font-semibold flex-shrink-0 text-right" style={{ color: "#94A3B8", minWidth: 22 }}>{i + 1}.</span>
+                    <input
+                      className={`flex-1 ${ic}`} style={{ ...is, direction: "rtl", textAlign: "right" }}
+                      value={step} onChange={e => updatePlanStepHE(i, e.target.value)}
+                      placeholder={`שלב ${i + 1}`} />
+                    <button type="button" onClick={() => removePlanStepHE(i)}
+                      className="flex-shrink-0 text-sm transition-colors duration-150" style={{ color: "#CBD5E1", lineHeight: 1 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                      onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addPlanStepHE}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
+                style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
+                + Add Step
+              </button>
+            </div>
+          </SectionCard>
+          <SectionCard title="Medical History">
+            <F label="Medical History"><textarea className={ta} style={is} rows={8} value={medHistory} onChange={e=>setMedHistory(e.target.value)} placeholder="Enter relevant medical history"/></F>
+          </SectionCard>
+          <SectionCard title="Family History">
+            <F label="Family History"><textarea className={ta} style={is} rows={8} value={famHistory} onChange={e=>setFamHistory(e.target.value)} placeholder="Enter relevant family history"/></F>
+          </SectionCard>
+          <SectionCard title="Medications">
+            <div className="space-y-2 mb-5">
+              {medications.length === 0 && <p className="text-sm py-4 text-center" style={{color:"#CBD5E1"}}>No medications added yet.</p>}
+              {medications.map((m, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-2.5 rounded-xl border bg-white" style={{borderColor:"#E2E8F0"}}>
+                  <span className="flex-1 text-sm" style={{color:"#1A2B4A"}}>{m}</span>
+                  <button onClick={()=>removeMed(i)} className="text-xs transition-colors duration-150" style={{color:"#CBD5E1"}}
+                    onMouseEnter={e=>(e.currentTarget.style.color="#BE123C")} onMouseLeave={e=>(e.currentTarget.style.color="#CBD5E1")}>Remove</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <input className={`flex-1 ${ic}`} style={is} value={medInput} onChange={e=>setMedInput(e.target.value)}
+                placeholder="Medication name and dose" onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addMed();}}}/>
+              <button onClick={addMed} className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 hover:-translate-y-px" style={{backgroundColor:"#1A2B4A",color:"#fff"}}>+ Add</button>
+            </div>
+          </SectionCard>
+        </div>
+      );
+
+      case "allergies": return (
+        <SectionCard title="Allergies">
+          <div className="space-y-2 mb-5">
+            {allergies.length === 0 && <p className="text-sm py-4 text-center" style={{color:"#CBD5E1"}}>No allergies added yet.</p>}
+            {allergies.map((a, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-2.5 rounded-xl border bg-white" style={{borderColor:"#E2E8F0"}}>
+                <span className="flex-1 text-sm" style={{color:"#1A2B4A"}}>{a}</span>
+                <button onClick={()=>removeAllergy(i)} className="text-xs transition-colors duration-150" style={{color:"#CBD5E1"}}
+                  onMouseEnter={e=>(e.currentTarget.style.color="#BE123C")} onMouseLeave={e=>(e.currentTarget.style.color="#CBD5E1")}>Remove</button>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3">
+            <input className={`flex-1 ${ic}`} style={is} value={allergyInput} onChange={e=>setAllergyInput(e.target.value)}
+              placeholder="Enter allergy" onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addAllergy();}}}/>
+            <button onClick={addAllergy} className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 hover:-translate-y-px" style={{backgroundColor:"#1A2B4A",color:"#fff"}}>+ Add</button>
+          </div>
+        </SectionCard>
+      );
+
+      case "vaccinations": return (
+        <SectionCard title="Vaccinations">
+          <div className="flex flex-wrap gap-3">
+            {VAX_OPTIONS.map(v => {
+              const sel = vaccinations.includes(v);
+              return (
+                <button key={v} type="button" onClick={()=>toggleVax(v)}
+                  className="px-5 py-2.5 rounded-xl border text-sm font-medium transition-all duration-150 hover:-translate-y-px"
+                  style={{borderColor:sel?"#1A2B4A":"#E2E8F0",backgroundColor:sel?"#1A2B4A":"white",color:sel?"white":"#64748B"}}>
+                  {v}
+                </button>
+              );
+            })}
+          </div>
+          {vaccinations.length > 0 && (
+            <p className="text-xs mt-5" style={{color:"#94A3B8"}}>Selected: {vaccinations.join(", ")}</p>
+          )}
+        </SectionCard>
+      );
+
+      case "examination": return (
+        <SectionCard title="Examination">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            <F label="Appearance" full><NavySelect value={appearance} onChange={setAppearance} options={["Comfortable at rest","Breathless at rest","Breathless with activity"]}/></F>
+            <F label="Fingernail Clubbing"><YesNo value={clubbing} onChange={setClubbing}/></F>
+            <F label="Cervical Lymphadenopathy"><YesNo value={lymph} onChange={setLymph}/></F>
+            <F label="Blood Pressure"><input ref={bpRef} className={ic} style={is} value={bp} onChange={e=>setBp(e.target.value)} placeholder="e.g. 120/80" onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();pulseRef.current?.focus();}}}/></F>
+            <F label="Pulse"><input ref={pulseRef} className={ic} style={is} value={pulse} onChange={e=>setPulse(e.target.value)} placeholder="bpm" onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();rrRef.current?.focus();}}}/></F>
+            <F label="Respiratory Rate"><input ref={rrRef} className={ic} style={is} value={rr} onChange={e=>setRr(e.target.value)} placeholder="breaths/min" onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();spo2Ref.current?.focus();}}}/></F>
+            <F label="SpO2 (%)"><input ref={spo2Ref} className={ic} style={is} value={spo2} onChange={e=>setSpo2(e.target.value)} placeholder="1–100" type="number" min={1} max={100}/></F>
+            <F label="Heart Sounds">
+              <NavySelect value={heartSounds} onChange={setHeartSounds} options={["Normal","Other"]}/>
+            </F>
+            {heartSounds==="Other" && <F label="Heart Sounds — Details"><input className={ic} style={is} value={heartOther} onChange={e=>setHeartOther(e.target.value)} placeholder="Describe"/></F>}
+            <F label="Lung Auscultation">
+              <NavySelect value={lungAusc} onChange={setLungAusc} options={["Clear","Other"]}/>
+            </F>
+            {lungAusc==="Other" && <F label="Lung Auscultation — Details"><input className={ic} style={is} value={lungOther} onChange={e=>setLungOther(e.target.value)} placeholder="Describe"/></F>}
+            <F label="Other Findings" full><textarea className={ta} style={is} rows={3} value={otherFindings} onChange={e=>setOtherFindings(e.target.value)} placeholder="Additional examination findings"/></F>
+          </div>
+        </SectionCard>
+      );
+
+      case "tests": {
+        return (
+          <SectionCard title="Test Results">
+            <div className="space-y-5">
+
+              {/* 1. EKG */}
+              <TestGroup title="EKG">
+                <div className="flex gap-2 mb-2">
+                  {["Normal", "Other"].map(opt => (
+                    <button key={opt} type="button"
+                      onClick={() => setTestResults(prev => ({ ...prev, ekg: { ...prev.ekg, value: prev.ekg.value === opt ? "" : opt } }))}
+                      className="px-4 py-2 rounded-xl border text-sm font-medium transition-all duration-150"
+                      style={{ borderColor: testResults.ekg.value === opt ? "#1A2B4A" : "#E2E8F0", backgroundColor: testResults.ekg.value === opt ? "#1A2B4A" : "white", color: testResults.ekg.value === opt ? "white" : "#64748B" }}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+                {testResults.ekg.value === "Other" && (
+                  <textarea className={ta} style={is} rows={2}
+                    value={testResults.ekg.details}
+                    onChange={e => setTestResults(prev => ({ ...prev, ekg: { ...prev.ekg, details: e.target.value } }))}
+                    placeholder="Describe EKG findings" />
+                )}
+                {!testResults.ekg.value && (
+                  <p className="text-xs" style={{ color: "#CBD5E1" }}>Select Normal or Other above.</p>
+                )}
+              </TestGroup>
+
+              {/* 2. Echocardiogram */}
+              <TestGroup title="Echocardiogram">
+                {!testResults.selected.echo ? (
+                  <button type="button" onClick={() => toggleSimpleGroup('echo')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
+                    style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
+                    + Add Result
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Result added</span>
+                      <button type="button" onClick={() => toggleSimpleGroup('echo')}
+                        className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                        Clear
+                      </button>
+                    </div>
+                    <textarea className={ta} style={is} rows={2}
+                      value={testResults.echo}
+                      onChange={e => setTestResults(prev => ({ ...prev, echo: e.target.value }))}
+                      placeholder="Echocardiogram findings" />
+                  </>
+                )}
+              </TestGroup>
+
+              {/* 3. Blood Tests */}
+              <TestGroup title="Blood Tests">
+                {!testResults.selected.blood ? (
+                  <button type="button" onClick={() => toggleSimpleGroup('blood')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
+                    style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
+                    + Add Blood Tests
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Blood Tests added</span>
+                      <button type="button" onClick={() => toggleSimpleGroup('blood')}
+                        className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                        Clear
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <F label="Date of Tests">
+                        <SplitDateInput
+                          value={testResults.blood.date}
+                          onChange={v => setTestResults(prev => ({ ...prev, blood: { ...prev.blood, date: v } }))}
+                          validateFuture
+                        />
+                      </F>
+                      <F label="Test Type / Name">
+                        <input className={ic} style={is} value={testResults.blood.testType}
+                          onChange={e => setTestResults(prev => ({ ...prev, blood: { ...prev.blood, testType: e.target.value } }))}
+                          placeholder="e.g. FBC, Eosinophils, Total IgE" />
+                      </F>
+                      <F label="Result / Details" full>
+                        <textarea className={ta} style={is} rows={2}
+                          value={testResults.blood.details}
+                          onChange={e => setTestResults(prev => ({ ...prev, blood: { ...prev.blood, details: e.target.value } }))}
+                          placeholder="e.g. Eosinophils 0.4 × 10⁹/L, Total IgE 225 IU/mL" />
+                      </F>
+                    </div>
+                  </>
+                )}
+              </TestGroup>
+
+              {/* 4. Bronchoscopy Washing */}
+              <TestGroup title="Bronchoscopy Washing">
+                <SubToggle
+                  fields={GROUP_FIELDS.bronchWash}
+                  selected={testResults.selected.bronchWash}
+                  values={testResults.bronchWash as Record<string, string>}
+                  onToggle={f => toggleSubField("bronchWash", f)}
+                  onChange={(f, v) => setTestResults(prev => ({ ...prev, bronchWash: { ...prev.bronchWash, [f]: v } }))}
+                />
+              </TestGroup>
+
+              {/* 5. Bronchoscopy Biopsy */}
+              <TestGroup title="Bronchoscopy Biopsy">
+                <SubToggle
+                  fields={GROUP_FIELDS.bronchBiopsy}
+                  selected={testResults.selected.bronchBiopsy}
+                  values={testResults.bronchBiopsy as Record<string, string>}
+                  onToggle={f => toggleSubField("bronchBiopsy", f)}
+                  onChange={(f, v) => setTestResults(prev => ({ ...prev, bronchBiopsy: { ...prev.bronchBiopsy, [f]: v } }))}
+                />
+              </TestGroup>
+
+              {/* 6. EBUS */}
+              <TestGroup title="EBUS">
+                <SubToggle
+                  fields={GROUP_FIELDS.ebus}
+                  selected={testResults.selected.ebus}
+                  values={testResults.ebus as Record<string, string>}
+                  onToggle={f => toggleSubField("ebus", f)}
+                  onChange={(f, v) => setTestResults(prev => ({ ...prev, ebus: { ...prev.ebus, [f]: v } }))}
+                />
+              </TestGroup>
+
+              {/* 7. Pleural Fluid */}
+              <TestGroup title="Pleural Fluid">
+                <SubToggle
+                  fields={GROUP_FIELDS.pleuralFluid}
+                  selected={testResults.selected.pleuralFluid}
+                  values={testResults.pleuralFluid as Record<string, string>}
+                  onToggle={f => toggleSubField("pleuralFluid", f)}
+                  onChange={(f, v) => setTestResults(prev => ({ ...prev, pleuralFluid: { ...prev.pleuralFluid, [f]: v } }))}
+                />
+              </TestGroup>
+
+              {/* 8. Pleural Biopsy */}
+              <TestGroup title="Pleural Biopsy">
+                <SubToggle
+                  fields={GROUP_FIELDS.pleuralBiopsy}
+                  selected={testResults.selected.pleuralBiopsy}
+                  values={testResults.pleuralBiopsy as Record<string, string>}
+                  onToggle={f => toggleSubField("pleuralBiopsy", f)}
+                  onChange={(f, v) => setTestResults(prev => ({ ...prev, pleuralBiopsy: { ...prev.pleuralBiopsy, [f]: v } }))}
+                />
+              </TestGroup>
+
+              {/* 9. Other Test */}
+              <TestGroup title="Other Test" last>
+                {!testResults.selected.otherTest ? (
+                  <button type="button" onClick={() => toggleSimpleGroup('otherTest')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
+                    style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
+                    + Add Other Test
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Other Test added</span>
+                      <button type="button" onClick={() => toggleSimpleGroup('otherTest')}
+                        className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                        Clear
+                      </button>
+                    </div>
+                    <textarea className={ta} style={is} rows={3}
+                      value={testResults.otherTest}
+                      onChange={e => setTestResults(prev => ({ ...prev, otherTest: e.target.value }))}
+                      placeholder="Any other test or result not listed above" />
+                  </>
+                )}
+              </TestGroup>
+
+            </div>
+          </SectionCard>
+        );
+      }
+
+      case "lung": return (
+        <SectionCard title="Lung Function" titleHe="תפקוד ריאות">
+          {lungRows.length === 0
+            ? <p className="text-sm text-center py-8" style={{color:"#94A3B8"}}>No lung function tests added yet.</p>
+            : (
+              <div className="space-y-4 mb-5">
+                {lungRows.map(row => (
+                  <div key={row.id} data-lung-row={row.id} className="rounded-2xl border p-4" style={{borderColor:"#E2E8F0",backgroundColor:"#FAFBFF"}}>
+
+                    {/* Date + Remove */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-start gap-3">
+                        <span className="text-xs font-semibold mt-2.5 flex-shrink-0" style={{color:"#64748B"}}>Date</span>
+                        <SplitDateInput
+                          value={row.date}
+                          onChange={v => setLungCell(row.id, "date", v)}
+                          validateFuture
+                          onEnterFromLast={(from) => {
+                            const container = document.querySelector(`[data-lung-row="${row.id}"]`);
+                            if (!container) return;
+                            const inputs = Array.from(container.querySelectorAll<HTMLInputElement>("input"));
+                            const idx = inputs.indexOf(from);
+                            if (idx >= 0 && idx < inputs.length - 1) inputs[idx + 1].focus();
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setLungRows(r => r.filter(x => x.id !== row.id))}
+                        className="text-xs transition-colors duration-150"
+                        style={{color:"#CBD5E1"}}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                        Remove Test
+                      </button>
+                    </div>
+
+                    {/* Row 1: Main Spirometry — 6 columns */}
+                    <div className="mb-1">
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:3}}>
+                        {LUNG_MAIN.map(([label,key]) => (
+                          <div key={key}>
+                            <p className="text-center mb-1" style={{fontSize:9,fontWeight:700,color:"#94A3B8",textTransform:"uppercase",letterSpacing:"0.04em",lineHeight:1.2}}>{label}</p>
+                            <input
+                              value={String(row[key])}
+                              onChange={e => setLungCell(row.id, key, e.target.value)}
+                              onKeyDown={e => handleLungKeyDown(e, row.id)}
+                              className="w-full px-1 py-1.5 rounded-lg border bg-white focus:outline-none text-center"
+                              style={{...is,fontSize:12}}
+                              placeholder="—"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Row 2: Additional — 5 columns × 2 rows */}
+                    <div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:3}}>
+                        {LUNG_EXTRA.map(([label,key]) => (
+                          <div key={key}>
+                            <p className="text-center mb-1" style={{fontSize:9,fontWeight:700,color:"#94A3B8",textTransform:"uppercase",letterSpacing:"0.04em",lineHeight:1.2}}>{label}</p>
+                            <input
+                              value={String(row[key])}
+                              onChange={e => setLungCell(row.id, key, e.target.value)}
+                              onKeyDown={e => handleLungKeyDown(e, row.id)}
+                              className="w-full px-1 py-1.5 rounded-lg border bg-white focus:outline-none text-center"
+                              style={{...is,fontSize:12}}
+                              placeholder="—"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
+                ))}
+              </div>
+            )}
+          <button
+            onClick={addLungRow}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all duration-150 hover:-translate-y-px"
+            style={{borderColor:"#1A2B4A",color:"#1A2B4A"}}>
+            + Add Lung Function Test
+          </button>
+        </SectionCard>
+      );
+
+      case "pictures": return (
+        <SectionCard title="Pictures" titleHe="תמונות">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={e => handleFiles(e.target.files)}
+          />
+
+          {/* Drop zone */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={e => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
+            className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-150"
+            style={{
+              borderColor: isDragging ? "#1A2B4A" : "#CBD5E1",
+              backgroundColor: isDragging ? "#EBF3FB" : "#FAFAFA",
+              padding: pictures.length > 0 ? "24px 20px" : "48px 20px",
+            }}
+          >
+            <svg viewBox="0 0 40 36" fill="none" stroke={isDragging ? "#1A2B4A" : "#CBD5E1"} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+              style={{ width: 40, height: 36, marginBottom: 12 }}>
+              <rect x="2" y="6" width="36" height="26" rx="4"/>
+              <circle cx="14" cy="17" r="4"/>
+              <path d="M2 28l10-9 7 7 5-5 14 10"/>
+              <path d="M26 2l5 5M31 2l-5 5" strokeWidth={2}/>
+            </svg>
+            <p className="text-sm font-medium mb-1" style={{ color: isDragging ? "#1A2B4A" : "#64748B" }}>
+              {isDragging ? "Drop images to upload" : "Drag & drop images here"}
+            </p>
+            <p className="text-xs" style={{ color: "#94A3B8" }}>
+              or <span style={{ color: "#4A90D9", fontWeight: 600 }}>click to browse</span> · PNG, JPG, HEIC
+            </p>
+          </div>
+
+          {/* Image previews */}
+          {pictures.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 20 }}>
+              {pictures.map((src, i) => (
+                <div key={i} style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: "1px solid #E2E8F0", aspectRatio: "4/3", backgroundColor: "#F4F6F9" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt={`Image ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setPictures(prev => prev.filter((_, idx) => idx !== i)); }}
+                    style={{
+                      position: "absolute", top: 6, right: 6,
+                      width: 22, height: 22, borderRadius: "50%",
+                      backgroundColor: "rgba(26,43,74,0.7)", color: "white",
+                      border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700,
+                      display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+                    }}>
+                    ×
+                  </button>
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "4px 8px", background: "linear-gradient(transparent, rgba(26,43,74,0.45))" }}>
+                    <span style={{ fontSize: 10, color: "white", fontWeight: 500 }}>Image {i + 1}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {pictures.length > 0 && (
+            <p className="text-xs mt-3" style={{ color: "#94A3B8" }}>
+              {pictures.length} image{pictures.length !== 1 ? "s" : ""} added · Images will appear in the letter preview
+            </p>
+          )}
+        </SectionCard>
+      );
+
+      case "inhalers": return (
+        <SectionCard title="Inhalers" titleHe="משאפים">
+          <p className="text-sm mb-5" style={{ color: "#64748B" }}>
+            Search RightBreathe to find the correct inhaler, then select it. You can also add details manually.
+          </p>
+
+          <div className="space-y-5">
+            {/* ── Search bar ── */}
+            <div ref={inhalerRef}>
+              <label className={lc} style={ls}>Search RightBreathe</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="#CBD5E1" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round"
+                    className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none">
+                    <circle cx="9" cy="9" r="6"/><path d="M17 17l-3.5-3.5"/>
+                  </svg>
+                  <input
+                    className={ic}
+                    style={{ ...is, paddingLeft: "2.75rem" }}
+                    value={inhalerSearch}
+                    onChange={e => { setInhalerSearch(e.target.value); setInhalerDropdown(false); setInhalerSearchError(""); }}
+                    onKeyDown={e => { if (e.key === "Enter") handleInhalerSearch(); }}
+                    placeholder="Type inhaler name, e.g. Ventolin..."
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleInhalerSearch}
+                  disabled={inhalerSearching || !inhalerSearch.trim()}
+                  className="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150"
+                  style={{
+                    backgroundColor: inhalerSearching || !inhalerSearch.trim() ? "#F4F6F9" : "#1A2B4A",
+                    color: inhalerSearching || !inhalerSearch.trim() ? "#94A3B8" : "#fff",
+                    border: "1px solid",
+                    borderColor: inhalerSearching || !inhalerSearch.trim() ? "#E2E8F0" : "#1A2B4A",
+                    cursor: inhalerSearching || !inhalerSearch.trim() ? "default" : "pointer",
+                  }}>
+                  {inhalerSearching ? "Searching…" : "Search"}
+                </button>
+              </div>
+
+              {/* Search error */}
+              {inhalerSearchError && (
+                <p className="text-xs mt-2" style={{ color: "#BE123C" }}>{inhalerSearchError}</p>
+              )}
+
+              {/* Search results dropdown */}
+              {inhalerDropdown && inhalerResults.length > 0 && (
+                <div className="mt-2 rounded-xl overflow-x-hidden"
+                  style={{ border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgb(0 0 0/0.07), 0 8px 24px rgb(26 43 74/0.10)" }}>
+                  {inhalerResults.map((r, i) => (
+                    <div key={r.pageUrl}
+                      className="flex items-center gap-3 px-4 py-3 bg-white transition-colors duration-100"
+                      style={{ borderTop: i > 0 ? "1px solid #F4F6F9" : "none" }}>
+                      {/* Image or placeholder */}
+                      <div className="flex-shrink-0 rounded-lg overflow-hidden flex items-center justify-center"
+                        style={{ width: 44, height: 44, backgroundColor: "#F4F6F9", border: "1px solid #E2E8F0" }}>
+                        {r.imageUrl
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          ? <img src={r.imageUrl} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          : <InhalerIcon />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium" style={{ color: "#1A2B4A", wordBreak: "break-word" }}>{r.name}</p>
+                        <a href={r.pageUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-xs" style={{ color: "#4A90D9" }}
+                          onClick={e => e.stopPropagation()}>
+                          View on RightBreathe ↗
+                        </a>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInhalerName(r.name);
+                          setInhalerLink(r.pageUrl);
+                          setInhalerImageUrl(r.imageUrl);
+                          setInhalerSearch(r.name);
+                          setInhalerDropdown(false);
+                          setInhalerResults([]);
+                        }}
+                        className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150"
+                        style={{ backgroundColor: "#1A2B4A", color: "#fff", border: "none", cursor: "pointer", alignSelf: "center" }}>
+                        Select
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ── Selected inhaler card ── */}
+            {inhalerName ? (
+              <div className="rounded-2xl border p-4" style={{ borderColor: "#E2E8F0", backgroundColor: "#FAFBFF" }}>
+                <div className="flex gap-4 items-start">
+                  <div className="flex-shrink-0 rounded-xl overflow-hidden flex items-center justify-center"
+                    style={{ width: 88, height: 88, backgroundColor: "#EBF3FB", border: "1px solid #E2E8F0" }}>
+                    {inhalerImageUrl
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      ? <img src={inhalerImageUrl} alt={inhalerName} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      : <InhalerIcon />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-3">
+                    <div>
+                      <label className={lc} style={ls}>Inhaler Name</label>
+                      <input className={ic} style={is} value={inhalerName}
+                        onChange={e => setInhalerName(e.target.value)} placeholder="Inhaler name" />
+                    </div>
+                    <div>
+                      <label className={lc} style={ls}>RightBreathe Link</label>
+                      <input className={ic} style={is} value={inhalerLink}
+                        onChange={e => setInhalerLink(e.target.value)} placeholder="https://www.rightbreathe.com/medicines/..." />
+                    </div>
+                    <div>
+                      <label className={lc} style={ls}>Image URL (optional)</label>
+                      <input className={ic} style={is} value={inhalerImageUrl}
+                        onChange={e => setInhalerImageUrl(e.target.value)} placeholder="https://..." />
+                    </div>
+                  </div>
+                </div>
+                <button type="button"
+                  className="mt-3 text-xs transition-colors duration-150"
+                  style={{ color: "#CBD5E1" }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}
+                  onClick={() => { setInhalerName(""); setInhalerLink(""); setInhalerImageUrl(""); setInhalerSearch(""); }}>
+                  Clear selection
+                </button>
+              </div>
+            ) : (
+              /* ── Manual fallback / empty state ── */
+              <div className="rounded-2xl border p-5" style={{ borderColor: "#E2E8F0", backgroundColor: "#FAFBFF" }}>
+                <p className="text-xs font-semibold mb-3" style={{ color: "#64748B" }}>Or add inhaler manually</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className={lc} style={ls}>Inhaler Name</label>
+                    <input className={ic} style={is} value={inhalerName}
+                      onChange={e => setInhalerName(e.target.value)} placeholder="e.g. Salbutamol 100mcg MDI (Ventolin)" />
+                  </div>
+                  <div>
+                    <label className={lc} style={ls}>RightBreathe Link</label>
+                    <input className={ic} style={is} value={inhalerLink}
+                      onChange={e => setInhalerLink(e.target.value)} placeholder="https://www.rightbreathe.com/medicines/..." />
+                  </div>
+                  <div>
+                    <label className={lc} style={ls}>Image URL (optional)</label>
+                    <input className={ic} style={is} value={inhalerImageUrl}
+                      onChange={e => setInhalerImageUrl(e.target.value)} placeholder="https://..." />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+      );
+
+      case "review": return (
+        <SectionCard title="Review">
+          <p className="text-sm mb-6" style={{color:"#64748B"}}>Review the completed letter before sending.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button onClick={handlePreview} type="button"
+              className="flex flex-col items-start text-left px-5 py-4 rounded-xl border transition-all duration-150 hover:-translate-y-px"
+              style={{borderColor:"#0D9488",backgroundColor:"white"}}>
+              <span className="text-sm font-semibold" style={{color:"#0D9488"}}>Preview Letter</span>
+              <span className="text-xs mt-1" style={{color:"#64748B"}}>View the full formatted letter</span>
+            </button>
+            <button onClick={handleSendToAnat} type="button" disabled={sendingToAnat}
+              className="flex flex-col items-start text-left px-5 py-4 rounded-xl border transition-all duration-150 hover:-translate-y-px"
+              style={{borderColor:"#7C3AED",backgroundColor:"white",opacity:sendingToAnat?0.7:1,cursor:sendingToAnat?"default":"pointer"}}>
+              <span className="text-sm font-semibold" style={{color:"#7C3AED"}}>
+                {sendingToAnat ? "Preparing file…" : "Send to Anat"}
+              </span>
+              <span className="text-xs mt-1" style={{color:"#64748B"}}>
+                Downloads editable .docx for Anat to review
+              </span>
+            </button>
+          </div>
+        </SectionCard>
+      );
+
+      default: return null;
+    }
+  };
+
+  // ─── Layout ───────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="flex-1 flex flex-col">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-5 py-3.5 bg-white flex-shrink-0"
+        style={{borderBottom:"1px solid #E2E8F0"}}>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => window.history.length > 1 ? router.back() : router.push("/workspace")}
+            className="inline-flex items-center gap-1.5 text-xs font-medium"
+            style={{color:"#94A3B8", background:"none", border:"none", cursor:"pointer", padding:0}}
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <path d="M10 12L6 8l4-4"/>
+            </svg>
+            Back
+          </button>
+          <span style={{color:"#E2E8F0"}}>›</span>
+          <h1 className="text-sm font-bold" style={{color:"#1A2B4A"}}>Clinic Letter Editor</h1>
+        </div>
+        <span className="text-xs px-3 py-1 rounded-full font-semibold" style={{backgroundColor:"#EBF3FB",color:"#4A90D9"}}>Draft</span>
+      </div>
+
+      {/* 3-panel */}
+      <div className="flex flex-1">
+        {/* Left section nav — sticky */}
+        <aside className="w-44 flex-shrink-0 bg-white overflow-y-auto"
+          style={{borderRight:"1px solid #E2E8F0", position:"sticky", top:0, height:"100vh"}}>
+          <nav className="py-3 px-2 flex flex-col gap-0.5">
+            {SECTIONS.map(s=>(
+              <button key={s.id} onClick={()=>setActive(s.id)}
+                className="w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150"
+                style={{backgroundColor:active===s.id?"#1A2B4A":"transparent", color:active===s.id?"#ffffff":"#64748B", fontWeight:active===s.id?600:400}}>
+                {s.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Main content */}
+        <main className="flex-1 p-5 min-h-screen" style={{backgroundColor:"#F4F6F9"}}>
+          {renderSection()}
+        </main>
+
+        {/* Right panel — sticky */}
+        <aside className="w-52 flex-shrink-0 bg-white overflow-y-auto p-5"
+          style={{borderLeft:"1px solid #E2E8F0", position:"sticky", top:0, height:"100vh"}}>
+          {/* Status */}
+          <div className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-wide mb-2.5" style={{color:"#94A3B8"}}>Status</p>
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{backgroundColor:"#EBF3FB"}}>
+              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{backgroundColor:"#4A90D9"}}/>
+              <span className="text-sm font-semibold" style={{color:"#4A90D9"}}>Draft</span>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col gap-2.5 mb-7">
+            {draftSaved && (
+              <p className="text-xs font-semibold text-center" style={{color:"#0D9488"}}>
+                Draft saved ✓
+              </p>
+            )}
+            {saveDraftError && (
+              <p className="text-xs font-semibold text-center" style={{color:"#BE123C"}}>
+                {saveDraftError}
+              </p>
+            )}
+            <button onClick={handleSaveDraft}
+              className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
+              style={{backgroundColor:"#1A2B4A",color:"#fff",borderColor:"#1A2B4A"}}>
+              Save Draft
+            </button>
+            <button onClick={handlePreview}
+              className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
+              style={{borderColor:"#0D9488",color:"#0D9488",backgroundColor:"white"}}>
+              Preview Letter
+            </button>
+            <button onClick={handleSendToAnat} disabled={sendingToAnat}
+              className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
+              style={{borderColor:"#7C3AED",color:"#7C3AED",backgroundColor:"white",opacity:sendingToAnat?0.7:1,cursor:sendingToAnat?"default":"pointer"}}>
+              {sendingToAnat ? "Preparing file…" : "Send to Anat"}
+            </button>
+          </div>
+
+          {/* Section list */}
+          <p className="text-xs font-semibold uppercase tracking-wide mb-2.5" style={{color:"#94A3B8"}}>Sections</p>
+          <div className="flex flex-col gap-0.5">
+            {SECTIONS.map(s=>(
+              <button key={s.id} onClick={()=>setActive(s.id)}
+                className="flex items-center gap-2 text-xs py-1.5 w-full text-left px-1 rounded-lg transition-colors duration-150"
+                style={{color:active===s.id?"#1A2B4A":"#94A3B8",fontWeight:active===s.id?600:400}}>
+                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{backgroundColor:active===s.id?"#1A2B4A":"#E2E8F0"}}/>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}

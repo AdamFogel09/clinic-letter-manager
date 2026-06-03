@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Loading demo letter…</title></head>
+<body>
+<script>
+const data = {
+  name: "Miriam Shapiro",
+  patId: "IL-318042",
+  bDay: "7", bMonth: "9", bYear: "1979",
+  gender: "Female",
+  email: "m.shapiro@gmail.com",
+  phone: "0527761234",
+  smoking: "Never smoker",
+  pets: "Cat (indoor)",
+  occupation: "Primary school teacher",
+  referredBy: "Dr. Yael Barak (GP)",
+  location: "Ramat Gan",
+  dateDay: "2", dateMonth: "6", dateYear: "2026",
+
+  diagEN: "1. Mild persistent asthma — partially controlled (GINA Step 2)\n2. Allergic rhinitis — perennial\n3. Gastro-oesophageal reflux disease (GORD)",
+  diagHE: "1. אסתמה קלה מתמשכת — שליטה חלקית (GINA Step 2)\n2. נזלת אלרגית — כל השנה\n3. מחלת ריפלוקס קיבה-ושט (GORD)",
+
+  sumEN: "Mrs. Miriam Shapiro is a 46-year-old primary school teacher referred for evaluation of poorly controlled asthma. She reports intermittent wheeze and chest tightness, predominantly at night and on exposure to cats and dusty classrooms. Symptoms have worsened over the past three months. She has a background of perennial allergic rhinitis and GORD, both contributing to her airway symptoms. Examination today reveals mild expiratory wheeze bilaterally. Spirometry confirms a mild obstructive pattern with significant bronchodilator reversibility. FeNO is elevated at 52 ppb, consistent with eosinophilic airway inflammation. A step-up in inhaled therapy is indicated.",
+  sumHE: "גברת מרים שפירו, בת 46, מורה לבית ספר יסודי, הופנתה להערכה בשל אסתמה שאינה מבוקרת כראוי. היא מדווחת על צפצופים ומתח בחזה לסירוגין, בעיקר בלילה ובמגע עם חתולים וכיתות מאובקות. הסימפטומים החמירו בשלושת החודשים האחרונים. היסטוריה של נזלת אלרגית ו-GORD, שניהם תורמים לתסמיני דרכי הנשימה שלה. הבדיקה מגלה צפצוף בנשיפה קל משני הצדדים. הספירומטריה מאשרת דפוס חסימתי קל עם הפיכות משמעותית לברונכודילאטור.",
+
+  medHistory: "Asthma (diagnosed age 22)\nAllergic rhinitis (lifelong)\nGORD (diagnosed 2019)\nCaesarean section (2008, 2012)",
+  famHistory: "Mother: asthma, allergic rhinitis\nFather: type 2 diabetes\nSibling: nil significant",
+
+  medications: [
+    "Salbutamol 100mcg MDI — 2 puffs as needed (rescue)",
+    "Beclomethasone 100mcg MDI — 2 puffs BD (currently irregular use)",
+    "Loratadine 10mg — once daily",
+    "Omeprazole 20mg — once daily (for GORD)",
+  ],
+  allergies: ["House dust mite — rhinitis, wheeze", "Cat dander — wheeze"],
+  vaccinations: ["Influenza (Nov 2025)", "COVID-19 bivalent booster (Dec 2025)"],
+
+  appearance: "Well, comfortable at rest, no distress",
+  clubbing: "None",
+  lymph: "None palpable",
+  bp: "118/74 mmHg",
+  pulse: "78",
+  rr: "17",
+  spo2: "97",
+  heartSounds: "Normal S1/S2, no murmurs",
+  heartOther: "",
+  lungAusc: "Mild expiratory wheeze bilaterally",
+  lungOther: "",
+  otherFindings: "Nasal mucosa pale and boggy. Post-nasal drip noted.",
+
+  testResults: {
+    ekg: { value: "Normal sinus rhythm", details: "" },
+    echo: "",
+    blood: {
+      date: "28/05/2026",
+      testType: "FBC, CRP, Total IgE, Eosinophil count, RAST (cat, HDM)",
+      details: "FBC: eosinophils 0.55 × 10⁹/L. Total IgE 410 IU/mL. RAST: cat dander 3+, HDM 2+. CRP 3 mg/L."
+    },
+    bronchWash:   { microbiology: "", cytology: "", cellCounts: "" },
+    bronchBiopsy: { pathology: "", microbiology: "" },
+    ebus:         { cytology: "" },
+    pleuralFluid: { cytology: "", microbiology: "", biochemistry: "", cellCounts: "" },
+    pleuralBiopsy:{ pathology: "", microbiology: "" },
+    otherTest: "FeNO 52 ppb — significantly elevated, consistent with type-2 eosinophilic airway inflammation.",
+    selected: { blood: true, otherTest: true, ekg: true },
+  },
+
+  planStepsEN: [
+    "Step up to Beclomethasone/Formoterol 100/6mcg MDI — 1–2 puffs BD (MART regimen).",
+    "Discontinue plain Beclomethasone MDI.",
+    "Continue Salbutamol PRN as rescue only; emphasise it is not a maintenance inhaler.",
+    "Intranasal Mometasone spray — 2 sprays each nostril once daily for rhinitis.",
+    "Continue Omeprazole; optimise GORD with head-of-bed elevation and dietary advice.",
+    "Allergen avoidance counselling: HEPA filter, mattress covers, minimise cat exposure.",
+    "Asthma action plan provided and reviewed.",
+    "Repeat spirometry and FeNO in 3 months to assess treatment response.",
+    "Consider allergen immunotherapy referral if insufficient improvement at next review.",
+  ],
+  planStepsHE: [
+    "מעבר לבקלומטזון/פורמוטרול 100/6 מק\"ג — 1–2 אקות פעמיים ביום (MART).",
+    "הפסקת בקלומטזון בנפרד.",
+    "המשך סלבוטמול לפי הצורך בלבד — לא משאף מתחזק.",
+    "מומטזון לתוך האף — 2 ריסוסים לכל נחיר פעם ביום לנזלת.",
+    "המשך אומפרזול; ייעוץ תזונתי ושינה בהרמת ראש המיטה ל-GORD.",
+    "ייעוץ הימנעות מאלרגנים: מסנן HEPA, כיסויי מזרן, הפחתת מגע עם חתול.",
+    "תוכנית פעולה לאסתמה הוסברה ונמסרה.",
+    "ספירומטריה ו-FeNO חוזרים בעוד 3 חודשים.",
+    "שקילת הפניה לאימונותרפיה אם אין שיפור מספק בביקור הבא.",
+  ],
+
+  lungRows: [
+    {
+      id: 1,
+      date: "02/06/2026",
+      fev1l: "2.41", fev1p: "79", fvcl: "3.08", fvcp: "88",
+      ratio: "78", fef: "58", tlc: "", rv: "", dlco: "", kco: "",
+      feno: "52", meta: "", walk: "", hwbmi: "163cm / 67kg / 25.2",
+    },
+  ],
+
+  pictures: [],
+  inhalerName: "Beclomethasone/Formoterol 100/6mcg MDI (Fostair) — MART regimen",
+  inhalerLink: "https://www.rightbreathe.com/?search=fostair",
+};
+
+localStorage.setItem("letter_preview", JSON.stringify(data));
+window.location.href = "/workspace/letter-preview";
+</script>
+<p style="font-family:sans-serif;color:#64748B;padding:40px">Loading demo letter…</p>
+</body>
+</html>
