@@ -411,6 +411,8 @@ export default function LetterEditorPage() {
   // Guards the auto-save effect from firing before the initial restore is complete
   const [initialized, setInitialized] = useState(false);
   const [isUpdateMode, setIsUpdateMode] = useState(false);
+  // Pending translate-overwrite confirmation: stores which section is being replaced
+  const [txConfirm, setTxConfirm] = useState<"diagnosis" | "summary" | "plan" | null>(null);
   const [sendingToAnat, setSendingToAnat] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [saveDraftError, setSaveDraftError] = useState("");
@@ -875,8 +877,9 @@ export default function LetterEditorPage() {
     return json;
   }
 
-  const translateDiagnosis = async () => {
-    if (!diagEN.trim()) return;
+  // ── Internal translate workers (called after any confirmation) ───────────────
+
+  const doTranslateDiagnosis = async () => {
     setDiagTx("loading"); setDiagTxErr("");
     try {
       const { translatedText } = await callTranslate({ sectionType: "diagnosis", text: diagEN });
@@ -888,8 +891,7 @@ export default function LetterEditorPage() {
     }
   };
 
-  const translateSummary = async () => {
-    if (!sumEN.trim()) return;
+  const doTranslateSummary = async () => {
     setSumTx("loading"); setSumTxErr("");
     try {
       const { translatedText } = await callTranslate({ sectionType: "summary", text: sumEN });
@@ -901,9 +903,7 @@ export default function LetterEditorPage() {
     }
   };
 
-  const translatePlan = async () => {
-    const filled = planStepsEN.filter(s => s.trim());
-    if (!filled.length) return;
+  const doTranslatePlan = async () => {
     setPlanTx("loading"); setPlanTxErr("");
     try {
       const { translatedSteps } = await callTranslate({ sectionType: "plan", planSteps: planStepsEN });
@@ -913,6 +913,34 @@ export default function LetterEditorPage() {
       setPlanTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
       setPlanTx("error");
     }
+  };
+
+  // ── Public translate handlers — guard existing Hebrew before overwriting ──────
+
+  const translateDiagnosis = () => {
+    if (!diagEN.trim()) return;
+    if (diagHE.trim()) { setTxConfirm("diagnosis"); return; }
+    doTranslateDiagnosis();
+  };
+
+  const translateSummary = () => {
+    if (!sumEN.trim()) return;
+    if (sumHE.trim()) { setTxConfirm("summary"); return; }
+    doTranslateSummary();
+  };
+
+  const translatePlan = () => {
+    if (!planStepsEN.some(s => s.trim())) return;
+    if (planStepsHE.some(s => s.trim())) { setTxConfirm("plan"); return; }
+    doTranslatePlan();
+  };
+
+  const confirmTranslate = () => {
+    const section = txConfirm;
+    setTxConfirm(null);
+    if (section === "diagnosis") doTranslateDiagnosis();
+    else if (section === "summary") doTranslateSummary();
+    else if (section === "plan") doTranslatePlan();
   };
 
   const addPlanStepEN    = () => setPlanStepsEN(s => [...s, ""]);
@@ -1070,12 +1098,19 @@ export default function LetterEditorPage() {
                   placeholder="Enter diagnosis in English" />
               </F>
               <div className="space-y-1.5">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <TranslateBtn
                     onClick={translateDiagnosis}
                     disabled={!diagEN.trim()}
                     loading={diagTx === "loading"}
+                    label={diagHE.trim() ? "Retranslate Diagnosis" : "Translate to Hebrew"}
                   />
+                  {diagHE.trim() && diagTx === "idle" && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                      style={{backgroundColor:"#FEF9C3", color:"#92400E"}}>
+                      Hebrew exists — will ask before replacing
+                    </span>
+                  )}
                   {!diagEN.trim() && diagTx === "idle" && <p className="text-xs" style={{color:"#CBD5E1"}}>Enter English diagnosis first.</p>}
                   {diagTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{diagTxErr}</p>}
                 </div>
@@ -1097,12 +1132,19 @@ export default function LetterEditorPage() {
                   placeholder="Enter clinical summary in English" />
               </F>
               <div className="space-y-1.5">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <TranslateBtn
                     onClick={translateSummary}
                     disabled={!sumEN.trim()}
                     loading={sumTx === "loading"}
+                    label={sumHE.trim() ? "Retranslate Summary" : "Translate to Hebrew"}
                   />
+                  {sumHE.trim() && sumTx === "idle" && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                      style={{backgroundColor:"#FEF9C3", color:"#92400E"}}>
+                      Hebrew exists — will ask before replacing
+                    </span>
+                  )}
                   {!sumEN.trim() && sumTx === "idle" && <p className="text-xs" style={{color:"#CBD5E1"}}>Enter English summary first.</p>}
                   {sumTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{sumTxErr}</p>}
                 </div>
@@ -1144,12 +1186,18 @@ export default function LetterEditorPage() {
 
             {/* Translate Plan button */}
             <div className="py-3 mb-2 space-y-1.5" style={{ borderTop: "1px solid #F4F6F9", borderBottom: "1px solid #F4F6F9" }}>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <TranslateBtn
                   onClick={translatePlan}
                   disabled={!planStepsEN.some(s => s.trim())}
                   loading={planTx === "loading"}
-                  label="Translate Plan to Hebrew" />
+                  label={planStepsHE.some(s => s.trim()) ? "Retranslate Plan" : "Translate Plan to Hebrew"} />
+                {planStepsHE.some(s => s.trim()) && planTx === "idle" && (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{backgroundColor:"#FEF9C3", color:"#92400E"}}>
+                    Hebrew exists — will ask before replacing
+                  </span>
+                )}
                 {!planStepsEN.some(s => s.trim()) && planTx === "idle" && (
                   <p className="text-xs" style={{color:"#CBD5E1"}}>Add English plan steps first.</p>
                 )}
@@ -1936,6 +1984,61 @@ export default function LetterEditorPage() {
           </div>
         </aside>
       </div>
+
+      {/* ── Hebrew overwrite confirmation modal ─────────────────────────────── */}
+      {txConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setTxConfirm(null); }}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full"
+            style={{ boxShadow: "0 8px 40px rgb(0 0 0/0.18), 0 2px 8px rgb(0 0 0/0.08)", border: "1px solid #E2E8F0" }}>
+
+            {/* Icon + title */}
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                style={{ backgroundColor: "#FEF2F2" }}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="#DC2626" strokeWidth={2}
+                  strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <path d="M7.13 2.14 1.44 12A1 1 0 0 0 2.3 13.5h11.4a1 1 0 0 0 .87-1.5L9.87 2.14a1 1 0 0 0-1.74 0z"/>
+                  <path d="M8 6v3M8 11h.01"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold mb-0.5" style={{ color: "#1A2B4A" }}>
+                  Replace Hebrew Translation?
+                </h3>
+                <p className="text-xs" style={{ color: "#64748B" }}>
+                  {txConfirm === "diagnosis" ? "Diagnosis" : txConfirm === "summary" ? "Summary" : "Plan"} section
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs leading-relaxed mb-4" style={{ color: "#475569" }}>
+              This section already contains Hebrew text — possibly Anat&apos;s reviewed and corrected translation.
+            </p>
+
+            <div className="px-3 py-2.5 rounded-xl mb-5 text-xs leading-relaxed font-medium"
+              style={{ backgroundColor: "#FEF9C3", color: "#854D0E" }}>
+              Replacing it will permanently overwrite the existing Hebrew text and any corrections Anat made.
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setTxConfirm(null)}
+                className="flex-1 py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px active:scale-95"
+                style={{ borderColor: "#E2E8F0", color: "#475569", backgroundColor: "white" }}>
+                Cancel
+              </button>
+              <button
+                onClick={confirmTranslate}
+                className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all duration-150 hover:-translate-y-px active:scale-95"
+                style={{ backgroundColor: "#DC2626", color: "#fff" }}>
+                Replace Hebrew
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
