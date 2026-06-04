@@ -410,6 +410,7 @@ export default function LetterEditorPage() {
 
   // Guards the auto-save effect from firing before the initial restore is complete
   const [initialized, setInitialized] = useState(false);
+  const [isUpdateMode, setIsUpdateMode] = useState(false);
   const [sendingToAnat, setSendingToAnat] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [saveDraftError, setSaveDraftError] = useState("");
@@ -559,6 +560,12 @@ export default function LetterEditorPage() {
           if (d.inhalerImageUrl) setInhalerImageUrl(d.inhalerImageUrl);
         } catch { /* malformed — ignore */ }
       }
+    }
+
+    // Detect update mode — set by All Letters → Create Update Letter
+    if (sessionStorage.getItem("is_update_mode") === "1") {
+      setIsUpdateMode(true);
+      sessionStorage.removeItem("is_update_mode");
     }
 
     setInitialized(true);
@@ -1821,19 +1828,51 @@ export default function LetterEditorPage() {
         <span className="text-xs px-3 py-1 rounded-full font-semibold" style={{backgroundColor:"#EBF3FB",color:"#4A90D9"}}>Draft</span>
       </div>
 
+      {/* Update mode banner */}
+      {isUpdateMode && (
+        <div className="flex items-center gap-3 px-5 py-2.5 flex-shrink-0"
+          style={{ backgroundColor: "#FFFBEB", borderBottom: "1px solid #FDE68A" }}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="#D97706" strokeWidth={1.75}
+            strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0">
+            <circle cx="8" cy="8" r="7"/>
+            <path d="M8 5v3M8 11h.01"/>
+          </svg>
+          <p className="text-xs font-semibold flex-1" style={{ color: "#92400E" }}>
+            Update Letter — new version based on a previous visit. Date set to today. Edit the sections you need to change.
+          </p>
+          <button onClick={() => setActive("patient")}
+            className="text-xs px-2.5 py-1 rounded-lg border flex-shrink-0 transition-all hover:-translate-y-px"
+            style={{ borderColor: "#D97706", color: "#92400E", backgroundColor: "white" }}>
+            Patient Details
+          </button>
+          <button onClick={() => setActive("clinical")}
+            className="text-xs px-2.5 py-1 rounded-lg border flex-shrink-0 transition-all hover:-translate-y-px"
+            style={{ borderColor: "#D97706", color: "#92400E", backgroundColor: "white" }}>
+            Clinical
+          </button>
+        </div>
+      )}
+
       {/* 3-panel */}
       <div className="flex flex-1">
         {/* Left section nav — sticky */}
         <aside className="w-44 flex-shrink-0 bg-white overflow-y-auto"
           style={{borderRight:"1px solid #E2E8F0", position:"sticky", top:0, height:"100vh"}}>
           <nav className="py-3 px-2 flex flex-col gap-0.5">
-            {SECTIONS.map(s=>(
-              <button key={s.id} onClick={()=>setActive(s.id)}
-                className="w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150"
-                style={{backgroundColor:active===s.id?"#1A2B4A":"transparent", color:active===s.id?"#ffffff":"#64748B", fontWeight:active===s.id?600:400}}>
-                {s.label}
-              </button>
-            ))}
+            {SECTIONS.map(s => {
+              const isUpdatePriority = isUpdateMode && ["patient","clinical"].includes(s.id) && active !== s.id;
+              return (
+                <button key={s.id} onClick={() => setActive(s.id)}
+                  className="w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-150 flex items-center justify-between"
+                  style={{ backgroundColor: active===s.id?"#1A2B4A":"transparent", color: active===s.id?"#ffffff":"#64748B", fontWeight: active===s.id?600:400 }}>
+                  <span>{s.label}</span>
+                  {isUpdatePriority && (
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: "#F59E0B" }} />
+                  )}
+                </button>
+              );
+            })}
           </nav>
         </aside>
 

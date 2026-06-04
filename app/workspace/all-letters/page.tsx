@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getAllPatients, patientToDraft, type Patient } from "@/lib/supabase/patients";
-import { getAllLetters } from "@/lib/supabase/letters";
+import { getAllLetters, duplicateLetter } from "@/lib/supabase/letters";
 import { type StoredLetter, type LetterStatus } from "@/lib/letterStore";
 
 const STATUS_COLORS: Record<LetterStatus, { bg: string; text: string }> = {
@@ -40,13 +40,16 @@ function formatDOB(day: string, month: string, year: string): string {
 // ── Patient card with expandable letter history ───────────────────────────────
 
 function PatientCard({
-  patient, letters, onStartNewLetter, onOpenLetter, onPreviewLetter,
+  patient, letters, duplicatingId,
+  onStartNewLetter, onOpenLetter, onPreviewLetter, onDuplicateLetter,
 }: {
   patient: Patient;
   letters: StoredLetter[];
-  onStartNewLetter: (p: Patient) => void;
-  onOpenLetter:     (l: StoredLetter) => void;
-  onPreviewLetter:  (l: StoredLetter) => void;
+  duplicatingId: string | null;
+  onStartNewLetter:   (p: Patient) => void;
+  onOpenLetter:       (l: StoredLetter) => void;
+  onPreviewLetter:    (l: StoredLetter) => void;
+  onDuplicateLetter:  (l: StoredLetter) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -112,9 +115,10 @@ function PatientCard({
             <div className="px-5 sm:px-6 py-3 flex flex-col gap-2">
               {letters.map((letter) => {
                 const c = STATUS_COLORS[letter.status] ?? { bg: "#F1F5F9", text: "#475569" };
+                const isDuplicating = duplicatingId === letter.id;
                 return (
                   <div key={letter.id}
-                    className="flex items-center justify-between gap-4 py-2.5 px-4 rounded-xl bg-white border"
+                    className="flex items-center justify-between gap-3 py-2.5 px-4 rounded-xl bg-white border"
                     style={{ borderColor: "#E2E8F0" }}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -127,11 +131,23 @@ function PatientCard({
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                       <button onClick={() => onPreviewLetter(letter)}
                         className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all"
                         style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}>
                         Preview
+                      </button>
+                      <button
+                        onClick={() => onDuplicateLetter(letter)}
+                        disabled={isDuplicating}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all"
+                        style={{
+                          borderColor: "#DDD6FE",
+                          color: isDuplicating ? "#A78BFA" : "#7C3AED",
+                          background: isDuplicating ? "#F5F3FF" : "#EDE9FE",
+                          cursor: isDuplicating ? "default" : "pointer",
+                        }}>
+                        {isDuplicating ? "Creating…" : "Create Update"}
                       </button>
                       <button onClick={() => onOpenLetter(letter)}
                         className="text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
@@ -154,10 +170,12 @@ function PatientCard({
 
 export default function AllLettersPage() {
   const router  = useRouter();
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [letters,  setLetters]  = useState<StoredLetter[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [search,   setSearch]   = useState("");
+  const [patients, setPatients]     = useState<Patient[]>([]);
+  const [letters,  setLetters]      = useState<StoredLetter[]>([]);
+  const [loading,  setLoading]      = useState(true);
+  const [search,   setSearch]       = useState("");
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [duplicateError, setDuplicateError] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -186,7 +204,6 @@ export default function AllLettersPage() {
     );
   }, [patients, search]);
 
-  // Match Supabase letters to a patient by patient_id_number or name
   const lettersForPatient = (p: Patient): StoredLetter[] =>
     letters.filter(
       (l) =>
@@ -207,6 +224,7 @@ export default function AllLettersPage() {
     sessionStorage.setItem("load_from_supabase", "1");
     sessionStorage.removeItem("draft_patient");
     sessionStorage.removeItem("letter_draft");
+    sessionStorage.removeItem("is_update_mode");
     localStorage.setItem("letter_current_id",          letter.id);
     localStorage.setItem("letter_current_supabase_id", letter.id);
     router.push("/workspace/letter-editor");
@@ -219,6 +237,28 @@ export default function AllLettersPage() {
     localStorage.setItem("letter_return_to", "all-letters");
     localStorage.removeItem("letter_export_mode");
     router.push("/workspace/letter-preview");
+  };
+
+  const handleDuplicate = async (letter: StoredLetter) => {
+    if (duplicatingId) return;
+    setDuplicatingId(letter.id);
+    setDuplicateError("");
+    try {
+      const supabase = createClient();
+      const { id: newId } = await duplicateLetter(supabase, letter.id);
+      sessionStorage.setItem("letter_supabase_id",   newId);
+      sessionStorage.setItem("load_from_supabase",   "1");
+      sessionStorage.setItem("is_update_mode",       "1");
+      sessionStorage.removeItem("draft_patient");
+      sessionStorage.removeItem("letter_draft");
+      localStorage.setItem("letter_current_supabase_id", newId);
+      router.push("/workspace/letter-editor");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create update letter.";
+      setDuplicateError(msg);
+      setDuplicatingId(null);
+      setTimeout(() => setDuplicateError(""), 5000);
+    }
   };
 
   return (
@@ -240,6 +280,14 @@ export default function AllLettersPage() {
       </div>
 
       <div className="px-6 sm:px-8">
+        {/* Duplicate error */}
+        {duplicateError && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl mb-4"
+            style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
+            <p className="text-xs font-semibold" style={{ color: "#DC2626" }}>{duplicateError}</p>
+          </div>
+        )}
+
         {/* Search */}
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-5 bg-white"
           style={{ border: "1px solid #E2E8F0", boxShadow: "0 1px 3px 0 rgb(0 0 0/0.04)" }}>
@@ -302,9 +350,11 @@ export default function AllLettersPage() {
                 key={patient.id}
                 patient={patient}
                 letters={lettersForPatient(patient)}
+                duplicatingId={duplicatingId}
                 onStartNewLetter={startNewLetter}
                 onOpenLetter={openInEditor}
                 onPreviewLetter={openPreview}
+                onDuplicateLetter={handleDuplicate}
               />
             ))}
           </div>

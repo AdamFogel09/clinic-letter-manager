@@ -381,6 +381,56 @@ export async function updateLetterFileUrls(
   if (error) console.error("[updateLetterFileUrls]", error.message);
 }
 
+/**
+ * Duplicate an existing letter into a new Draft for the same patient.
+ * Copies all clinical content; sets status = Draft and letter_date = today.
+ * The original letter is never modified.
+ */
+export async function duplicateLetter(
+  supabase: SupabaseClient,
+  sourceId: string
+): Promise<{ id: string }> {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error("Not authenticated.");
+
+  const source = await getLetterById(supabase, sourceId);
+  if (!source) throw new Error("Source letter not found.");
+  if (source.created_by !== user.id) throw new Error("Permission denied.");
+
+  const now = new Date();
+  const todayDate = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+
+  const { data, error } = await supabase
+    .from("letters")
+    .insert({
+      patient_id:          source.patient_id,
+      created_by:          user.id,
+      status:              "Draft" as LetterStatus,
+      letter_date:         todayDate,
+      diagnosis_english:   source.diagnosis_english   || "",
+      diagnosis_hebrew:    source.diagnosis_hebrew    || "",
+      summary_english:     source.summary_english     || "",
+      summary_hebrew:      source.summary_hebrew      || "",
+      plan_english:        source.plan_english        || [],
+      plan_hebrew:         source.plan_hebrew         || [],
+      medical_history:     source.medical_history     || "",
+      family_history:      source.family_history      || "",
+      medications:         source.medications         || [],
+      allergies:           source.allergies           || [],
+      vaccinations:        source.vaccinations        || [],
+      examination:         source.examination         || {},
+      test_results:        source.test_results        || {},
+      lung_function_tests: source.lung_function_tests || [],
+      pictures:            source.pictures            || [],
+      inhaler:             source.inhaler             || { name: "", link: "" },
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) throw new Error(error?.message || "Failed to create update letter.");
+  return { id: data.id };
+}
+
 /** Count letters per status for dashboard cards. Scoped to the logged-in user. */
 export async function getLetterCounts(
   supabase: SupabaseClient
