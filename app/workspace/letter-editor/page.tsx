@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, updateLetterStatus, getLetterById, supabaseLetterToStoredLetter } from "@/lib/supabase/letters";
+import { saveLetter as saveLetterToSupabase, updateLetterStatus, getLetterById, supabaseLetterToStoredLetter, type SummarySection, sectionsToSumEN, sectionsToSumHE } from "@/lib/supabase/letters";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -326,12 +326,16 @@ const INHALER_CATALOG = [
   { name: "Glycopyrronium 44mcg Breezhaler (Seebri)", link: "https://www.rightbreathe.com/?search=glycopyrronium" },
 ];
 
-// ─── Demo AI translation data ────────────────────────────────────────────────
-// Real AI translation later must not send patient name, ID, phone, email, or
-// other identifying details. Only selected medical text and patient gender
-// should be sent. The translation function signature will be:
-//   translateSection(text: string, section: "diagnosis"|"summary"|"plan", gender: string)
+// ─── Summary section helpers ──────────────────────────────────────────────────
 
+function newSectionId(): string {
+  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+}
+
+function todaySectionDate(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -354,7 +358,9 @@ export default function LetterEditorPage() {
 
   // Diagnosis / Summary / Plan
   const [diagEN, setDiagEN] = useState(""); const [diagHE, setDiagHE] = useState("");
-  const [sumEN, setSumEN] = useState(""); const [sumHE, setSumHE] = useState("");
+  const [summarySections, setSummarySections] = useState<SummarySection[]>([
+    { id: newSectionId(), date: todaySectionDate(), textEN: "", textHE: "", source: "new" },
+  ]);
   const [planStepsEN, setPlanStepsEN] = useState<string[]>([""]);
   const [planStepsHE, setPlanStepsHE] = useState<string[]>([""]);
 
@@ -399,11 +405,11 @@ export default function LetterEditorPage() {
   const [inhalerSearching, setInhalerSearching] = useState(false);
   const [inhalerSearchError, setInhalerSearchError] = useState("");
 
-  // Translation loading / error states (one per bilingual section)
+  // Translation loading / error states
   const [diagTx,    setDiagTx]    = useState<"idle"|"loading"|"error">("idle");
   const [diagTxErr, setDiagTxErr] = useState("");
-  const [sumTx,     setSumTx]     = useState<"idle"|"loading"|"error">("idle");
-  const [sumTxErr,  setSumTxErr]  = useState("");
+  const [translatingSection,  setTranslatingSection]  = useState<string | null>(null);
+  const [sectionTxErrors,     setSectionTxErrors]     = useState<Record<string, string>>({});
   const [planTx,    setPlanTx]    = useState<"idle"|"loading"|"error">("idle");
   const [planTxErr, setPlanTxErr] = useState("");
   const inhalerRef = useRef<HTMLDivElement>(null);
@@ -411,8 +417,13 @@ export default function LetterEditorPage() {
   // Guards the auto-save effect from firing before the initial restore is complete
   const [initialized, setInitialized] = useState(false);
   const [isUpdateMode, setIsUpdateMode] = useState(false);
-  // Pending translate-overwrite confirmation: stores which section is being replaced
-  const [txConfirm, setTxConfirm] = useState<"diagnosis" | "summary" | "plan" | null>(null);
+  // Pending translate-overwrite confirmation
+  const [txConfirm, setTxConfirm] = useState<
+    | { type: "diagnosis" }
+    | { type: "summary"; sectionId: string }
+    | { type: "plan" }
+    | null
+  >(null);
   const [sendingToAnat, setSendingToAnat] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [saveDraftError, setSaveDraftError] = useState("");
@@ -505,8 +516,19 @@ export default function LetterEditorPage() {
           if (d.dateYear)     setDateYear(d.dateYear);
           if (d.diagEN)       setDiagEN(d.diagEN);
           if (d.diagHE)       setDiagHE(d.diagHE);
-          if (d.sumEN)        setSumEN(d.sumEN);
-          if (d.sumHE)        setSumHE(d.sumHE);
+          // Restore summary sections — fall back to old flat fields for backward compat
+          if (d.summarySections?.length) {
+            setSummarySections(d.summarySections as SummarySection[]);
+          } else if (d.sumEN || d.sumHE) {
+            const lettDate = [d.dateDay, d.dateMonth, d.dateYear].filter(Boolean).join("/");
+            setSummarySections([{
+              id: newSectionId(),
+              date: lettDate || "",
+              textEN: (d.sumEN as string) || "",
+              textHE: (d.sumHE as string) || "",
+              source: "copied",
+            }]);
+          }
           if (d.planStepsEN?.length) setPlanStepsEN(d.planStepsEN);
           else if (d.planEN)        setPlanStepsEN([d.planEN]); // backward compat
           if (d.planStepsHE?.length) setPlanStepsHE(d.planStepsHE);
@@ -584,7 +606,11 @@ export default function LetterEditorPage() {
       name, patId, bDay, bMonth, bYear, gender, email, phone,
       smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE, sumEN, sumHE, planStepsEN, planStepsHE,
+      diagEN, diagHE,
+      summarySections,
+      sumEN: sectionsToSumEN(summarySections),
+      sumHE: sectionsToSumHE(summarySections),
+      planStepsEN, planStepsHE,
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
@@ -597,7 +623,7 @@ export default function LetterEditorPage() {
     name, patId, bDay, bMonth, bYear, gender, email, phone,
     smoking, pets, occupation, referredBy, location,
     dateDay, dateMonth, dateYear,
-    diagEN, diagHE, sumEN, sumHE, planStepsEN, planStepsHE,
+    diagEN, diagHE, summarySections, planStepsEN, planStepsHE,
     medHistory, famHistory,
     medications, allergies, vaccinations,
     appearance, clubbing, lymph, bp, pulse, rr, spo2,
@@ -688,11 +714,14 @@ export default function LetterEditorPage() {
     // Save/update the draft to Supabase before opening the preview so the preview shows the latest data.
     try { await handleSaveDraft(); } catch { /* don't block preview on save failure */ }
 
+    const _sumEN = sectionsToSumEN(summarySections);
+    const _sumHE = sectionsToSumHE(summarySections);
     localStorage.setItem("letter_preview", JSON.stringify({
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE, sumEN, sumHE,
+      diagEN, diagHE, sumEN: _sumEN, sumHE: _sumHE,
+      summarySections,
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
@@ -720,7 +749,10 @@ export default function LetterEditorPage() {
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE, sumEN, sumHE,
+      diagEN, diagHE,
+      summarySections,
+      sumEN: sectionsToSumEN(summarySections),
+      sumHE: sectionsToSumHE(summarySections),
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
@@ -778,7 +810,10 @@ export default function LetterEditorPage() {
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE, sumEN, sumHE,
+      diagEN, diagHE,
+      summarySections,
+      sumEN: sectionsToSumEN(summarySections),
+      sumHE: sectionsToSumHE(summarySections),
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
@@ -877,6 +912,28 @@ export default function LetterEditorPage() {
     return json;
   }
 
+  // ── Summary section handlers ──────────────────────────────────────────────────
+
+  const addSummarySection = () => {
+    setSummarySections(prev => [
+      ...prev,
+      { id: newSectionId(), date: todaySectionDate(), textEN: "", textHE: "", source: "new" },
+    ]);
+  };
+
+  const updateSummarySection = (id: string, updates: Partial<SummarySection>) => {
+    setSummarySections(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      const becameEdited =
+        updates.textEN !== undefined && updates.textEN !== s.textEN && s.source === "copied";
+      return { ...s, ...updates, source: becameEdited ? "edited" : s.source };
+    }));
+  };
+
+  const removeSummarySection = (id: string) => {
+    setSummarySections(prev => prev.filter(s => s.id !== id));
+  };
+
   // ── Internal translate workers (called after any confirmation) ───────────────
 
   const doTranslateDiagnosis = async () => {
@@ -888,18 +945,6 @@ export default function LetterEditorPage() {
     } catch (e) {
       setDiagTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
       setDiagTx("error");
-    }
-  };
-
-  const doTranslateSummary = async () => {
-    setSumTx("loading"); setSumTxErr("");
-    try {
-      const { translatedText } = await callTranslate({ sectionType: "summary", text: sumEN });
-      setSumHE(translatedText);
-      setSumTx("idle");
-    } catch (e) {
-      setSumTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
-      setSumTx("error");
     }
   };
 
@@ -915,32 +960,52 @@ export default function LetterEditorPage() {
     }
   };
 
+  const doTranslateSummarySection = async (id: string) => {
+    const section = summarySections.find(s => s.id === id);
+    if (!section?.textEN.trim()) return;
+    setTranslatingSection(id);
+    setSectionTxErrors(prev => ({ ...prev, [id]: "" }));
+    try {
+      const { translatedText } = await callTranslate({ sectionType: "summary", text: section.textEN });
+      setSummarySections(prev => prev.map(s => s.id === id ? { ...s, textHE: translatedText } : s));
+    } catch (e) {
+      setSectionTxErrors(prev => ({
+        ...prev,
+        [id]: e instanceof Error ? e.message : "Translation failed. Please try again.",
+      }));
+    } finally {
+      setTranslatingSection(null);
+    }
+  };
+
   // ── Public translate handlers — guard existing Hebrew before overwriting ──────
 
   const translateDiagnosis = () => {
     if (!diagEN.trim()) return;
-    if (diagHE.trim()) { setTxConfirm("diagnosis"); return; }
+    if (diagHE.trim()) { setTxConfirm({ type: "diagnosis" }); return; }
     doTranslateDiagnosis();
   };
 
-  const translateSummary = () => {
-    if (!sumEN.trim()) return;
-    if (sumHE.trim()) { setTxConfirm("summary"); return; }
-    doTranslateSummary();
+  const translateSummarySection = (id: string) => {
+    const section = summarySections.find(s => s.id === id);
+    if (!section?.textEN.trim()) return;
+    if (section.textHE.trim()) { setTxConfirm({ type: "summary", sectionId: id }); return; }
+    doTranslateSummarySection(id);
   };
 
   const translatePlan = () => {
     if (!planStepsEN.some(s => s.trim())) return;
-    if (planStepsHE.some(s => s.trim())) { setTxConfirm("plan"); return; }
+    if (planStepsHE.some(s => s.trim())) { setTxConfirm({ type: "plan" }); return; }
     doTranslatePlan();
   };
 
   const confirmTranslate = () => {
-    const section = txConfirm;
+    const confirm = txConfirm;
     setTxConfirm(null);
-    if (section === "diagnosis") doTranslateDiagnosis();
-    else if (section === "summary") doTranslateSummary();
-    else if (section === "plan") doTranslatePlan();
+    if (!confirm) return;
+    if (confirm.type === "diagnosis") doTranslateDiagnosis();
+    else if (confirm.type === "summary") doTranslateSummarySection(confirm.sectionId);
+    else if (confirm.type === "plan") doTranslatePlan();
   };
 
   const addPlanStepEN    = () => setPlanStepsEN(s => [...s, ""]);
@@ -1126,34 +1191,86 @@ export default function LetterEditorPage() {
           {/* ── Summary ── */}
           <SectionCard title="Summary" titleHe="סיכום">
             <div className="space-y-4">
-              <F label="Summary (English)">
-                <textarea className={ta} style={is} rows={6} value={sumEN}
-                  onChange={e => { setSumEN(e.target.value); setSumTx("idle"); setSumTxErr(""); }}
-                  placeholder="Enter clinical summary in English" />
-              </F>
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <TranslateBtn
-                    onClick={translateSummary}
-                    disabled={!sumEN.trim()}
-                    loading={sumTx === "loading"}
-                    label={sumHE.trim() ? "Retranslate Summary" : "Translate to Hebrew"}
-                  />
-                  {sumHE.trim() && sumTx === "idle" && (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                      style={{backgroundColor:"#FEF9C3", color:"#92400E"}}>
-                      Hebrew exists — will ask before replacing
-                    </span>
-                  )}
-                  {!sumEN.trim() && sumTx === "idle" && <p className="text-xs" style={{color:"#CBD5E1"}}>Enter English summary first.</p>}
-                  {sumTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{sumTxErr}</p>}
-                </div>
-                <p className="text-xs" style={{color:"#94A3B8"}}>AI translation is a draft and must be reviewed before finalising.</p>
-              </div>
-              <F label="סיכום — Summary (Hebrew)">
-                <textarea className={ta} style={{...is, direction:"rtl", textAlign:"right"}} rows={6} value={sumHE}
-                  onChange={e => setSumHE(e.target.value)} placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
-              </F>
+              {summarySections.map((section, idx) => {
+                const srcColor = section.source === "new"
+                  ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
+                  : section.source === "edited"
+                    ? { bg: "#FFFBEB", border: "#FDE68A", badge: "#FEF3C7", badgeText: "#D97706", label: "Edited" }
+                    : { bg: "white",   border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#64748B", label: "Copied" };
+                return (
+                  <div key={section.id} className="rounded-2xl p-4 space-y-3"
+                    style={{ border: `1px solid ${srcColor.border}`, backgroundColor: srcColor.bg }}>
+
+                    {/* Section header: date + badge + remove */}
+                    <div className="flex items-center gap-3 pb-3" style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <div className="flex items-center gap-2 flex-1 flex-wrap">
+                        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#64748B" }}>
+                          Review Date
+                        </span>
+                        <SplitDateInput
+                          value={section.date}
+                          onChange={date => updateSummarySection(section.id, { date })}
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: srcColor.badge, color: srcColor.badgeText }}>
+                        {srcColor.label}
+                      </span>
+                      {summarySections.length > 1 && (
+                        <button type="button" onClick={() => removeSummarySection(section.id)}
+                          className="text-xs flex-shrink-0 transition-colors duration-150"
+                          style={{ color: "#CBD5E1" }}
+                          onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                          onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    {/* English */}
+                    <F label={`Summary (English)${idx > 0 ? ` — visit ${idx + 1}` : ""}`}>
+                      <textarea className={ta} style={is} rows={4}
+                        value={section.textEN}
+                        onChange={e => updateSummarySection(section.id, { textEN: e.target.value })}
+                        placeholder="Enter summary for this review date" />
+                    </F>
+
+                    {/* Translate button */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <TranslateBtn
+                        onClick={() => translateSummarySection(section.id)}
+                        disabled={!section.textEN.trim()}
+                        loading={translatingSection === section.id}
+                        label={section.textHE.trim() ? "Retranslate Section" : "Translate Section"}
+                      />
+                      {section.textHE.trim() && translatingSection !== section.id && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
+                          Hebrew exists — will ask before replacing
+                        </span>
+                      )}
+                      {sectionTxErrors[section.id] && (
+                        <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{sectionTxErrors[section.id]}</p>
+                      )}
+                    </div>
+                    <p className="text-xs" style={{ color: "#94A3B8" }}>AI translation is a draft — review before finalising.</p>
+
+                    {/* Hebrew */}
+                    <F label="סיכום — Summary (Hebrew)">
+                      <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
+                        value={section.textHE}
+                        onChange={e => updateSummarySection(section.id, { textHE: e.target.value })}
+                        placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
+                    </F>
+                  </div>
+                );
+              })}
+
+              <button type="button" onClick={addSummarySection}
+                className="w-full py-2.5 rounded-xl border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
+                style={{ borderColor: "#DDD6FE", color: "#7C3AED", backgroundColor: "#F5F3FF" }}>
+                + Add Summary Section for New Visit
+              </button>
             </div>
           </SectionCard>
 
@@ -2008,18 +2125,22 @@ export default function LetterEditorPage() {
                   Replace Hebrew Translation?
                 </h3>
                 <p className="text-xs" style={{ color: "#64748B" }}>
-                  {txConfirm === "diagnosis" ? "Diagnosis" : txConfirm === "summary" ? "Summary" : "Plan"} section
+                  {txConfirm?.type === "diagnosis" ? "Diagnosis" : txConfirm?.type === "plan" ? "Plan" : "Summary"} section
                 </p>
               </div>
             </div>
 
             <p className="text-xs leading-relaxed mb-4" style={{ color: "#475569" }}>
-              This section already contains Hebrew text — possibly Anat&apos;s reviewed and corrected translation.
+              The <strong style={{ color: "#1A2B4A" }}>
+                {txConfirm?.type === "diagnosis" ? "Diagnosis" :
+                 txConfirm?.type === "plan"      ? "Plan" :
+                 "Summary"}
+              </strong> section already contains Hebrew text — possibly Anat&apos;s reviewed and corrected translation.
             </p>
 
             <div className="px-3 py-2.5 rounded-xl mb-5 text-xs leading-relaxed font-medium"
               style={{ backgroundColor: "#FEF9C3", color: "#854D0E" }}>
-              Replacing it will permanently overwrite the existing Hebrew text and any corrections Anat made.
+              Replacing it will permanently overwrite the existing Hebrew text and any corrections Anat made. This cannot be undone.
             </div>
 
             <div className="flex gap-3">

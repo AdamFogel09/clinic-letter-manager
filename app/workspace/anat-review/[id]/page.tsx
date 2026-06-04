@@ -11,6 +11,8 @@ import {
   getLetterById,
   updateLetterHebrew,
   updateLetterStatus,
+  type SummarySection,
+  sectionsToSumHE,
 } from "@/lib/supabase/letters";
 import {
   getLetter,
@@ -58,11 +60,10 @@ export default function AnatReviewLetterPage() {
 
   const [notFound,  setNotFound]  = useState(false);
   const [loading,   setLoading]   = useState(true);
-  const [diagHE,    setDiagHE]    = useState("");
-  const [sumHE,     setSumHE]     = useState("");
-  const [planHE,    setPlanHE]    = useState<string[]>([""]);
-  const [diagEN,    setDiagEN]    = useState("");
-  const [sumEN,     setSumEN]     = useState("");
+  const [diagHE,          setDiagHE]          = useState("");
+  const [summarySections, setSummarySections] = useState<SummarySection[]>([]);
+  const [planHE,          setPlanHE]          = useState<string[]>([""]);
+  const [diagEN,          setDiagEN]          = useState("");
   const [planEN,    setPlanEN]    = useState<string[]>([]);
   const [gender,    setGender]    = useState("");
   const [patName,   setPatName]   = useState("");
@@ -86,12 +87,22 @@ export default function AnatReviewLetterPage() {
         setLetterDate(letter.letter_date || "");
         setGender(p?.gender              || "");
         setDiagEN(letter.diagnosis_english || "");
-        setSumEN(letter.summary_english  || "");
         setPlanEN((letter.plan_english || []).filter(Boolean));
         setDiagHE(letter.diagnosis_hebrew || "");
-        setSumHE(letter.summary_hebrew   || "");
         const steps = (letter.plan_hebrew || []).filter((s) => typeof s === "string");
         setPlanHE(steps.length > 0 ? steps : [""]);
+        // Load summary sections (fall back to converting old flat fields)
+        if (letter.summary_sections?.length) {
+          setSummarySections(letter.summary_sections);
+        } else if (letter.summary_english || letter.summary_hebrew) {
+          setSummarySections([{
+            id: `s-${id.slice(0, 8)}`,
+            date: letter.letter_date || "",
+            textEN: letter.summary_english || "",
+            textHE: letter.summary_hebrew  || "",
+            source: "copied",
+          }]);
+        }
       } else {
         // Fallback to localStorage
         const local = getLetter(id);
@@ -102,29 +113,38 @@ export default function AnatReviewLetterPage() {
         setLetterDate(local.letterDate || "");
         setGender((d.gender  as string) || "");
         setDiagEN((d.diagEN  as string) || "");
-        setSumEN ((d.sumEN   as string) || "");
         setPlanEN(Array.isArray(d.planStepsEN)
           ? (d.planStepsEN as string[]).filter(Boolean) : []);
         setDiagHE((d.diagHE  as string) || "");
-        setSumHE ((d.sumHE   as string) || "");
         const steps = Array.isArray(d.planStepsHE)
           ? (d.planStepsHE as string[]).filter((s) => typeof s === "string") : [];
         setPlanHE(steps.length > 0 ? steps : [""]);
+        if (Array.isArray(d.summarySections) && d.summarySections.length) {
+          setSummarySections(d.summarySections as SummarySection[]);
+        } else if (d.sumEN || d.sumHE) {
+          setSummarySections([{
+            id: `s-local-${id.slice(0, 8)}`,
+            date: local.letterDate || "",
+            textEN: (d.sumEN as string) || "",
+            textHE: (d.sumHE as string) || "",
+            source: "copied",
+          }]);
+        }
       }
       setLoading(false);
     };
     load();
   }, [id]);
 
+  const sumHE = sectionsToSumHE(summarySections);
+
   const collect = () => ({ diagHE, sumHE, planHE });
 
   const handleSaveDraft = async () => {
     setSaving(true);
     const supabase = createClient();
-    // Save Hebrew to Supabase (primary)
-    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE });
-    // localStorage fallback
-    updateLetterData(id, { diagHE, sumHE, planStepsHE: planHE });
+    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections });
+    updateLetterData(id, { diagHE, sumHE, summarySections, planStepsHE: planHE });
     setSaving(false);
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
@@ -134,7 +154,7 @@ export default function AnatReviewLetterPage() {
     setFinishing(true);
     const supabase = createClient();
     // Save Hebrew + update status in Supabase
-    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE });
+    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections });
     await updateLetterStatus(supabase, id, "Reviewed", {
       reviewedAt: new Date().toISOString(),
     });
@@ -165,6 +185,9 @@ export default function AnatReviewLetterPage() {
         diagHE: updated.diagnosis_hebrew  || "",
         sumEN:  updated.summary_english   || "",
         sumHE:  updated.summary_hebrew    || "",
+        summarySections: updated.summary_sections?.length
+          ? updated.summary_sections
+          : summarySections,
         planStepsEN: updated.plan_english || [],
         planStepsHE: updated.plan_hebrew  || [],
         medHistory:  updated.medical_history || "",
@@ -312,20 +335,68 @@ export default function AnatReviewLetterPage() {
               fontSize: 16, lineHeight: 1.7 }} />
         </EditSection>
 
-        {/* Hebrew Summary */}
-        <EditSection title="Summary" titleHe="סיכום"
-          refContent={sumEN
-            ? <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>{sumEN}</p>
-            : <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No English summary entered.</p>}>
-          <label className="block text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "#64748B" }}>
-            Hebrew Summary / סיכום
-          </label>
-          <textarea dir="rtl" rows={7} value={sumHE} onChange={(e) => setSumHE(e.target.value)}
-            placeholder="הכנס סיכום בעברית"
-            className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
-            style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right",
-              fontSize: 16, lineHeight: 1.7 }} />
-        </EditSection>
+        {/* Hebrew Summary — per dated section */}
+        <div className="bg-white rounded-2xl border p-5 mb-4"
+          style={{ borderColor: "#E2E8F0", boxShadow: "0 1px 3px 0 rgb(0 0 0/0.05)" }}>
+          <div className="flex items-baseline justify-between pb-3 mb-4"
+            style={{ borderBottom: "2px solid #1A2B4A" }}>
+            <h3 className="text-base font-bold" style={{ color: "#1A2B4A" }}>Summary</h3>
+            <span className="text-base font-semibold" style={{ color: "#1A2B4A" }}>סיכום</span>
+          </div>
+
+          {summarySections.length === 0 && (
+            <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No summary sections yet.</p>
+          )}
+
+          <div className="space-y-5">
+            {summarySections.map((section, idx) => (
+              <div key={section.id} className="rounded-xl p-4 space-y-3"
+                style={{ border: "1px solid #E2E8F0", backgroundColor: section.source === "new" ? "#F5F3FF" : "#FAFBFC" }}>
+
+                {/* Date header */}
+                <div className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
+                  <span className="text-xs font-semibold" style={{ color: "#94A3B8" }}>
+                    {idx === 0 ? "Review date:" : `Visit ${idx + 1}:`}
+                  </span>
+                  <span className="text-xs font-bold" style={{ color: "#1A2B4A" }}>
+                    {section.date || "—"}
+                  </span>
+                  {section.source === "new" && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto"
+                      style={{ backgroundColor: "#EDE9FE", color: "#7C3AED" }}>New</span>
+                  )}
+                </div>
+
+                {/* English reference */}
+                {section.textEN.trim() && (
+                  <div className="rounded-xl px-4 py-3"
+                    style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-2"
+                      style={{ color: "#94A3B8" }}>English Reference</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
+                      {section.textEN}
+                    </p>
+                  </div>
+                )}
+
+                {/* Hebrew textarea */}
+                <label className="block text-xs font-semibold uppercase tracking-wide"
+                  style={{ color: "#64748B" }}>Hebrew / עברית</label>
+                <textarea
+                  dir="rtl" rows={section.source === "new" ? 5 : 6}
+                  value={section.textHE}
+                  onChange={e => setSummarySections(prev => prev.map(s =>
+                    s.id === section.id ? { ...s, textHE: e.target.value } : s
+                  ))}
+                  placeholder="הכנס סיכום בעברית"
+                  className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
+                  style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl",
+                    textAlign: "right", fontSize: 16, lineHeight: 1.7 }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Hebrew Plan */}
         <EditSection title="Plan" titleHe="תכנית"

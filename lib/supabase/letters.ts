@@ -6,6 +6,29 @@ import type { StoredLetter, LetterStatus } from "@/lib/letterStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** One dated entry in the Summary section. Stored as JSONB in `summary_sections`. */
+export interface SummarySection {
+  id: string;
+  date: string;                          // "DD/MM/YYYY"
+  textEN: string;
+  textHE: string;
+  source: "copied" | "new" | "edited";
+}
+
+export function sectionsToSumEN(sections: SummarySection[]): string {
+  return sections
+    .filter(s => s.textEN.trim())
+    .map(s => s.date ? `Review date: ${s.date}\n${s.textEN}` : s.textEN)
+    .join("\n\n");
+}
+
+export function sectionsToSumHE(sections: SummarySection[]): string {
+  return sections
+    .filter(s => s.textHE.trim())
+    .map(s => s.date ? `תאריך ביקורת: ${s.date}\n${s.textHE}` : s.textHE)
+    .join("\n\n");
+}
+
 export interface SupabaseLetter {
   id: string;
   created_at: string;
@@ -36,6 +59,7 @@ export interface SupabaseLetter {
   sent_to_patient_at: string | null;
   editable_docx_url: string | null;
   final_pdf_url: string | null;
+  summary_sections: SummarySection[] | null;
   // Populated by Supabase join: .select("*, patients(*)")
   patients?: {
     full_name: string;
@@ -123,6 +147,18 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
       diagHE:      letter.diagnosis_hebrew  || "",
       sumEN:       letter.summary_english   || "",
       sumHE:       letter.summary_hebrew    || "",
+      // Structured summary sections — fall back to converting old flat fields
+      summarySections: letter.summary_sections?.length
+        ? letter.summary_sections
+        : (letter.summary_english || letter.summary_hebrew)
+          ? ([{
+              id: `s-${letter.id.slice(0, 8)}`,
+              date: letter.letter_date || "",
+              textEN: letter.summary_english || "",
+              textHE: letter.summary_hebrew  || "",
+              source: "copied",
+            }] as SummarySection[])
+          : [],
       planStepsEN: letter.plan_english?.length ? letter.plan_english : [""],
       planStepsHE: letter.plan_hebrew?.length  ? letter.plan_hebrew  : [""],
       medHistory:  letter.medical_history   || "",
@@ -157,6 +193,11 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
 // ─── Map editor state to Supabase column payload ──────────────────────────────
 
 function editorDataToColumns(d: Record<string, unknown>, patientId?: string, status?: LetterStatus, date?: string) {
+  // Compute flat summary fields from sections (backward compat) or fall back to old flat fields
+  const sections = (d.summarySections as SummarySection[] | undefined) || [];
+  const sumEN = sections.length > 0 ? sectionsToSumEN(sections) : ((d.sumEN as string) || "");
+  const sumHE = sections.length > 0 ? sectionsToSumHE(sections) : ((d.sumHE as string) || "");
+
   return {
     ...(patientId ? { patient_id: patientId } : {}),
     ...(status    ? { status }               : {}),
@@ -164,8 +205,9 @@ function editorDataToColumns(d: Record<string, unknown>, patientId?: string, sta
       ? `${d.dateDay}/${d.dateMonth}/${d.dateYear}` : ""),
     diagnosis_english:   (d.diagEN      as string) || "",
     diagnosis_hebrew:    (d.diagHE      as string) || "",
-    summary_english:     (d.sumEN       as string) || "",
-    summary_hebrew:      (d.sumHE       as string) || "",
+    summary_english:     sumEN,
+    summary_hebrew:      sumHE,
+    summary_sections:    sections,
     plan_english:        (d.planStepsEN as string[]) || [],
     plan_hebrew:         (d.planStepsHE as string[]) || [],
     medical_history:     (d.medHistory  as string) || "",
@@ -346,19 +388,29 @@ export async function updateLetterStatus(
   }
 }
 
-/** Anat saves only the Hebrew translation fields. */
+/** Anat saves only the Hebrew translation fields (and summary sections). */
 export async function updateLetterHebrew(
   supabase: SupabaseClient,
   id: string,
-  hebrew: { diagHE: string; sumHE: string; planHE: string[] }
+  hebrew: {
+    diagHE: string;
+    sumHE: string;
+    planHE: string[];
+    summarySections?: SummarySection[];
+  }
 ): Promise<void> {
+  const payload: Record<string, unknown> = {
+    diagnosis_hebrew: hebrew.diagHE,
+    summary_hebrew:   hebrew.sumHE,
+    plan_hebrew:      hebrew.planHE,
+  };
+  if (hebrew.summarySections) {
+    payload.summary_sections = hebrew.summarySections;
+    payload.summary_hebrew   = sectionsToSumHE(hebrew.summarySections) || hebrew.sumHE;
+  }
   const { error } = await supabase
     .from("letters")
-    .update({
-      diagnosis_hebrew: hebrew.diagHE,
-      summary_hebrew:   hebrew.sumHE,
-      plan_hebrew:      hebrew.planHE,
-    })
+    .update(payload)
     .eq("id", id);
   if (error) console.error("Supabase Hebrew update error:", error);
 }
@@ -400,6 +452,19 @@ export async function duplicateLetter(
   const now = new Date();
   const todayDate = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
 
+  // Build summary sections: mark previous ones as copied, add a new empty section for today
+  const prevSections: SummarySection[] = source.summary_sections?.length
+    ? source.summary_sections.map(s => ({ ...s, source: "copied" as const }))
+    : (source.summary_english || source.summary_hebrew)
+      ? [{ id: `s-${source.id.slice(0, 8)}`, date: source.letter_date || "", textEN: source.summary_english || "", textHE: source.summary_hebrew || "", source: "copied" as const }]
+      : [];
+  const newSections: SummarySection[] = [
+    ...prevSections,
+    { id: `s-new-${Date.now().toString(36)}`, date: todayDate, textEN: "", textHE: "", source: "new" },
+  ];
+  const newSumEN = sectionsToSumEN(newSections);
+  const newSumHE = sectionsToSumHE(newSections);
+
   const { data, error } = await supabase
     .from("letters")
     .insert({
@@ -409,8 +474,9 @@ export async function duplicateLetter(
       letter_date:         todayDate,
       diagnosis_english:   source.diagnosis_english   || "",
       diagnosis_hebrew:    source.diagnosis_hebrew    || "",
-      summary_english:     source.summary_english     || "",
-      summary_hebrew:      source.summary_hebrew      || "",
+      summary_english:     newSumEN,
+      summary_hebrew:      newSumHE,
+      summary_sections:    newSections,
       plan_english:        source.plan_english        || [],
       plan_hebrew:         source.plan_hebrew         || [],
       medical_history:     source.medical_history     || "",
