@@ -22,14 +22,14 @@ function arr(v: unknown): string[] {
   return Array.isArray(v) ? (v as unknown[]).map((x) => s(x)).filter(Boolean) : [];
 }
 
-function gap(size = 60): Paragraph {
+function gap(size = 50): Paragraph {
   return new Paragraph({ children: [], spacing: { after: size } });
 }
 
 function bodyLine(text: string): Paragraph {
   return new Paragraph({
     children: [new TextRun({ text, size: 22, font: "Arial" })],
-    spacing: { after: 50 },
+    spacing: { after: 40 },
   });
 }
 
@@ -38,7 +38,7 @@ function rtlLine(text: string): Paragraph {
     children: [new TextRun({ text, size: 22, font: "Arial" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
-    spacing: { after: 50 },
+    spacing: { after: 40 },
   });
 }
 
@@ -60,7 +60,7 @@ function numberedHE(num: number, text: string, color = "160B5C"): Paragraph {
     children: [new TextRun({ text: `${RTL_MARK}${num}.  ${text}`, size: 22, color, font: "Arial" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
-    spacing: { after: 80 },
+    spacing: { after: 60 },
   });
 }
 
@@ -71,24 +71,26 @@ function lv(label: string, value: string): Paragraph | null {
       new TextRun({ text: `${label}: `, bold: true, size: 22, font: "Arial" }),
       new TextRun({ text: value, size: 22, font: "Arial" }),
     ],
-    spacing: { after: 50 },
+    spacing: { after: 40 },
   });
 }
 
+// Section heading — 14pt bold, dark purple, thin underline
 function sectionHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 26, color: "1A2B4A", font: "Arial" })],
-    spacing: { before: 200, after: 80 },
+    children: [new TextRun({ text, bold: true, size: 28, color: "1A2B4A", font: "Arial" })],
+    spacing: { before: 140, after: 60 },
     border: { bottom: { style: "single" as const, size: 4, color: "160B5C", space: 4 } },
   });
 }
 
+// Hebrew section heading — 12pt bold, dark purple, pure Hebrew text only (no mixed script)
 function hebrewHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 26, color: "1A2B4A", font: "Arial" })],
+    children: [new TextRun({ text, bold: true, size: 24, color: "1A2B4A", font: "Arial" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
-    spacing: { before: 120, after: 60 },
+    spacing: { before: 80, after: 40 },
   });
 }
 
@@ -283,7 +285,7 @@ export async function generateLetterDocx(
       headerPara = new Paragraph({
         children: [new ImageRun({
           data: new Uint8Array(logoData),
-          transformation: { width: 200, height: 60 },
+          transformation: { width: 150, height: 45 },
           type: "png",
         })],
         alignment: AlignmentType.CENTER,
@@ -393,17 +395,36 @@ export async function generateLetterDocx(
   const ageGender = [ageDocx, s(data.gender)].filter(Boolean).join("  ·  ");
   const dob = [s(data.bDay), s(data.bMonth), s(data.bYear)].filter(Boolean).join(" / ");
 
-  const leftFields  = [lv("Name", s(data.name)), lv("ID", s(data.patId)), lv("Date of Birth", dob), lv("Age / Gender", ageGender), lv("Email", s(data.email)), lv("Phone", s(data.phone))].filter(Boolean) as Paragraph[];
-  const rightFields = [lv("Smoking / Vaping", s(data.smoking)), lv("Pets", s(data.pets)), lv("Occupation", s(data.occupation)), lv("Referred By", s(data.referredBy)), lv("Location", s(data.location)), lv("Date", letterDate)].filter(Boolean) as Paragraph[];
+  // 4-column grid: Label | Value | Label | Value — clean editable table
+  const LABEL_BG   = { type: ShadingType.SOLID, fill: "F3F4F6", color: "F3F4F6" };
+  const GB = { style: "single" as const, size: 2, color: "D1D5DB", space: 0 };
+  const GRID_BORDERS = { top: GB, bottom: GB, left: GB, right: GB };
+
+  const patientRows: [string, string, string, string][] = [
+    ["Name",          s(data.name),          "Smoking / Vaping", s(data.smoking)],
+    ["ID",            s(data.patId),          "Pets",             s(data.pets)],
+    ["Date of Birth", dob,                    "Occupation",       s(data.occupation)],
+    ["Age / Gender",  ageGender,              "Referred By",      s(data.referredBy)],
+    ["Email",         s(data.email),          "Location",         s(data.location)],
+    ["Phone",         s(data.phone),          "Date",             letterDate],
+  ];
+
+  const gridCell = (text: string, isLabel: boolean) => new TableCell({
+    width: { size: isLabel ? 18 : 32, type: WidthType.PERCENTAGE },
+    borders: GRID_BORDERS,
+    shading: isLabel ? LABEL_BG : undefined,
+    margins: { top: 50, bottom: 50, left: isLabel ? 80 : 60, right: isLabel ? 60 : 80 },
+    children: [new Paragraph({
+      children: [new TextRun({ text, size: 20, bold: isLabel, color: isLabel ? "1A2B4A" : "222222", font: "Arial" })],
+      spacing: { after: 0 },
+    })],
+  });
 
   children.push(new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [new TableRow({
-      children: [
-        new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE }, borders: NO_BORDERS, children: leftFields.length  ? leftFields  : [new Paragraph({ children: [] })] }),
-        new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE }, borders: NO_BORDERS, children: rightFields.length ? rightFields : [new Paragraph({ children: [] })] }),
-      ],
-    })],
+    rows: patientRows.map(([l1, v1, l2, v2]) => new TableRow({
+      children: [gridCell(l1, true), gridCell(v1, false), gridCell(l2, true), gridCell(v2, false)],
+    })),
   }));
   children.push(gap());
 
@@ -414,19 +435,19 @@ export async function generateLetterDocx(
   if (diagHE || sumHE || planHE.length > 0) {
     children.push(sectionHeading("Hebrew  /  עברית"));
     if (diagHE) {
-      children.push(hebrewHeading("אבחנה  —  Diagnosis"));
+      children.push(hebrewHeading("אבחנה"));
       diagHE.split("\n").filter(Boolean).forEach((l) => children.push(rtlLine(l)));
-      children.push(gap(80));
+      children.push(gap(60));
     }
     if (sumHE) {
-      children.push(hebrewHeading("סיכום  —  Summary"));
+      children.push(hebrewHeading("סיכום"));
       sumHE.split("\n").filter(Boolean).forEach((l) => children.push(rtlLine(l)));
-      children.push(gap(80));
+      children.push(gap(60));
     }
     if (planHE.length > 0) {
-      children.push(hebrewHeading("תכנית  —  Plan"));
+      children.push(hebrewHeading("תכנית"));
       planHE.forEach((step, i) => children.push(numberedHE(i + 1, step)));
-      children.push(gap(80));
+      children.push(gap(60));
     }
   }
 
@@ -437,32 +458,32 @@ export async function generateLetterDocx(
   if (diagEN) {
     children.push(sectionHeading("Diagnosis"));
     diagEN.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l)));
-    children.push(gap(80));
+    children.push(gap());
   }
   if (sumEN) {
     children.push(sectionHeading("Summary"));
     sumEN.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l)));
-    children.push(gap(80));
+    children.push(gap());
   }
   if (planEN.length > 0) {
     children.push(sectionHeading("Plan"));
     planEN.forEach((step, i) => children.push(numberedEN(i + 1, step)));
-    children.push(gap(80));
+    children.push(gap());
   }
 
   // ── History ────────────────────────────────────────────────────────────
   const medH = s(data.medHistory);
-  if (medH) { children.push(sectionHeading("Medical History")); medH.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l))); children.push(gap(80)); }
+  if (medH) { children.push(sectionHeading("Medical History")); medH.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l))); children.push(gap()); }
   const famH = s(data.famHistory);
-  if (famH) { children.push(sectionHeading("Family History")); famH.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l))); children.push(gap(80)); }
+  if (famH) { children.push(sectionHeading("Family History")); famH.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l))); children.push(gap()); }
 
   // ── Medications / Allergies / Vaccinations ─────────────────────────────
   const meds = arr(data.medications);
-  if (meds.length > 0) { children.push(sectionHeading("Medications")); meds.forEach((m) => children.push(bodyLine(`•  ${m}`))); children.push(gap(80)); }
+  if (meds.length > 0) { children.push(sectionHeading("Medications")); meds.forEach((m) => children.push(bodyLine(`•  ${m}`))); children.push(gap()); }
   const allergies = arr(data.allergies);
-  if (allergies.length > 0) { children.push(sectionHeading("Allergies")); allergies.forEach((a) => children.push(bodyLine(`•  ${a}`))); children.push(gap(80)); }
+  if (allergies.length > 0) { children.push(sectionHeading("Allergies")); allergies.forEach((a) => children.push(bodyLine(`•  ${a}`))); children.push(gap()); }
   const vaccinations = arr(data.vaccinations);
-  if (vaccinations.length > 0) { children.push(sectionHeading("Vaccinations")); children.push(bodyLine(vaccinations.join(",  "))); children.push(gap(80)); }
+  if (vaccinations.length > 0) { children.push(sectionHeading("Vaccinations")); children.push(bodyLine(vaccinations.join(",  "))); children.push(gap()); }
 
   // ── Examination ────────────────────────────────────────────────────────
   const examFields: [string, string][] = [
@@ -480,7 +501,7 @@ export async function generateLetterDocx(
   if (examFields.length > 0) {
     children.push(sectionHeading("Examination"));
     examFields.forEach(([label, value]) => { const p = lv(label, value); if (p) children.push(p); });
-    children.push(gap(80));
+    children.push(gap());
   }
 
   // ── Test Results + Lung Function ───────────────────────────────────────
@@ -520,7 +541,7 @@ export async function generateLetterDocx(
         children.push(bodyLine(`[Image ${i + 1} — not available]`));
       }
     }
-    children.push(gap(80));
+    children.push(gap());
   }
 
   // ── Inhaler ────────────────────────────────────────────────────────────
@@ -538,10 +559,10 @@ export async function generateLetterDocx(
             children: [new TextRun({ text: "Watch video guide on RightBreathe", size: 22, font: "Arial", color: "4A90D9", underline: {} })],
           }),
         ],
-        spacing: { after: 60 },
+        spacing: { after: 40 },
       }));
     }
-    children.push(gap(80));
+    children.push(gap());
   }
 
   // ── Important Notes + stamp ────────────────────────────────────────────
@@ -556,20 +577,20 @@ export async function generateLetterDocx(
   const WHITE_SHADING  = { type: ShadingType.SOLID, fill: "FFFFFF", color: "FFFFFF" };
 
   const notesHeading = new Paragraph({
-    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 26, color: "160B5C", font: "Arial" })],
+    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 24, color: "160B5C", font: "Arial" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
-    border: { bottom: { style: "single" as const, size: 6, color: "7C3AED", space: 4 } },
-    spacing: { before: 80, after: 120 },
+    border: { bottom: { style: "single" as const, size: 4, color: "7C3AED", space: 4 } },
+    spacing: { before: 60, after: 80 },
     shading: WHITE_SHADING,
   });
 
   const noteParas = importantNoteTexts.map((note, i) =>
     new Paragraph({
-      children: [new TextRun({ text: `${RTL_MARK}${i + 1}.  ${note}`, size: 22, color: i === 2 ? "DC2626" : "160B5C", font: "Arial" })],
+      children: [new TextRun({ text: `${RTL_MARK}${i + 1}.  ${note}`, size: 20, color: i === 2 ? "DC2626" : "160B5C", font: "Arial" })],
       bidirectional: true,
       alignment: AlignmentType.RIGHT,
-      spacing: { after: 100 },
+      spacing: { after: 80 },
       shading: WHITE_SHADING,
     })
   );
