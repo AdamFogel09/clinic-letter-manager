@@ -233,7 +233,7 @@ export default function LetterPreviewPage() {
     setPdfUploadStatus("idle");
     setPdfUploadError("");
     try {
-      const d = data as Record<string, unknown>;
+      const d = data as unknown as Record<string, unknown>;
       const patientName = (d?.name     as string) || "";
       const patientId   = (d?.patId    as string) || "";
       const location    = (d?.location as string) || "";

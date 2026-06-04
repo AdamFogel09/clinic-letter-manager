@@ -13,6 +13,7 @@ interface TRSelected {
   echo: boolean; blood: boolean; otherTest: boolean;
   bronchWash: string[]; bronchBiopsy: string[]; ebus: string[];
   pleuralFluid: string[]; pleuralBiopsy: string[];
+  [key: string]: unknown;
 }
 
 interface TestResultsData {
