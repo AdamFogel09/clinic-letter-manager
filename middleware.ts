@@ -1,11 +1,40 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Only this email may access the workspace.
 const ALLOWED_EMAILS = ["lungdrsumit@gmail.com"];
+const ACCESS_COOKIE  = "clinic_access";
+
+async function sha256hex(str: string): Promise<string> {
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(str)
+  );
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 export async function middleware(request: NextRequest) {
-  // Build a mutable response so Supabase can refresh the session cookie.
+  const { pathname } = request.nextUrl;
+
+  // ── 1. Private access gate ─────────────────────────────────────────────────
+  // All routes in the matcher must have a valid access cookie.
+  const sitePassword = process.env.PRIVATE_SITE_PASSWORD;
+  if (sitePassword) {
+    const expectedCookie = await sha256hex(sitePassword);
+    const cookie = request.cookies.get(ACCESS_COOKIE);
+    if (cookie?.value !== expectedCookie) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/access";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // ── 2. Supabase session / auth (only for /login + /workspace/**) ───────────
+  if (!pathname.startsWith("/workspace") && pathname !== "/login") {
+    return NextResponse.next();
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -17,7 +46,6 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          // Forward cookie changes both to the mutated request and the response.
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
@@ -34,8 +62,6 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
 
   // Unauthenticated users trying to access workspace → send to login.
   if (!user && pathname.startsWith("/workspace")) {
@@ -62,5 +88,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/workspace/:path*", "/login"],
+  // Protect the landing page, login, workspace, and dashboard.
+  // /access and /api/** are intentionally excluded so the gate page
+  // and its verify endpoint are always reachable.
+  matcher: ["/", "/login", "/workspace/:path*", "/dashboard/:path*"],
 };
