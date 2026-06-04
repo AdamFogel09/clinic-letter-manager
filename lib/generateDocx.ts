@@ -143,14 +143,13 @@ function lungFunctionBlocks(data: LD): Block[] {
   const rows = Array.isArray(data.lungRows) ? (data.lungRows as LungRowRaw[]) : [];
   if (rows.length === 0) return [];
 
-  const blocks: Block[] = [sectionHeading("Lung Function  /  תפקוד ריאות")];
+  const blocks: Block[] = [sectionHeading("Lung Function")];
 
   for (const row of rows) {
     if (row.date) {
       blocks.push(new Paragraph({
-        children: [new TextRun({ text: `  Date: ${row.date}  `, bold: true, size: 20, color: "160B5C", font: "Arial" })],
-        shading: { type: ShadingType.SOLID, fill: "F2A56B", color: "F2A56B" },
-        spacing: { before: 160, after: 60 },
+        children: [new TextRun({ text: `Date: ${row.date}`, bold: true, size: 20, color: "1A2B4A", font: "Arial" })],
+        spacing: { before: 120, after: 40 },
       }));
     }
 
@@ -285,7 +284,7 @@ export async function generateLetterDocx(
       headerPara = new Paragraph({
         children: [new ImageRun({
           data: new Uint8Array(logoData),
-          transformation: { width: 150, height: 45 },
+          transformation: { width: 270, height: 81 },
           type: "png",
         })],
         alignment: AlignmentType.CENTER,
@@ -433,7 +432,7 @@ export async function generateLetterDocx(
   const sumHE  = s(data.sumHE);
   const planHE = arr(data.planStepsHE);
   if (diagHE || sumHE || planHE.length > 0) {
-    children.push(sectionHeading("Hebrew  /  עברית"));
+    children.push(gap(80));
     if (diagHE) {
       children.push(hebrewHeading("אבחנה"));
       diagHE.split("\n").filter(Boolean).forEach((l) => children.push(rtlLine(l)));
@@ -617,16 +616,18 @@ export async function generateLetterDocx(
         cantSplit: true,
         children: [
           new TableCell({
-            width: { size: 32, type: WidthType.PERCENTAGE },
+            width: { size: 38, type: WidthType.PERCENTAGE },
             borders: NO_BORDERS,
             shading: WHITE_SHADING,
             verticalAlign: VerticalAlign.CENTER,
+            margins: { top: 0, bottom: 0, left: 120, right: 120 },
             children: [stampImg],
           }),
           new TableCell({
-            width: { size: 68, type: WidthType.PERCENTAGE },
+            width: { size: 62, type: WidthType.PERCENTAGE },
             borders: PURPLE_BORDERS,
             shading: WHITE_SHADING,
+            margins: { top: 80, bottom: 80, left: 120, right: 120 },
             children: [notesHeading, ...noteParas],
           }),
         ],
@@ -641,6 +642,7 @@ export async function generateLetterDocx(
           new TableCell({
             borders: PURPLE_BORDERS,
             shading: WHITE_SHADING,
+            margins: { top: 80, bottom: 80, left: 160, right: 160 },
             children: [notesHeading, ...noteParas],
           }),
         ],
