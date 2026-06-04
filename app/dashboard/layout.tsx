@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import Sidebar from "@/components/dashboard/Sidebar";
 
 export default function DashboardLayout({
@@ -16,24 +15,24 @@ export default function DashboardLayout({
       {/* Desktop sidebar */}
       <Sidebar />
 
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-40 lg:hidden"
-          style={{ backgroundColor: "rgb(0 0 0 / 0.3)" }}
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
+      {/* Mobile overlay — fades in/out */}
+      <div
+        className={`fixed inset-0 z-40 lg:hidden transition-opacity duration-300 ${
+          mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+        onClick={() => setMobileOpen(false)}
+      />
 
-      {/* Mobile sidebar drawer */}
-      {mobileOpen && (
-        <div
-          className="fixed top-0 left-0 bottom-0 z-50 w-56 bg-white lg:hidden flex flex-col"
-          style={{ borderRight: "1px solid #E2E8F0" }}
-        >
-          <Sidebar />
-        </div>
-      )}
+      {/* Mobile sidebar drawer — slides in from left */}
+      <div
+        className={`fixed top-0 left-0 h-full z-50 w-72 flex flex-col lg:hidden transition-transform duration-300 ease-in-out ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        style={{ boxShadow: "4px 0 32px rgba(0,0,0,0.14)" }}
+      >
+        <Sidebar mobile onClose={() => setMobileOpen(false)} />
+      </div>
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -50,7 +49,7 @@ export default function DashboardLayout({
           </span>
           <button
             onClick={() => setMobileOpen(true)}
-            className="p-1.5 rounded-lg"
+            className="p-2 rounded-lg transition-colors duration-150 hover:bg-slate-100 active:bg-slate-200"
             aria-label="Open menu"
           >
             <svg

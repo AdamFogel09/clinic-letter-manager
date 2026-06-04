@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { createClient } from "@/lib/supabase/server";
@@ -17,7 +19,7 @@ function buildPdfFilename(patientId: string, fullName: string, location: string,
   return `${id}_${surname}_${loc}_${safeDate(date)}.pdf`;
 }
 
-/** Build a base64url-encoded RFC2822 message with a PDF attachment. */
+/** Build a base64url-encoded RFC2822 message with a PDF and logo attachment. */
 function buildRawEmail(params: {
   from: string;
   to: string;
@@ -25,6 +27,7 @@ function buildRawEmail(params: {
   body: string;
   pdfBase64: string;
   pdfFilename: string;
+  logoBase64: string;
 }): string {
   const boundary = `clinic_boundary_${Date.now()}`;
   const mime = [
@@ -46,6 +49,13 @@ function buildRawEmail(params: {
     `Content-Disposition: attachment; filename="${params.pdfFilename}"`,
     ``,
     params.pdfBase64,
+    ``,
+    `--${boundary}`,
+    `Content-Type: image/png`,
+    `Content-Transfer-Encoding: base64`,
+    `Content-Disposition: attachment; filename="Dr-Sumit-Chatterji-Logo.png"`,
+    ``,
+    params.logoBase64,
     ``,
     `--${boundary}--`,
   ].join("\r\n");
@@ -124,6 +134,19 @@ export async function POST(req: NextRequest) {
     letter.letter_date                 || ""
   );
 
+  // ── Load logo from project files ──────────────────────────────────────────────
+  let logoBase64: string;
+  try {
+    const logoPath = path.join(process.cwd(), "logo1.png");
+    logoBase64 = fs.readFileSync(logoPath).toString("base64");
+  } catch {
+    console.error("[send-patient-email] Could not load logo1.png");
+    return NextResponse.json(
+      { error: "Could not load clinic logo file." },
+      { status: 500 }
+    );
+  }
+
   // ── Send via Gmail API ─────────────────────────────────────────────────────────
   const authClient = getAuthenticatedClient();
   if (!authClient) {
@@ -132,20 +155,29 @@ export async function POST(req: NextRequest) {
 
   const gmail = google.gmail({ version: "v1", auth: authClient });
 
+  const emailBody = [
+    "Dear Patient,",
+    "",
+    "Please find attached your clinic letter from Dr. Sumit Chatterji.",
+    "",
+    "A copy of the clinic logo is also attached for your reference.",
+    "",
+    "If you have any questions regarding the contents of the letter, please contact the clinic directly.",
+    "",
+    "Kind regards,",
+    "",
+    "Dr. Sumit Chatterji",
+    "Specialist in Respiratory Medicine",
+  ].join("\n");
+
   const rawMessage = buildRawEmail({
     from:        process.env.GMAIL_SENDER_EMAIL!,
     to:          patientEmail,
     subject:     "Clinic Letter from Dr. Sumit Chatterji",
-    body:        [
-      "Dear patient,",
-      "",
-      "Please find attached your clinic letter from Dr. Sumit Chatterji.",
-      "",
-      "Best regards,",
-      "Dr. Sumit Chatterji Clinic",
-    ].join("\n"),
+    body:        emailBody,
     pdfBase64,
     pdfFilename,
+    logoBase64,
   });
 
   try {
