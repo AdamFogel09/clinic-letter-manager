@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, updateLetterStatus, getLetterById, supabaseLetterToStoredLetter, type SummarySection, sectionsToSumEN, sectionsToSumHE } from "@/lib/supabase/letters";
+import {
+  saveLetter as saveLetterToSupabase, updateLetterStatus, getLetterById, supabaseLetterToStoredLetter,
+  type SummarySection, type DiagnosisItem, type PlanStep,
+  sectionsToSumEN, sectionsToSumHE,
+  diagItemsToEN, diagItemsToHE,
+  planStepsToENArr, planStepsToHEArr,
+} from "@/lib/supabase/letters";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -337,6 +343,43 @@ function todaySectionDate(): string {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
+function newItemId(): string {
+  return `i-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+}
+
+function newStepId(): string {
+  return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+}
+
+/** Convert flat diagEN/diagHE text blocks to structured items (backward compat). */
+function flatToDiagItems(en: string, he: string): DiagnosisItem[] {
+  const enLines = en.split("\n").map(l => l.trim()).filter(Boolean);
+  const heLines = he.split("\n").map(l => l.trim()).filter(Boolean);
+  if (!enLines.length && !heLines.length) {
+    return [{ id: newItemId(), textEN: "", textHE: "", source: "new" }];
+  }
+  const len = Math.max(enLines.length, heLines.length);
+  return Array.from({ length: len }, (_, i) => ({
+    id:     newItemId(),
+    textEN: enLines[i] || "",
+    textHE: heLines[i] || "",
+    source: "copied" as const,
+  }));
+}
+
+/** Convert parallel planStepsEN/HE arrays to structured steps (backward compat). */
+function flatToPlanSteps(en: string[], he: string[]): PlanStep[] {
+  if (!en.length || (en.length === 1 && !en[0])) {
+    return [{ id: newStepId(), textEN: "", textHE: "", source: "new" }];
+  }
+  return en.map((textEN, i) => ({
+    id: newStepId(),
+    textEN,
+    textHE: he[i] || "",
+    source: "copied" as const,
+  }));
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function LetterEditorPage() {
@@ -357,12 +400,15 @@ export default function LetterEditorPage() {
   const [dateYear, setDateYear] = useState(String(new Date().getFullYear()));
 
   // Diagnosis / Summary / Plan
-  const [diagEN, setDiagEN] = useState(""); const [diagHE, setDiagHE] = useState("");
+  const [diagItems, setDiagItems] = useState<DiagnosisItem[]>([
+    { id: newItemId(), textEN: "", textHE: "", source: "new" },
+  ]);
   const [summarySections, setSummarySections] = useState<SummarySection[]>([
     { id: newSectionId(), date: todaySectionDate(), textEN: "", textHE: "", source: "new" },
   ]);
-  const [planStepsEN, setPlanStepsEN] = useState<string[]>([""]);
-  const [planStepsHE, setPlanStepsHE] = useState<string[]>([""]);
+  const [planSteps, setPlanSteps] = useState<PlanStep[]>([
+    { id: newStepId(), textEN: "", textHE: "", source: "new" },
+  ]);
 
   // History
   const [medHistory, setMedHistory] = useState(""); const [famHistory, setFamHistory] = useState("");
@@ -405,23 +451,23 @@ export default function LetterEditorPage() {
   const [inhalerSearching, setInhalerSearching] = useState(false);
   const [inhalerSearchError, setInhalerSearchError] = useState("");
 
-  // Translation loading / error states
-  const [diagTx,    setDiagTx]    = useState<"idle"|"loading"|"error">("idle");
-  const [diagTxErr, setDiagTxErr] = useState("");
-  const [translatingSection,  setTranslatingSection]  = useState<string | null>(null);
-  const [sectionTxErrors,     setSectionTxErrors]     = useState<Record<string, string>>({});
-  const [planTx,    setPlanTx]    = useState<"idle"|"loading"|"error">("idle");
-  const [planTxErr, setPlanTxErr] = useState("");
+  // Translation loading / error states — per item/section/step
+  const [translatingDiag,    setTranslatingDiag]    = useState<string | null>(null);
+  const [diagTxErrors,       setDiagTxErrors]       = useState<Record<string, string>>({});
+  const [translatingSection, setTranslatingSection] = useState<string | null>(null);
+  const [sectionTxErrors,    setSectionTxErrors]    = useState<Record<string, string>>({});
+  const [translatingPlan,    setTranslatingPlan]    = useState<string | null>(null);
+  const [planTxErrors,       setPlanTxErrors]       = useState<Record<string, string>>({});
   const inhalerRef = useRef<HTMLDivElement>(null);
 
   // Guards the auto-save effect from firing before the initial restore is complete
   const [initialized, setInitialized] = useState(false);
   const [isUpdateMode, setIsUpdateMode] = useState(false);
-  // Pending translate-overwrite confirmation
+  // Pending translate-overwrite confirmation (per item/section/step)
   const [txConfirm, setTxConfirm] = useState<
-    | { type: "diagnosis" }
-    | { type: "summary"; sectionId: string }
-    | { type: "plan" }
+    | { type: "diagItem";  itemId: string }
+    | { type: "summary";   sectionId: string }
+    | { type: "planStep";  stepId: string }
     | null
   >(null);
   const [sendingToAnat, setSendingToAnat] = useState(false);
@@ -514,9 +560,16 @@ export default function LetterEditorPage() {
           if (d.dateDay)      setDateDay(d.dateDay);
           if (d.dateMonth)    setDateMonth(d.dateMonth);
           if (d.dateYear)     setDateYear(d.dateYear);
-          if (d.diagEN)       setDiagEN(d.diagEN);
-          if (d.diagHE)       setDiagHE(d.diagHE);
-          // Restore summary sections — fall back to old flat fields for backward compat
+          // Restore diagnosis items (fall back to splitting old flat fields)
+          if (d.diagItems?.length) {
+            setDiagItems(d.diagItems as DiagnosisItem[]);
+          } else if (d.diagEN || d.diagHE) {
+            setDiagItems(flatToDiagItems(
+              (d.diagEN as string) || "",
+              (d.diagHE as string) || ""
+            ));
+          }
+          // Restore summary sections
           if (d.summarySections?.length) {
             setSummarySections(d.summarySections as SummarySection[]);
           } else if (d.sumEN || d.sumHE) {
@@ -529,10 +582,16 @@ export default function LetterEditorPage() {
               source: "copied",
             }]);
           }
-          if (d.planStepsEN?.length) setPlanStepsEN(d.planStepsEN);
-          else if (d.planEN)        setPlanStepsEN([d.planEN]); // backward compat
-          if (d.planStepsHE?.length) setPlanStepsHE(d.planStepsHE);
-          else if (d.planHE)         setPlanStepsHE([d.planHE]); // backward compat
+          // Restore plan steps (fall back to combining old parallel arrays)
+          if (d.planSteps?.length) {
+            setPlanSteps(d.planSteps as PlanStep[]);
+          } else {
+            const en = Array.isArray(d.planStepsEN) ? d.planStepsEN
+                       : d.planEN ? [d.planEN as string] : [""];
+            const he = Array.isArray(d.planStepsHE) ? d.planStepsHE
+                       : d.planHE ? [d.planHE as string] : [];
+            setPlanSteps(flatToPlanSteps(en as string[], he as string[]));
+          }
           if (d.medHistory)   setMedHistory(d.medHistory);
           if (d.famHistory)   setFamHistory(d.famHistory);
           if (d.medications?.length)  setMedications(d.medications);
@@ -606,11 +665,15 @@ export default function LetterEditorPage() {
       name, patId, bDay, bMonth, bYear, gender, email, phone,
       smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE,
+      diagItems,
+      diagEN: diagItemsToEN(diagItems),
+      diagHE: diagItemsToHE(diagItems),
       summarySections,
       sumEN: sectionsToSumEN(summarySections),
       sumHE: sectionsToSumHE(summarySections),
-      planStepsEN, planStepsHE,
+      planSteps,
+      planStepsEN: planStepsToENArr(planSteps),
+      planStepsHE: planStepsToHEArr(planSteps),
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
@@ -623,7 +686,7 @@ export default function LetterEditorPage() {
     name, patId, bDay, bMonth, bYear, gender, email, phone,
     smoking, pets, occupation, referredBy, location,
     dateDay, dateMonth, dateYear,
-    diagEN, diagHE, summarySections, planStepsEN, planStepsHE,
+    diagItems, summarySections, planSteps,
     medHistory, famHistory,
     medications, allergies, vaccinations,
     appearance, clubbing, lymph, bp, pulse, rr, spo2,
@@ -714,19 +777,24 @@ export default function LetterEditorPage() {
     // Save/update the draft to Supabase before opening the preview so the preview shows the latest data.
     try { await handleSaveDraft(); } catch { /* don't block preview on save failure */ }
 
-    const _sumEN = sectionsToSumEN(summarySections);
-    const _sumHE = sectionsToSumHE(summarySections);
+    const _diagEN = diagItemsToEN(diagItems);
+    const _diagHE = diagItemsToHE(diagItems);
+    const _sumEN  = sectionsToSumEN(summarySections);
+    const _sumHE  = sectionsToSumHE(summarySections);
+    const _planEN = planStepsToENArr(planSteps);
+    const _planHE = planStepsToHEArr(planSteps);
     localStorage.setItem("letter_preview", JSON.stringify({
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE, sumEN: _sumEN, sumHE: _sumHE,
-      summarySections,
+      diagItems, diagEN: _diagEN, diagHE: _diagHE,
+      summarySections, sumEN: _sumEN, sumHE: _sumHE,
+      planSteps, planStepsEN: _planEN, planStepsHE: _planHE,
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
-      testResults, planStepsEN, planStepsHE, lungRows,
+      testResults, lungRows,
       pictures, inhalerName, inhalerLink, inhalerImageUrl,
     }));
     // Pass Supabase letter ID to the preview tab so it can update status on Send to Anat.
@@ -749,15 +817,20 @@ export default function LetterEditorPage() {
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE,
+      diagItems,
+      diagEN: diagItemsToEN(diagItems),
+      diagHE: diagItemsToHE(diagItems),
       summarySections,
       sumEN: sectionsToSumEN(summarySections),
       sumHE: sectionsToSumHE(summarySections),
+      planSteps,
+      planStepsEN: planStepsToENArr(planSteps),
+      planStepsHE: planStepsToHEArr(planSteps),
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
-      testResults, planStepsEN, planStepsHE, lungRows,
+      testResults, lungRows,
       pictures, inhalerName, inhalerLink, inhalerImageUrl,
     };
 
@@ -810,15 +883,20 @@ export default function LetterEditorPage() {
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
-      diagEN, diagHE,
+      diagItems,
+      diagEN: diagItemsToEN(diagItems),
+      diagHE: diagItemsToHE(diagItems),
       summarySections,
       sumEN: sectionsToSumEN(summarySections),
       sumHE: sectionsToSumHE(summarySections),
+      planSteps,
+      planStepsEN: planStepsToENArr(planSteps),
+      planStepsHE: planStepsToHEArr(planSteps),
       medHistory, famHistory,
       medications, allergies, vaccinations,
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
-      testResults, planStepsEN, planStepsHE, lungRows,
+      testResults, lungRows,
       pictures, inhalerName, inhalerLink, inhalerImageUrl,
     };
     localStorage.setItem("letter_preview", JSON.stringify(letterData));
@@ -934,29 +1012,35 @@ export default function LetterEditorPage() {
     setSummarySections(prev => prev.filter(s => s.id !== id));
   };
 
-  // ── Internal translate workers (called after any confirmation) ───────────────
+  // ── Per-item/step translate workers ──────────────────────────────────────────
 
-  const doTranslateDiagnosis = async () => {
-    setDiagTx("loading"); setDiagTxErr("");
+  const doTranslateDiagItem = async (id: string) => {
+    const item = diagItems.find(i => i.id === id);
+    if (!item?.textEN.trim()) return;
+    setTranslatingDiag(id);
+    setDiagTxErrors(prev => ({ ...prev, [id]: "" }));
     try {
-      const { translatedText } = await callTranslate({ sectionType: "diagnosis", text: diagEN });
-      setDiagHE(translatedText);
-      setDiagTx("idle");
+      const { translatedText } = await callTranslate({ sectionType: "diagnosis", text: item.textEN });
+      setDiagItems(prev => prev.map(i => i.id === id ? { ...i, textHE: translatedText } : i));
     } catch (e) {
-      setDiagTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
-      setDiagTx("error");
+      setDiagTxErrors(prev => ({ ...prev, [id]: e instanceof Error ? e.message : "Translation failed." }));
+    } finally {
+      setTranslatingDiag(null);
     }
   };
 
-  const doTranslatePlan = async () => {
-    setPlanTx("loading"); setPlanTxErr("");
+  const doTranslatePlanStep = async (id: string) => {
+    const step = planSteps.find(s => s.id === id);
+    if (!step?.textEN.trim()) return;
+    setTranslatingPlan(id);
+    setPlanTxErrors(prev => ({ ...prev, [id]: "" }));
     try {
-      const { translatedSteps } = await callTranslate({ sectionType: "plan", planSteps: planStepsEN });
-      setPlanStepsHE(translatedSteps);
-      setPlanTx("idle");
+      const { translatedText } = await callTranslate({ sectionType: "plan", text: step.textEN });
+      setPlanSteps(prev => prev.map(s => s.id === id ? { ...s, textHE: translatedText } : s));
     } catch (e) {
-      setPlanTxErr(e instanceof Error ? e.message : "Translation failed. Please try again.");
-      setPlanTx("error");
+      setPlanTxErrors(prev => ({ ...prev, [id]: e instanceof Error ? e.message : "Translation failed." }));
+    } finally {
+      setTranslatingPlan(null);
     }
   };
 
@@ -978,12 +1062,13 @@ export default function LetterEditorPage() {
     }
   };
 
-  // ── Public translate handlers — guard existing Hebrew before overwriting ──────
+  // ── Public translate wrappers — guard existing Hebrew before overwriting ──────
 
-  const translateDiagnosis = () => {
-    if (!diagEN.trim()) return;
-    if (diagHE.trim()) { setTxConfirm({ type: "diagnosis" }); return; }
-    doTranslateDiagnosis();
+  const translateDiagItem = (id: string) => {
+    const item = diagItems.find(i => i.id === id);
+    if (!item?.textEN.trim()) return;
+    if (item.textHE.trim()) { setTxConfirm({ type: "diagItem", itemId: id }); return; }
+    doTranslateDiagItem(id);
   };
 
   const translateSummarySection = (id: string) => {
@@ -993,27 +1078,43 @@ export default function LetterEditorPage() {
     doTranslateSummarySection(id);
   };
 
-  const translatePlan = () => {
-    if (!planStepsEN.some(s => s.trim())) return;
-    if (planStepsHE.some(s => s.trim())) { setTxConfirm({ type: "plan" }); return; }
-    doTranslatePlan();
+  const translatePlanStep = (id: string) => {
+    const step = planSteps.find(s => s.id === id);
+    if (!step?.textEN.trim()) return;
+    if (step.textHE.trim()) { setTxConfirm({ type: "planStep", stepId: id }); return; }
+    doTranslatePlanStep(id);
   };
 
   const confirmTranslate = () => {
     const confirm = txConfirm;
     setTxConfirm(null);
     if (!confirm) return;
-    if (confirm.type === "diagnosis") doTranslateDiagnosis();
-    else if (confirm.type === "summary") doTranslateSummarySection(confirm.sectionId);
-    else if (confirm.type === "plan") doTranslatePlan();
+    if (confirm.type === "diagItem")  doTranslateDiagItem(confirm.itemId);
+    else if (confirm.type === "summary")  doTranslateSummarySection(confirm.sectionId);
+    else if (confirm.type === "planStep") doTranslatePlanStep(confirm.stepId);
   };
 
-  const addPlanStepEN    = () => setPlanStepsEN(s => [...s, ""]);
-  const removePlanStepEN = (i: number) => setPlanStepsEN(s => s.filter((_, idx) => idx !== i));
-  const updatePlanStepEN = (i: number, v: string) => setPlanStepsEN(s => s.map((x, idx) => idx === i ? v : x));
-  const addPlanStepHE    = () => setPlanStepsHE(s => [...s, ""]);
-  const removePlanStepHE = (i: number) => setPlanStepsHE(s => s.filter((_, idx) => idx !== i));
-  const updatePlanStepHE = (i: number, v: string) => setPlanStepsHE(s => s.map((x, idx) => idx === i ? v : x));
+  // ── Diagnosis item handlers ───────────────────────────────────────────────────
+  const addDiagItem = () => setDiagItems(prev => [...prev, { id: newItemId(), textEN: "", textHE: "", source: "new" }]);
+  const updateDiagItemEN = (id: string, textEN: string) => setDiagItems(prev => prev.map(i => {
+    if (i.id !== id) return i;
+    return { ...i, textEN, source: i.source === "copied" ? "edited" : i.source };
+  }));
+  const updateDiagItemHE = (id: string, textHE: string) => setDiagItems(prev => prev.map(i =>
+    i.id === id ? { ...i, textHE } : i
+  ));
+  const removeDiagItem = (id: string) => setDiagItems(prev => prev.filter(i => i.id !== id));
+
+  // ── Plan step handlers ────────────────────────────────────────────────────────
+  const updatePlanStepEN = (id: string, textEN: string) => setPlanSteps(prev => prev.map(s => {
+    if (s.id !== id) return s;
+    return { ...s, textEN, source: s.source === "copied" ? "edited" : s.source };
+  }));
+  const updatePlanStepHE = (id: string, textHE: string) => setPlanSteps(prev => prev.map(s =>
+    s.id === id ? { ...s, textHE } : s
+  ));
+  const removePlanStep = (id: string) => setPlanSteps(prev => prev.filter(s => s.id !== id));
+  const addPlanStep    = () => setPlanSteps(prev => [...prev, { id: newStepId(), textEN: "", textHE: "", source: "new" }]);
 
   const addMed = () => { if (medInput.trim()) { setMedications(m => [...m, medInput.trim()]); setMedInput(""); } };
   const removeMed = (i: number) => setMedications(m => m.filter((_, idx) => idx !== i));
@@ -1156,35 +1257,66 @@ export default function LetterEditorPage() {
 
           {/* ── Diagnosis ── */}
           <SectionCard title="Diagnosis" titleHe="אבחנה">
-            <div className="space-y-4">
-              <F label="Diagnosis (English)">
-                <textarea className={ta} style={is} rows={3} value={diagEN}
-                  onChange={e => { setDiagEN(e.target.value); setDiagTx("idle"); setDiagTxErr(""); }}
-                  placeholder="Enter diagnosis in English" />
-              </F>
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <TranslateBtn
-                    onClick={translateDiagnosis}
-                    disabled={!diagEN.trim()}
-                    loading={diagTx === "loading"}
-                    label={diagHE.trim() ? "Retranslate Diagnosis" : "Translate to Hebrew"}
-                  />
-                  {diagHE.trim() && diagTx === "idle" && (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                      style={{backgroundColor:"#FEF9C3", color:"#92400E"}}>
-                      Hebrew exists — will ask before replacing
-                    </span>
-                  )}
-                  {!diagEN.trim() && diagTx === "idle" && <p className="text-xs" style={{color:"#CBD5E1"}}>Enter English diagnosis first.</p>}
-                  {diagTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{diagTxErr}</p>}
-                </div>
-                <p className="text-xs" style={{color:"#94A3B8"}}>AI translation is a draft and must be reviewed before finalising.</p>
-              </div>
-              <F label="אבחנה — Diagnosis (Hebrew)">
-                <textarea className={ta} style={{...is, direction:"rtl", textAlign:"right"}} rows={3} value={diagHE}
-                  onChange={e => setDiagHE(e.target.value)} placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
-              </F>
+            <div className="space-y-3">
+              {diagItems.map((item, idx) => {
+                const srcStyle = item.source === "new"
+                  ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
+                  : item.source === "edited"
+                    ? { bg: "#FFFBEB", border: "#FDE68A", badge: "#FEF3C7", badgeText: "#D97706", label: "Edited" }
+                    : { bg: "white",   border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#64748B", label: "Copied" };
+                return (
+                  <div key={item.id} className="rounded-xl p-3 space-y-2"
+                    style={{ border: `1px solid ${srcStyle.border}`, backgroundColor: srcStyle.bg }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-400 flex-shrink-0">{idx + 1}.</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: srcStyle.badge, color: srcStyle.badgeText }}>
+                        {srcStyle.label}
+                      </span>
+                      {diagItems.length > 1 && (
+                        <button type="button" onClick={() => removeDiagItem(item.id)}
+                          className="ml-auto text-xs transition-colors duration-150 flex-shrink-0"
+                          style={{ color: "#CBD5E1" }}
+                          onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                          onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <textarea className={ta} style={is} rows={2}
+                      value={item.textEN}
+                      onChange={e => updateDiagItemEN(item.id, e.target.value)}
+                      placeholder="Diagnosis item in English" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <TranslateBtn
+                        onClick={() => translateDiagItem(item.id)}
+                        disabled={!item.textEN.trim()}
+                        loading={translatingDiag === item.id}
+                        label={item.textHE.trim() ? "Retranslate" : "Translate to Hebrew"}
+                      />
+                      {item.textHE.trim() && translatingDiag !== item.id && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
+                          Hebrew exists — will ask before replacing
+                        </span>
+                      )}
+                      {diagTxErrors[item.id] && (
+                        <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{diagTxErrors[item.id]}</p>
+                      )}
+                    </div>
+                    <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={2}
+                      value={item.textHE}
+                      onChange={e => updateDiagItemHE(item.id, e.target.value)}
+                      placeholder="אבחנה בעברית — לאחר תרגום" />
+                  </div>
+                );
+              })}
+              <button type="button" onClick={addDiagItem}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
+                style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
+                + Add Diagnosis Item
+              </button>
+              <p className="text-xs" style={{ color: "#94A3B8" }}>AI translation is a draft — review before finalising.</p>
             </div>
           </SectionCard>
 
@@ -1276,76 +1408,64 @@ export default function LetterEditorPage() {
 
           {/* ── Plan ── */}
           <SectionCard title="Plan" titleHe="תכנית">
-            {/* English plan steps */}
-            <div className="mb-5">
-              <label className={lc} style={ls}>Plan in English</label>
-              <div className="space-y-2 mb-3">
-                {planStepsEN.map((step, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-xs font-semibold flex-shrink-0 text-right" style={{ color: "#94A3B8", minWidth: 22 }}>{i + 1}.</span>
-                    <input
-                      className={`flex-1 ${ic}`} style={is}
-                      value={step} onChange={e => updatePlanStepEN(i, e.target.value)}
-                      placeholder={`Step ${i + 1}`} />
-                    <button type="button" onClick={() => removePlanStepEN(i)}
-                      className="flex-shrink-0 text-sm transition-colors duration-150" style={{ color: "#CBD5E1", lineHeight: 1 }}
-                      onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                      onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
+            <div className="space-y-3">
+              {planSteps.map((step, idx) => {
+                const srcStyle = step.source === "new"
+                  ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
+                  : step.source === "edited"
+                    ? { bg: "#FFFBEB", border: "#FDE68A", badge: "#FEF3C7", badgeText: "#D97706", label: "Edited" }
+                    : { bg: "white",   border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#64748B", label: "Copied" };
+                return (
+                  <div key={step.id} className="rounded-xl p-3 space-y-2"
+                    style={{ border: `1px solid ${srcStyle.border}`, backgroundColor: srcStyle.bg }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-400 flex-shrink-0">{idx + 1}.</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: srcStyle.badge, color: srcStyle.badgeText }}>
+                        {srcStyle.label}
+                      </span>
+                      {planSteps.length > 1 && (
+                        <button type="button" onClick={() => removePlanStep(step.id)}
+                          className="ml-auto text-xs flex-shrink-0 transition-colors duration-150"
+                          style={{ color: "#CBD5E1" }}
+                          onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                          onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
+                      )}
+                    </div>
+                    <input className={`w-full ${ic}`} style={is}
+                      value={step.textEN}
+                      onChange={e => updatePlanStepEN(step.id, e.target.value)}
+                      placeholder={`Plan step ${idx + 1}`} />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <TranslateBtn
+                        onClick={() => translatePlanStep(step.id)}
+                        disabled={!step.textEN.trim()}
+                        loading={translatingPlan === step.id}
+                        label={step.textHE.trim() ? "Retranslate Step" : "Translate Step"}
+                      />
+                      {step.textHE.trim() && translatingPlan !== step.id && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
+                          Hebrew exists — will ask before replacing
+                        </span>
+                      )}
+                      {planTxErrors[step.id] && (
+                        <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{planTxErrors[step.id]}</p>
+                      )}
+                    </div>
+                    <input className={`w-full ${ic}`} style={{ ...is, direction: "rtl", textAlign: "right" }}
+                      value={step.textHE}
+                      onChange={e => updatePlanStepHE(step.id, e.target.value)}
+                      placeholder={`שלב ${idx + 1}`} />
                   </div>
-                ))}
-              </div>
-              <button type="button" onClick={addPlanStepEN}
+                );
+              })}
+              <button type="button" onClick={addPlanStep}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
                 style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
                 + Add Step
               </button>
-            </div>
-
-            {/* Translate Plan button */}
-            <div className="py-3 mb-2 space-y-1.5" style={{ borderTop: "1px solid #F4F6F9", borderBottom: "1px solid #F4F6F9" }}>
-              <div className="flex items-center gap-3 flex-wrap">
-                <TranslateBtn
-                  onClick={translatePlan}
-                  disabled={!planStepsEN.some(s => s.trim())}
-                  loading={planTx === "loading"}
-                  label={planStepsHE.some(s => s.trim()) ? "Retranslate Plan" : "Translate Plan to Hebrew"} />
-                {planStepsHE.some(s => s.trim()) && planTx === "idle" && (
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                    style={{backgroundColor:"#FEF9C3", color:"#92400E"}}>
-                    Hebrew exists — will ask before replacing
-                  </span>
-                )}
-                {!planStepsEN.some(s => s.trim()) && planTx === "idle" && (
-                  <p className="text-xs" style={{color:"#CBD5E1"}}>Add English plan steps first.</p>
-                )}
-                {planTx === "error" && <p className="text-xs font-medium" style={{color:"#BE123C"}}>{planTxErr}</p>}
-              </div>
-              <p className="text-xs" style={{color:"#94A3B8"}}>AI translation is a draft and must be reviewed before finalising.</p>
-            </div>
-
-            {/* Hebrew plan steps */}
-            <div style={{ paddingTop: 16 }}>
-              <label className={lc} style={ls}>Plan in Hebrew / תכנית</label>
-              <div className="space-y-2 mb-3">
-                {planStepsHE.map((step, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-xs font-semibold flex-shrink-0 text-right" style={{ color: "#94A3B8", minWidth: 22 }}>{i + 1}.</span>
-                    <input
-                      className={`flex-1 ${ic}`} style={{ ...is, direction: "rtl", textAlign: "right" }}
-                      value={step} onChange={e => updatePlanStepHE(i, e.target.value)}
-                      placeholder={`שלב ${i + 1}`} />
-                    <button type="button" onClick={() => removePlanStepHE(i)}
-                      className="flex-shrink-0 text-sm transition-colors duration-150" style={{ color: "#CBD5E1", lineHeight: 1 }}
-                      onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                      onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={addPlanStepHE}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
-                style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
-                + Add Step
-              </button>
+              <p className="text-xs" style={{ color: "#94A3B8" }}>AI translation is a draft — review before finalising.</p>
             </div>
           </SectionCard>
           <SectionCard title="Medical History">
@@ -2125,17 +2245,17 @@ export default function LetterEditorPage() {
                   Replace Hebrew Translation?
                 </h3>
                 <p className="text-xs" style={{ color: "#64748B" }}>
-                  {txConfirm?.type === "diagnosis" ? "Diagnosis" : txConfirm?.type === "plan" ? "Plan" : "Summary"} section
+                  {txConfirm?.type === "diagItem" ? "Diagnosis item" : txConfirm?.type === "planStep" ? "Plan step" : "Summary section"}
                 </p>
               </div>
             </div>
 
             <p className="text-xs leading-relaxed mb-4" style={{ color: "#475569" }}>
               The <strong style={{ color: "#1A2B4A" }}>
-                {txConfirm?.type === "diagnosis" ? "Diagnosis" :
-                 txConfirm?.type === "plan"      ? "Plan" :
-                 "Summary"}
-              </strong> section already contains Hebrew text — possibly Anat&apos;s reviewed and corrected translation.
+                {txConfirm?.type === "diagItem"  ? "Diagnosis item" :
+                 txConfirm?.type === "planStep"  ? "Plan step" :
+                 "Summary section"}
+              </strong> already contains Hebrew text — possibly Anat&apos;s reviewed and corrected translation.
             </p>
 
             <div className="px-3 py-2.5 rounded-xl mb-5 text-xs leading-relaxed font-medium"

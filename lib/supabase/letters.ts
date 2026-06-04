@@ -15,6 +15,24 @@ export interface SummarySection {
   source: "copied" | "new" | "edited";
 }
 
+/** One item in the Diagnosis list. Stored as JSONB in `diagnosis_items`. */
+export interface DiagnosisItem {
+  id: string;
+  textEN: string;
+  textHE: string;
+  source: "copied" | "new" | "edited";
+}
+
+/** One step in the Plan. Stored as JSONB in `plan_steps`. */
+export interface PlanStep {
+  id: string;
+  textEN: string;
+  textHE: string;
+  source: "copied" | "new" | "edited";
+}
+
+// ─── Serialisers (structured → flat for backward-compat fields) ───────────────
+
 export function sectionsToSumEN(sections: SummarySection[]): string {
   return sections
     .filter(s => s.textEN.trim())
@@ -27,6 +45,22 @@ export function sectionsToSumHE(sections: SummarySection[]): string {
     .filter(s => s.textHE.trim())
     .map(s => s.date ? `תאריך ביקורת: ${s.date}\n${s.textHE}` : s.textHE)
     .join("\n\n");
+}
+
+export function diagItemsToEN(items: DiagnosisItem[]): string {
+  return items.filter(i => i.textEN.trim()).map(i => i.textEN).join("\n");
+}
+
+export function diagItemsToHE(items: DiagnosisItem[]): string {
+  return items.filter(i => i.textHE.trim()).map(i => i.textHE).join("\n");
+}
+
+export function planStepsToENArr(steps: PlanStep[]): string[] {
+  return steps.map(s => s.textEN);
+}
+
+export function planStepsToHEArr(steps: PlanStep[]): string[] {
+  return steps.map(s => s.textHE);
 }
 
 export interface SupabaseLetter {
@@ -59,7 +93,9 @@ export interface SupabaseLetter {
   sent_to_patient_at: string | null;
   editable_docx_url: string | null;
   final_pdf_url: string | null;
-  summary_sections: SummarySection[] | null;
+  summary_sections:  SummarySection[]   | null;
+  diagnosis_items:   DiagnosisItem[]    | null;
+  plan_steps:        PlanStep[]         | null;
   // Populated by Supabase join: .select("*, patients(*)")
   patients?: {
     full_name: string;
@@ -142,12 +178,42 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
       dateDay:   dd || "",
       dateMonth: dm || "",
       dateYear:  dy || "",
-      // Clinical
+      // Clinical — flat fields kept for backward compat with preview/PDF
       diagEN:      letter.diagnosis_english || "",
       diagHE:      letter.diagnosis_hebrew  || "",
       sumEN:       letter.summary_english   || "",
       sumHE:       letter.summary_hebrew    || "",
-      // Structured summary sections — fall back to converting old flat fields
+      planStepsEN: letter.plan_english?.length ? letter.plan_english : [""],
+      planStepsHE: letter.plan_hebrew?.length  ? letter.plan_hebrew  : [""],
+      // Structured diagnosis items
+      diagItems: letter.diagnosis_items?.length
+        ? letter.diagnosis_items
+        : (() => {
+            const enLines = (letter.diagnosis_english || "").split("\n").filter(Boolean);
+            const heLines = (letter.diagnosis_hebrew  || "").split("\n").filter(Boolean);
+            if (!enLines.length && !heLines.length) return [];
+            const len = Math.max(enLines.length, heLines.length, 1);
+            return Array.from({ length: len }, (_, i) => ({
+              id: `d-${letter.id.slice(0, 6)}-${i}`,
+              textEN: enLines[i] || "",
+              textHE: heLines[i] || "",
+              source: "copied" as const,
+            })) as DiagnosisItem[];
+          })(),
+      // Structured plan steps
+      planSteps: letter.plan_steps?.length
+        ? letter.plan_steps
+        : (() => {
+            const en = letter.plan_english?.length ? letter.plan_english : [""];
+            const he = letter.plan_hebrew  || [];
+            return en.map((textEN, i) => ({
+              id: `p-${letter.id.slice(0, 6)}-${i}`,
+              textEN,
+              textHE: he[i] || "",
+              source: "copied" as const,
+            })) as PlanStep[];
+          })(),
+      // Structured summary sections
       summarySections: letter.summary_sections?.length
         ? letter.summary_sections
         : (letter.summary_english || letter.summary_hebrew)
@@ -159,8 +225,6 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
               source: "copied",
             }] as SummarySection[])
           : [],
-      planStepsEN: letter.plan_english?.length ? letter.plan_english : [""],
-      planStepsHE: letter.plan_hebrew?.length  ? letter.plan_hebrew  : [""],
       medHistory:  letter.medical_history   || "",
       famHistory:  letter.family_history    || "",
       medications: letter.medications       || [],
@@ -193,23 +257,32 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
 // ─── Map editor state to Supabase column payload ──────────────────────────────
 
 function editorDataToColumns(d: Record<string, unknown>, patientId?: string, status?: LetterStatus, date?: string) {
-  // Compute flat summary fields from sections (backward compat) or fall back to old flat fields
-  const sections = (d.summarySections as SummarySection[] | undefined) || [];
-  const sumEN = sections.length > 0 ? sectionsToSumEN(sections) : ((d.sumEN as string) || "");
-  const sumHE = sections.length > 0 ? sectionsToSumHE(sections) : ((d.sumHE as string) || "");
+  // Structured items/steps → derive flat fields for backward compat
+  const diagItems    = (d.diagItems    as DiagnosisItem[] | undefined) || [];
+  const planSteps    = (d.planSteps    as PlanStep[]      | undefined) || [];
+  const sumSections  = (d.summarySections as SummarySection[] | undefined) || [];
+
+  const diagEN = diagItems.length > 0  ? diagItemsToEN(diagItems)        : ((d.diagEN      as string) || "");
+  const diagHE = diagItems.length > 0  ? diagItemsToHE(diagItems)        : ((d.diagHE      as string) || "");
+  const planEN = planSteps.length > 0  ? planStepsToENArr(planSteps)     : ((d.planStepsEN as string[]) || []);
+  const planHE = planSteps.length > 0  ? planStepsToHEArr(planSteps)     : ((d.planStepsHE as string[]) || []);
+  const sumEN  = sumSections.length > 0 ? sectionsToSumEN(sumSections)   : ((d.sumEN       as string) || "");
+  const sumHE  = sumSections.length > 0 ? sectionsToSumHE(sumSections)   : ((d.sumHE       as string) || "");
 
   return {
     ...(patientId ? { patient_id: patientId } : {}),
     ...(status    ? { status }               : {}),
     letter_date:         date ?? (d.dateDay && d.dateMonth && d.dateYear
       ? `${d.dateDay}/${d.dateMonth}/${d.dateYear}` : ""),
-    diagnosis_english:   (d.diagEN      as string) || "",
-    diagnosis_hebrew:    (d.diagHE      as string) || "",
+    diagnosis_english:   diagEN,
+    diagnosis_hebrew:    diagHE,
     summary_english:     sumEN,
     summary_hebrew:      sumHE,
-    summary_sections:    sections,
-    plan_english:        (d.planStepsEN as string[]) || [],
-    plan_hebrew:         (d.planStepsHE as string[]) || [],
+    summary_sections:    sumSections,
+    diagnosis_items:     diagItems,
+    plan_steps:          planSteps,
+    plan_english:        planEN,
+    plan_hebrew:         planHE,
     medical_history:     (d.medHistory  as string) || "",
     family_history:      (d.famHistory  as string) || "",
     medications:         (d.medications as string[]) || [],
@@ -388,7 +461,7 @@ export async function updateLetterStatus(
   }
 }
 
-/** Anat saves only the Hebrew translation fields (and summary sections). */
+/** Anat saves only Hebrew translation fields — structured and flat. */
 export async function updateLetterHebrew(
   supabase: SupabaseClient,
   id: string,
@@ -397,6 +470,8 @@ export async function updateLetterHebrew(
     sumHE: string;
     planHE: string[];
     summarySections?: SummarySection[];
+    diagItems?:       DiagnosisItem[];
+    planSteps?:       PlanStep[];
   }
 ): Promise<void> {
   const payload: Record<string, unknown> = {
@@ -407,6 +482,14 @@ export async function updateLetterHebrew(
   if (hebrew.summarySections) {
     payload.summary_sections = hebrew.summarySections;
     payload.summary_hebrew   = sectionsToSumHE(hebrew.summarySections) || hebrew.sumHE;
+  }
+  if (hebrew.diagItems) {
+    payload.diagnosis_items  = hebrew.diagItems;
+    payload.diagnosis_hebrew = diagItemsToHE(hebrew.diagItems) || hebrew.diagHE;
+  }
+  if (hebrew.planSteps) {
+    payload.plan_steps  = hebrew.planSteps;
+    payload.plan_hebrew = planStepsToHEArr(hebrew.planSteps);
   }
   const { error } = await supabase
     .from("letters")
@@ -465,6 +548,38 @@ export async function duplicateLetter(
   const newSumEN = sectionsToSumEN(newSections);
   const newSumHE = sectionsToSumHE(newSections);
 
+  // Copy diagnosis items (mark as copied)
+  const copiedDiagItems: DiagnosisItem[] = source.diagnosis_items?.length
+    ? source.diagnosis_items.map(i => ({ ...i, source: "copied" as const }))
+    : (() => {
+        const en = (source.diagnosis_english || "").split("\n").filter(Boolean);
+        const he = (source.diagnosis_hebrew  || "").split("\n").filter(Boolean);
+        if (!en.length && !he.length) return [];
+        const len = Math.max(en.length, he.length);
+        return Array.from({ length: len }, (_, i) => ({
+          id: `d-dup-${Date.now().toString(36)}-${i}`,
+          textEN: en[i] || "", textHE: he[i] || "",
+          source: "copied" as const,
+        }));
+      })();
+  const newDiagEN = diagItemsToEN(copiedDiagItems) || source.diagnosis_english || "";
+  const newDiagHE = diagItemsToHE(copiedDiagItems) || source.diagnosis_hebrew  || "";
+
+  // Copy plan steps (mark as copied)
+  const copiedPlanSteps: PlanStep[] = source.plan_steps?.length
+    ? source.plan_steps.map(s => ({ ...s, source: "copied" as const }))
+    : (() => {
+        const en = source.plan_english || [];
+        const he = source.plan_hebrew  || [];
+        return en.map((textEN, i) => ({
+          id: `p-dup-${Date.now().toString(36)}-${i}`,
+          textEN, textHE: he[i] || "",
+          source: "copied" as const,
+        }));
+      })();
+  const newPlanEN = planStepsToENArr(copiedPlanSteps).length ? planStepsToENArr(copiedPlanSteps) : (source.plan_english || []);
+  const newPlanHE = planStepsToHEArr(copiedPlanSteps).length ? planStepsToHEArr(copiedPlanSteps) : (source.plan_hebrew  || []);
+
   const { data, error } = await supabase
     .from("letters")
     .insert({
@@ -472,13 +587,15 @@ export async function duplicateLetter(
       created_by:          user.id,
       status:              "Draft" as LetterStatus,
       letter_date:         todayDate,
-      diagnosis_english:   source.diagnosis_english   || "",
-      diagnosis_hebrew:    source.diagnosis_hebrew    || "",
+      diagnosis_english:   newDiagEN,
+      diagnosis_hebrew:    newDiagHE,
+      diagnosis_items:     copiedDiagItems,
       summary_english:     newSumEN,
       summary_hebrew:      newSumHE,
       summary_sections:    newSections,
-      plan_english:        source.plan_english        || [],
-      plan_hebrew:         source.plan_hebrew         || [],
+      plan_english:        newPlanEN,
+      plan_hebrew:         newPlanHE,
+      plan_steps:          copiedPlanSteps,
       medical_history:     source.medical_history     || "",
       family_history:      source.family_history      || "",
       medications:         source.medications         || [],

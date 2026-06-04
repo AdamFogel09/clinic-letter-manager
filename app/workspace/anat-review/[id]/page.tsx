@@ -12,7 +12,11 @@ import {
   updateLetterHebrew,
   updateLetterStatus,
   type SummarySection,
+  type DiagnosisItem,
+  type PlanStep,
   sectionsToSumHE,
+  diagItemsToHE,
+  planStepsToHEArr,
 } from "@/lib/supabase/letters";
 import {
   getLetter,
@@ -60,9 +64,9 @@ export default function AnatReviewLetterPage() {
 
   const [notFound,  setNotFound]  = useState(false);
   const [loading,   setLoading]   = useState(true);
-  const [diagHE,          setDiagHE]          = useState("");
+  const [diagItems,       setDiagItems]       = useState<DiagnosisItem[]>([]);
   const [summarySections, setSummarySections] = useState<SummarySection[]>([]);
-  const [planHE,          setPlanHE]          = useState<string[]>([""]);
+  const [planSteps,       setPlanSteps]       = useState<PlanStep[]>([]);
   const [diagEN,          setDiagEN]          = useState("");
   const [planEN,    setPlanEN]    = useState<string[]>([]);
   const [gender,    setGender]    = useState("");
@@ -88,10 +92,29 @@ export default function AnatReviewLetterPage() {
         setGender(p?.gender              || "");
         setDiagEN(letter.diagnosis_english || "");
         setPlanEN((letter.plan_english || []).filter(Boolean));
-        setDiagHE(letter.diagnosis_hebrew || "");
-        const steps = (letter.plan_hebrew || []).filter((s) => typeof s === "string");
-        setPlanHE(steps.length > 0 ? steps : [""]);
-        // Load summary sections (fall back to converting old flat fields)
+        // Structured diagnosis items
+        if (letter.diagnosis_items?.length) {
+          setDiagItems(letter.diagnosis_items);
+        } else {
+          const en = (letter.diagnosis_english || "").split("\n").filter(Boolean);
+          const he = (letter.diagnosis_hebrew  || "").split("\n").filter(Boolean);
+          setDiagItems(en.length || he.length
+            ? Array.from({ length: Math.max(en.length, he.length) }, (_, i) => ({
+                id: `d-${id.slice(0, 6)}-${i}`, textEN: en[i] || "", textHE: he[i] || "", source: "copied" as const
+              }))
+            : []);
+        }
+        // Structured plan steps
+        if (letter.plan_steps?.length) {
+          setPlanSteps(letter.plan_steps);
+        } else {
+          const en = (letter.plan_english || []);
+          const he = (letter.plan_hebrew  || []);
+          setPlanSteps(en.length
+            ? en.map((textEN, i) => ({ id: `p-${id.slice(0, 6)}-${i}`, textEN, textHE: he[i] || "", source: "copied" as const }))
+            : []);
+        }
+        // Structured summary sections
         if (letter.summary_sections?.length) {
           setSummarySections(letter.summary_sections);
         } else if (letter.summary_english || letter.summary_hebrew) {
@@ -112,13 +135,31 @@ export default function AnatReviewLetterPage() {
         setPatId(local.patientId     || "");
         setLetterDate(local.letterDate || "");
         setGender((d.gender  as string) || "");
-        setDiagEN((d.diagEN  as string) || "");
-        setPlanEN(Array.isArray(d.planStepsEN)
-          ? (d.planStepsEN as string[]).filter(Boolean) : []);
-        setDiagHE((d.diagHE  as string) || "");
-        const steps = Array.isArray(d.planStepsHE)
-          ? (d.planStepsHE as string[]).filter((s) => typeof s === "string") : [];
-        setPlanHE(steps.length > 0 ? steps : [""]);
+        setDiagEN((d.diagEN as string) || "");
+        setPlanEN(Array.isArray(d.planStepsEN) ? (d.planStepsEN as string[]).filter(Boolean) : []);
+        // diagItems
+        if (Array.isArray(d.diagItems) && d.diagItems.length) {
+          setDiagItems(d.diagItems as DiagnosisItem[]);
+        } else {
+          const en = ((d.diagEN as string) || "").split("\n").filter(Boolean);
+          const he = ((d.diagHE as string) || "").split("\n").filter(Boolean);
+          setDiagItems(en.length || he.length
+            ? Array.from({ length: Math.max(en.length, he.length) }, (_, i) => ({
+                id: `d-local-${i}`, textEN: en[i] || "", textHE: he[i] || "", source: "copied" as const
+              }))
+            : []);
+        }
+        // planSteps
+        if (Array.isArray(d.planSteps) && d.planSteps.length) {
+          setPlanSteps(d.planSteps as PlanStep[]);
+        } else {
+          const en = Array.isArray(d.planStepsEN) ? d.planStepsEN as string[] : [];
+          const he = Array.isArray(d.planStepsHE) ? d.planStepsHE as string[] : [];
+          setPlanSteps(en.length
+            ? en.map((textEN, i) => ({ id: `p-local-${i}`, textEN, textHE: he[i] || "", source: "copied" as const }))
+            : []);
+        }
+        // summarySections
         if (Array.isArray(d.summarySections) && d.summarySections.length) {
           setSummarySections(d.summarySections as SummarySection[]);
         } else if (d.sumEN || d.sumHE) {
@@ -136,15 +177,17 @@ export default function AnatReviewLetterPage() {
     load();
   }, [id]);
 
-  const sumHE = sectionsToSumHE(summarySections);
+  const sumHE  = sectionsToSumHE(summarySections);
+  const diagHE = diagItemsToHE(diagItems);
+  const planHE = planStepsToHEArr(planSteps);
 
   const collect = () => ({ diagHE, sumHE, planHE });
 
   const handleSaveDraft = async () => {
     setSaving(true);
     const supabase = createClient();
-    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections });
-    updateLetterData(id, { diagHE, sumHE, summarySections, planStepsHE: planHE });
+    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections, diagItems, planSteps });
+    updateLetterData(id, { diagHE, diagItems, sumHE, summarySections, planStepsHE: planHE, planSteps });
     setSaving(false);
     setSavedMsg(true);
     setTimeout(() => setSavedMsg(false), 2500);
@@ -154,7 +197,7 @@ export default function AnatReviewLetterPage() {
     setFinishing(true);
     const supabase = createClient();
     // Save Hebrew + update status in Supabase
-    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections });
+    await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections, diagItems, planSteps });
     await updateLetterStatus(supabase, id, "Reviewed", {
       reviewedAt: new Date().toISOString(),
     });
@@ -185,9 +228,9 @@ export default function AnatReviewLetterPage() {
         diagHE: updated.diagnosis_hebrew  || "",
         sumEN:  updated.summary_english   || "",
         sumHE:  updated.summary_hebrew    || "",
-        summarySections: updated.summary_sections?.length
-          ? updated.summary_sections
-          : summarySections,
+        diagItems:       updated.diagnosis_items?.length    ? updated.diagnosis_items    : diagItems,
+        summarySections: updated.summary_sections?.length   ? updated.summary_sections   : summarySections,
+        planSteps:       updated.plan_steps?.length         ? updated.plan_steps         : planSteps,
         planStepsEN: updated.plan_english || [],
         planStepsHE: updated.plan_hebrew  || [],
         medHistory:  updated.medical_history || "",
@@ -210,9 +253,6 @@ export default function AnatReviewLetterPage() {
     router.push("/workspace/review");
   };
 
-  const setStep    = (i: number, val: string) => setPlanHE((p) => p.map((s, idx) => idx === i ? val : s));
-  const addStep    = () => setPlanHE((p) => [...p, ""]);
-  const removeStep = (i: number) => setPlanHE((p) => p.length > 1 ? p.filter((_, idx) => idx !== i) : p);
 
   // ─── Not found / loading ──────────────────────────────────────────────────
 
@@ -320,20 +360,43 @@ export default function AnatReviewLetterPage() {
           Edit Hebrew Translation
         </p>
 
-        {/* Hebrew Diagnosis */}
-        <EditSection title="Diagnosis" titleHe="אבחנה"
-          refContent={diagEN
-            ? <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>{diagEN}</p>
-            : <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No English diagnosis entered.</p>}>
-          <label className="block text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "#64748B" }}>
-            Hebrew Diagnosis / אבחנה
-          </label>
-          <textarea dir="rtl" rows={5} value={diagHE} onChange={(e) => setDiagHE(e.target.value)}
-            placeholder="הכנס אבחנה בעברית"
-            className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
-            style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right",
-              fontSize: 16, lineHeight: 1.7 }} />
-        </EditSection>
+        {/* Hebrew Diagnosis — per item */}
+        <div className="bg-white rounded-2xl border p-5 mb-4"
+          style={{ borderColor: "#E2E8F0", boxShadow: "0 1px 3px 0 rgb(0 0 0/0.05)" }}>
+          <div className="flex items-baseline justify-between pb-3 mb-4"
+            style={{ borderBottom: "2px solid #1A2B4A" }}>
+            <h3 className="text-base font-bold" style={{ color: "#1A2B4A" }}>Diagnosis</h3>
+            <span className="text-base font-semibold" style={{ color: "#1A2B4A" }}>אבחנה</span>
+          </div>
+          {diagItems.length === 0 && (
+            <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No diagnosis items.</p>
+          )}
+          <div className="space-y-4">
+            {diagItems.map((item, idx) => (
+              <div key={item.id} className="rounded-xl p-4 space-y-2"
+                style={{ border: "1px solid #E2E8F0", backgroundColor: "#FAFBFC" }}>
+                <div className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
+                  <span className="text-xs font-semibold" style={{ color: "#94A3B8" }}>{idx + 1}.</span>
+                </div>
+                {item.textEN.trim() && (
+                  <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#94A3B8" }}>English Reference</p>
+                    <p className="text-sm leading-relaxed" style={{ color: "#475569" }}>{item.textEN}</p>
+                  </div>
+                )}
+                <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "#64748B" }}>Hebrew / עברית</label>
+                <textarea dir="rtl" rows={3}
+                  value={item.textHE}
+                  onChange={e => setDiagItems(prev => prev.map(i =>
+                    i.id === item.id ? { ...i, textHE: e.target.value } : i
+                  ))}
+                  placeholder="אבחנה בעברית"
+                  className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
+                  style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right", fontSize: 16, lineHeight: 1.7 }} />
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Hebrew Summary — per dated section */}
         <div className="bg-white rounded-2xl border p-5 mb-4"
@@ -398,54 +461,46 @@ export default function AnatReviewLetterPage() {
           </div>
         </div>
 
-        {/* Hebrew Plan */}
-        <EditSection title="Plan" titleHe="תכנית"
-          refContent={planEN.length > 0
-            ? <ol className="list-decimal pl-5 space-y-1.5">
-                {planEN.map((step, i) => (
-                  <li key={i} className="text-sm leading-relaxed" style={{ color: "#475569" }}>{step}</li>
-                ))}
-              </ol>
-            : <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No English plan steps entered.</p>}>
-          <label className="block text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "#64748B" }}>
-            Hebrew Plan Steps / תכנית
-          </label>
-          <div className="flex flex-col gap-3">
-            {planHE.map((step, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <span className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold mt-1"
-                  style={{ backgroundColor: "#EDE9FE", color: "#7C3AED" }}>
-                  {i + 1}
-                </span>
-                <textarea dir="rtl" rows={4} value={step} onChange={(e) => setStep(i, e.target.value)}
-                  placeholder={`שלב ${i + 1}`}
-                  className="flex-1 px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
-                  style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right",
-                    fontSize: 16, lineHeight: 1.7 }} />
-                {planHE.length > 1 && (
-                  <button type="button" onClick={() => removeStep(i)}
-                    className="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center mt-1 transition-colors duration-150"
-                    style={{ backgroundColor: "#FFF1F2", color: "#BE123C" }}
-                    aria-label={`Remove step ${i + 1}`}>
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2}
-                      strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                      <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 10h8l1-10"/>
-                    </svg>
-                  </button>
+        {/* Hebrew Plan — per step */}
+        <div className="bg-white rounded-2xl border p-5 mb-4"
+          style={{ borderColor: "#E2E8F0", boxShadow: "0 1px 3px 0 rgb(0 0 0/0.05)" }}>
+          <div className="flex items-baseline justify-between pb-3 mb-4"
+            style={{ borderBottom: "2px solid #1A2B4A" }}>
+            <h3 className="text-base font-bold" style={{ color: "#1A2B4A" }}>Plan</h3>
+            <span className="text-base font-semibold" style={{ color: "#1A2B4A" }}>תכנית</span>
+          </div>
+          {planSteps.length === 0 && (
+            <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No plan steps.</p>
+          )}
+          <div className="flex flex-col gap-4">
+            {planSteps.map((step, idx) => (
+              <div key={step.id} className="rounded-xl p-4 space-y-2"
+                style={{ border: "1px solid #E2E8F0", backgroundColor: "#FAFBFC" }}>
+                <div className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
+                  <span className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                    style={{ backgroundColor: "#EDE9FE", color: "#7C3AED" }}>
+                    {idx + 1}
+                  </span>
+                </div>
+                {step.textEN.trim() && (
+                  <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#94A3B8" }}>English Reference</p>
+                    <p className="text-sm leading-relaxed" style={{ color: "#475569" }}>{step.textEN}</p>
+                  </div>
                 )}
+                <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "#64748B" }}>Hebrew / עברית</label>
+                <textarea dir="rtl" rows={3}
+                  value={step.textHE}
+                  onChange={e => setPlanSteps(prev => prev.map(s =>
+                    s.id === step.id ? { ...s, textHE: e.target.value } : s
+                  ))}
+                  placeholder={`שלב ${idx + 1}`}
+                  className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
+                  style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right", fontSize: 16, lineHeight: 1.7 }} />
               </div>
             ))}
           </div>
-          <button type="button" onClick={addStep}
-            className="mt-4 w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 sm:py-2 rounded-xl border text-sm font-semibold transition-all duration-150"
-            style={{ color: "#7C3AED", borderColor: "#DDD6FE", backgroundColor: "#EDE9FE" }}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2}
-              strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-              <circle cx="8" cy="8" r="7"/><path d="M8 5v6M5 8h6"/>
-            </svg>
-            Add Hebrew Step
-          </button>
-        </EditSection>
+        </div>
 
         <div className="rounded-2xl px-4 py-3 mb-4"
           style={{ backgroundColor: "#EDE9FE", border: "1px solid #DDD6FE" }}>
