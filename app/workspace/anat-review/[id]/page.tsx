@@ -372,29 +372,49 @@ export default function AnatReviewLetterPage() {
             <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No diagnosis items.</p>
           )}
           <div className="space-y-4">
-            {diagItems.map((item, idx) => (
-              <div key={item.id} className="rounded-xl p-4 space-y-2"
-                style={{ border: "1px solid #E2E8F0", backgroundColor: "#FAFBFC" }}>
-                <div className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
-                  <span className="text-xs font-semibold" style={{ color: "#94A3B8" }}>{idx + 1}.</span>
-                </div>
-                {item.textEN.trim() && (
-                  <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#94A3B8" }}>English Reference</p>
-                    <p className="text-sm leading-relaxed" style={{ color: "#475569" }}>{item.textEN}</p>
+            {diagItems.map((item, idx) => {
+              const isCopied = item.source === "copied";
+              return (
+                <div key={item.id} className="rounded-xl p-4 space-y-2"
+                  style={{ border: "1px solid #E2E8F0", backgroundColor: isCopied ? "#F8FAFC" : "#FAFBFC" }}>
+                  <div className="flex items-center justify-between gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <span className="text-xs font-semibold" style={{ color: "#94A3B8" }}>{idx + 1}.</span>
+                    {isCopied && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: "#F1F5F9", color: "#94A3B8" }}>
+                        Previous — Read-only
+                      </span>
+                    )}
                   </div>
-                )}
-                <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "#64748B" }}>Hebrew / עברית</label>
-                <textarea dir="rtl" rows={3}
-                  value={item.textHE}
-                  onChange={e => setDiagItems(prev => prev.map(i =>
-                    i.id === item.id ? { ...i, textHE: e.target.value } : i
-                  ))}
-                  placeholder="אבחנה בעברית"
-                  className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
-                  style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right", fontSize: 16, lineHeight: 1.7 }} />
-              </div>
-            ))}
+                  {item.textEN.trim() && (
+                    <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#94A3B8" }}>English Reference</p>
+                      <p className="text-sm leading-relaxed" style={{ color: "#475569" }}>{item.textEN}</p>
+                    </div>
+                  )}
+                  <label className="block text-xs font-semibold uppercase tracking-wide"
+                    style={{ color: isCopied ? "#94A3B8" : "#64748B" }}>
+                    Hebrew / עברית{isCopied ? " (locked)" : ""}
+                  </label>
+                  {isCopied ? (
+                    <p className="text-sm leading-relaxed px-4 py-3 rounded-xl whitespace-pre-wrap"
+                      style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right",
+                        backgroundColor: "#F1F5F9", border: "1px solid #E2E8F0", minHeight: "3rem" }}>
+                      {item.textHE || "—"}
+                    </p>
+                  ) : (
+                    <textarea dir="rtl" rows={3}
+                      value={item.textHE}
+                      onChange={e => setDiagItems(prev => prev.map(i =>
+                        i.id === item.id ? { ...i, textHE: e.target.value } : i
+                      ))}
+                      placeholder="אבחנה בעברית"
+                      className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
+                      style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right", fontSize: 16, lineHeight: 1.7 }} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -412,52 +432,68 @@ export default function AnatReviewLetterPage() {
           )}
 
           <div className="space-y-5">
-            {summarySections.map((section, idx) => (
-              <div key={section.id} className="rounded-xl p-4 space-y-3"
-                style={{ border: "1px solid #E2E8F0", backgroundColor: section.source === "new" ? "#F5F3FF" : "#FAFBFC" }}>
+            {summarySections.map((section, idx) => {
+              const isCopied = section.source === "copied";
+              return (
+                <div key={section.id} className="rounded-xl p-4 space-y-3"
+                  style={{ border: "1px solid #E2E8F0", backgroundColor: isCopied ? "#F8FAFC" : "#F5F3FF" }}>
 
-                {/* Date header */}
-                <div className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
-                  <span className="text-xs font-semibold" style={{ color: "#94A3B8" }}>
-                    {idx === 0 ? "Review date:" : `Visit ${idx + 1}:`}
-                  </span>
-                  <span className="text-xs font-bold" style={{ color: "#1A2B4A" }}>
-                    {section.date || "—"}
-                  </span>
-                  {section.source === "new" && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto"
-                      style={{ backgroundColor: "#EDE9FE", color: "#7C3AED" }}>New</span>
+                  {/* Date header */}
+                  <div className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <span className="text-xs font-semibold" style={{ color: "#94A3B8" }}>
+                      {idx === 0 ? "Review date:" : `Visit ${idx + 1}:`}
+                    </span>
+                    <span className="text-xs font-bold" style={{ color: "#1A2B4A" }}>
+                      {section.date || "—"}
+                    </span>
+                    {isCopied ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto"
+                        style={{ backgroundColor: "#F1F5F9", color: "#94A3B8" }}>Previous — Read-only</span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto"
+                        style={{ backgroundColor: "#EDE9FE", color: "#7C3AED" }}>New</span>
+                    )}
+                  </div>
+
+                  {/* English reference */}
+                  {section.textEN.trim() && (
+                    <div className="rounded-xl px-4 py-3"
+                      style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2"
+                        style={{ color: "#94A3B8" }}>English Reference</p>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
+                        {section.textEN}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Hebrew */}
+                  <label className="block text-xs font-semibold uppercase tracking-wide"
+                    style={{ color: isCopied ? "#94A3B8" : "#64748B" }}>
+                    Hebrew / עברית{isCopied ? " (locked)" : ""}
+                  </label>
+                  {isCopied ? (
+                    <p className="text-sm leading-relaxed px-4 py-3 rounded-xl whitespace-pre-wrap"
+                      style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right",
+                        backgroundColor: "#F1F5F9", border: "1px solid #E2E8F0", minHeight: "4rem" }}>
+                      {section.textHE || "—"}
+                    </p>
+                  ) : (
+                    <textarea
+                      dir="rtl" rows={5}
+                      value={section.textHE}
+                      onChange={e => setSummarySections(prev => prev.map(s =>
+                        s.id === section.id ? { ...s, textHE: e.target.value } : s
+                      ))}
+                      placeholder="הכנס סיכום בעברית"
+                      className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
+                      style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl",
+                        textAlign: "right", fontSize: 16, lineHeight: 1.7 }}
+                    />
                   )}
                 </div>
-
-                {/* English reference */}
-                {section.textEN.trim() && (
-                  <div className="rounded-xl px-4 py-3"
-                    style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-2"
-                      style={{ color: "#94A3B8" }}>English Reference</p>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
-                      {section.textEN}
-                    </p>
-                  </div>
-                )}
-
-                {/* Hebrew textarea */}
-                <label className="block text-xs font-semibold uppercase tracking-wide"
-                  style={{ color: "#64748B" }}>Hebrew / עברית</label>
-                <textarea
-                  dir="rtl" rows={section.source === "new" ? 5 : 6}
-                  value={section.textHE}
-                  onChange={e => setSummarySections(prev => prev.map(s =>
-                    s.id === section.id ? { ...s, textHE: e.target.value } : s
-                  ))}
-                  placeholder="הכנס סיכום בעברית"
-                  className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
-                  style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl",
-                    textAlign: "right", fontSize: 16, lineHeight: 1.7 }}
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -473,32 +509,52 @@ export default function AnatReviewLetterPage() {
             <p className="text-sm italic" style={{ color: "#CBD5E1" }}>No plan steps.</p>
           )}
           <div className="flex flex-col gap-4">
-            {planSteps.map((step, idx) => (
-              <div key={step.id} className="rounded-xl p-4 space-y-2"
-                style={{ border: "1px solid #E2E8F0", backgroundColor: "#FAFBFC" }}>
-                <div className="flex items-center gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ backgroundColor: "#EDE9FE", color: "#7C3AED" }}>
-                    {idx + 1}
-                  </span>
-                </div>
-                {step.textEN.trim() && (
-                  <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#94A3B8" }}>English Reference</p>
-                    <p className="text-sm leading-relaxed" style={{ color: "#475569" }}>{step.textEN}</p>
+            {planSteps.map((step, idx) => {
+              const isCopied = step.source === "copied";
+              return (
+                <div key={step.id} className="rounded-xl p-4 space-y-2"
+                  style={{ border: "1px solid #E2E8F0", backgroundColor: isCopied ? "#F8FAFC" : "#FAFBFC" }}>
+                  <div className="flex items-center justify-between gap-2 pb-2" style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <span className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                      style={{ backgroundColor: isCopied ? "#F1F5F9" : "#EDE9FE", color: isCopied ? "#94A3B8" : "#7C3AED" }}>
+                      {idx + 1}
+                    </span>
+                    {isCopied && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: "#F1F5F9", color: "#94A3B8" }}>
+                        Previous — Read-only
+                      </span>
+                    )}
                   </div>
-                )}
-                <label className="block text-xs font-semibold uppercase tracking-wide" style={{ color: "#64748B" }}>Hebrew / עברית</label>
-                <textarea dir="rtl" rows={3}
-                  value={step.textHE}
-                  onChange={e => setPlanSteps(prev => prev.map(s =>
-                    s.id === step.id ? { ...s, textHE: e.target.value } : s
-                  ))}
-                  placeholder={`שלב ${idx + 1}`}
-                  className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
-                  style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right", fontSize: 16, lineHeight: 1.7 }} />
-              </div>
-            ))}
+                  {step.textEN.trim() && (
+                    <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#94A3B8" }}>English Reference</p>
+                      <p className="text-sm leading-relaxed" style={{ color: "#475569" }}>{step.textEN}</p>
+                    </div>
+                  )}
+                  <label className="block text-xs font-semibold uppercase tracking-wide"
+                    style={{ color: isCopied ? "#94A3B8" : "#64748B" }}>
+                    Hebrew / עברית{isCopied ? " (locked)" : ""}
+                  </label>
+                  {isCopied ? (
+                    <p className="text-sm leading-relaxed px-4 py-3 rounded-xl"
+                      style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right",
+                        backgroundColor: "#F1F5F9", border: "1px solid #E2E8F0", minHeight: "3rem" }}>
+                      {step.textHE || "—"}
+                    </p>
+                  ) : (
+                    <textarea dir="rtl" rows={3}
+                      value={step.textHE}
+                      onChange={e => setPlanSteps(prev => prev.map(s =>
+                        s.id === step.id ? { ...s, textHE: e.target.value } : s
+                      ))}
+                      placeholder={`שלב ${idx + 1}`}
+                      className="w-full px-4 py-3 rounded-xl border bg-white focus:outline-none resize-none transition-colors duration-150"
+                      style={{ borderColor: "#E2E8F0", color: "#1A2B4A", direction: "rtl", textAlign: "right", fontSize: 16, lineHeight: 1.7 }} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

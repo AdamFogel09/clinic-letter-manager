@@ -1017,6 +1017,7 @@ export default function LetterEditorPage() {
   const doTranslateDiagItem = async (id: string) => {
     const item = diagItems.find(i => i.id === id);
     if (!item?.textEN.trim()) return;
+    if (item.source === "copied") return;
     setTranslatingDiag(id);
     setDiagTxErrors(prev => ({ ...prev, [id]: "" }));
     try {
@@ -1032,11 +1033,12 @@ export default function LetterEditorPage() {
   const doTranslatePlanStep = async (id: string) => {
     const step = planSteps.find(s => s.id === id);
     if (!step?.textEN.trim()) return;
+    if (step.source === "copied") return;
     setTranslatingPlan(id);
     setPlanTxErrors(prev => ({ ...prev, [id]: "" }));
     try {
-      const { translatedText } = await callTranslate({ sectionType: "plan", text: step.textEN });
-      setPlanSteps(prev => prev.map(s => s.id === id ? { ...s, textHE: translatedText } : s));
+      const { translatedSteps } = await callTranslate({ sectionType: "plan", planSteps: [step.textEN] });
+      setPlanSteps(prev => prev.map(s => s.id === id ? { ...s, textHE: translatedSteps[0] ?? "" } : s));
     } catch (e) {
       setPlanTxErrors(prev => ({ ...prev, [id]: e instanceof Error ? e.message : "Translation failed." }));
     } finally {
@@ -1047,6 +1049,7 @@ export default function LetterEditorPage() {
   const doTranslateSummarySection = async (id: string) => {
     const section = summarySections.find(s => s.id === id);
     if (!section?.textEN.trim()) return;
+    if (section.source === "copied") return;
     setTranslatingSection(id);
     setSectionTxErrors(prev => ({ ...prev, [id]: "" }));
     try {
@@ -1067,6 +1070,7 @@ export default function LetterEditorPage() {
   const translateDiagItem = (id: string) => {
     const item = diagItems.find(i => i.id === id);
     if (!item?.textEN.trim()) return;
+    if (item.source === "copied") return;
     if (item.textHE.trim()) { setTxConfirm({ type: "diagItem", itemId: id }); return; }
     doTranslateDiagItem(id);
   };
@@ -1074,6 +1078,7 @@ export default function LetterEditorPage() {
   const translateSummarySection = (id: string) => {
     const section = summarySections.find(s => s.id === id);
     if (!section?.textEN.trim()) return;
+    if (section.source === "copied") return;
     if (section.textHE.trim()) { setTxConfirm({ type: "summary", sectionId: id }); return; }
     doTranslateSummarySection(id);
   };
@@ -1081,6 +1086,7 @@ export default function LetterEditorPage() {
   const translatePlanStep = (id: string) => {
     const step = planSteps.find(s => s.id === id);
     if (!step?.textEN.trim()) return;
+    if (step.source === "copied") return;
     if (step.textHE.trim()) { setTxConfirm({ type: "planStep", stepId: id }); return; }
     doTranslatePlanStep(id);
   };
@@ -1259,11 +1265,12 @@ export default function LetterEditorPage() {
           <SectionCard title="Diagnosis" titleHe="אבחנה">
             <div className="space-y-3">
               {diagItems.map((item, idx) => {
+                const isCopied = item.source === "copied";
                 const srcStyle = item.source === "new"
                   ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
                   : item.source === "edited"
                     ? { bg: "#FFFBEB", border: "#FDE68A", badge: "#FEF3C7", badgeText: "#D97706", label: "Edited" }
-                    : { bg: "white",   border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#64748B", label: "Copied" };
+                    : { bg: "#F8FAFC", border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#94A3B8", label: "Previous" };
                 return (
                   <div key={item.id} className="rounded-xl p-3 space-y-2"
                     style={{ border: `1px solid ${srcStyle.border}`, backgroundColor: srcStyle.bg }}>
@@ -1271,9 +1278,9 @@ export default function LetterEditorPage() {
                       <span className="text-xs font-semibold text-slate-400 flex-shrink-0">{idx + 1}.</span>
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: srcStyle.badge, color: srcStyle.badgeText }}>
-                        {srcStyle.label}
+                        {isCopied ? "Previous — Read-only" : srcStyle.label}
                       </span>
-                      {diagItems.length > 1 && (
+                      {!isCopied && (
                         <button type="button" onClick={() => removeDiagItem(item.id)}
                           className="ml-auto text-xs transition-colors duration-150 flex-shrink-0"
                           style={{ color: "#CBD5E1" }}
@@ -1283,31 +1290,46 @@ export default function LetterEditorPage() {
                         </button>
                       )}
                     </div>
-                    <textarea className={ta} style={is} rows={2}
-                      value={item.textEN}
-                      onChange={e => updateDiagItemEN(item.id, e.target.value)}
-                      placeholder="Diagnosis item in English" />
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <TranslateBtn
-                        onClick={() => translateDiagItem(item.id)}
-                        disabled={!item.textEN.trim()}
-                        loading={translatingDiag === item.id}
-                        label={item.textHE.trim() ? "Retranslate" : "Translate to Hebrew"}
-                      />
-                      {item.textHE.trim() && translatingDiag !== item.id && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
-                          Hebrew exists — will ask before replacing
-                        </span>
-                      )}
-                      {diagTxErrors[item.id] && (
-                        <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{diagTxErrors[item.id]}</p>
-                      )}
-                    </div>
-                    <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={2}
-                      value={item.textHE}
-                      onChange={e => updateDiagItemHE(item.id, e.target.value)}
-                      placeholder="אבחנה בעברית — לאחר תרגום" />
+                    {isCopied ? (
+                      <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
+                        {item.textEN || "—"}
+                      </p>
+                    ) : (
+                      <textarea className={ta} style={is} rows={2}
+                        value={item.textEN}
+                        onChange={e => updateDiagItemEN(item.id, e.target.value)}
+                        placeholder="Diagnosis item in English" />
+                    )}
+                    {!isCopied && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <TranslateBtn
+                          onClick={() => translateDiagItem(item.id)}
+                          disabled={!item.textEN.trim()}
+                          loading={translatingDiag === item.id}
+                          label={item.textHE.trim() ? "Retranslate" : "Translate to Hebrew"}
+                        />
+                        {item.textHE.trim() && translatingDiag !== item.id && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
+                            Hebrew exists — will ask before replacing
+                          </span>
+                        )}
+                        {diagTxErrors[item.id] && (
+                          <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{diagTxErrors[item.id]}</p>
+                        )}
+                      </div>
+                    )}
+                    {isCopied ? (
+                      <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap"
+                        style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
+                        {item.textHE || "—"}
+                      </p>
+                    ) : (
+                      <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={2}
+                        value={item.textHE}
+                        onChange={e => updateDiagItemHE(item.id, e.target.value)}
+                        placeholder="אבחנה בעברית — לאחר תרגום" />
+                    )}
                   </div>
                 );
               })}
@@ -1324,11 +1346,12 @@ export default function LetterEditorPage() {
           <SectionCard title="Summary" titleHe="סיכום">
             <div className="space-y-4">
               {summarySections.map((section, idx) => {
+                const isCopied = section.source === "copied";
                 const srcColor = section.source === "new"
                   ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
                   : section.source === "edited"
                     ? { bg: "#FFFBEB", border: "#FDE68A", badge: "#FEF3C7", badgeText: "#D97706", label: "Edited" }
-                    : { bg: "white",   border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#64748B", label: "Copied" };
+                    : { bg: "#F8FAFC", border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#94A3B8", label: "Previous" };
                 return (
                   <div key={section.id} className="rounded-2xl p-4 space-y-3"
                     style={{ border: `1px solid ${srcColor.border}`, backgroundColor: srcColor.bg }}>
@@ -1337,18 +1360,22 @@ export default function LetterEditorPage() {
                     <div className="flex items-center gap-3 pb-3" style={{ borderBottom: "1px solid #F1F5F9" }}>
                       <div className="flex items-center gap-2 flex-1 flex-wrap">
                         <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#64748B" }}>
-                          Review Date
+                          {isCopied ? "Previous visit" : "Review Date"}
                         </span>
-                        <SplitDateInput
-                          value={section.date}
-                          onChange={date => updateSummarySection(section.id, { date })}
-                        />
+                        {isCopied ? (
+                          <span className="text-xs font-bold" style={{ color: "#1A2B4A" }}>{section.date || "—"}</span>
+                        ) : (
+                          <SplitDateInput
+                            value={section.date}
+                            onChange={date => updateSummarySection(section.id, { date })}
+                          />
+                        )}
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: srcColor.badge, color: srcColor.badgeText }}>
-                        {srcColor.label}
+                        {isCopied ? "Previous — Read-only" : srcColor.label}
                       </span>
-                      {summarySections.length > 1 && (
+                      {!isCopied && (
                         <button type="button" onClick={() => removeSummarySection(section.id)}
                           className="text-xs flex-shrink-0 transition-colors duration-150"
                           style={{ color: "#CBD5E1" }}
@@ -1360,40 +1387,65 @@ export default function LetterEditorPage() {
                     </div>
 
                     {/* English */}
-                    <F label={`Summary (English)${idx > 0 ? ` — visit ${idx + 1}` : ""}`}>
-                      <textarea className={ta} style={is} rows={4}
-                        value={section.textEN}
-                        onChange={e => updateSummarySection(section.id, { textEN: e.target.value })}
-                        placeholder="Enter summary for this review date" />
-                    </F>
+                    {isCopied ? (
+                      <div>
+                        <label className={lc} style={{ ...ls, color: "#94A3B8" }}>
+                          {`Summary (English) — visit ${idx + 1}`}
+                        </label>
+                        <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
+                          {section.textEN || "—"}
+                        </p>
+                      </div>
+                    ) : (
+                      <F label={`Summary (English)${idx > 0 ? ` — visit ${idx + 1}` : ""}`}>
+                        <textarea className={ta} style={is} rows={4}
+                          value={section.textEN}
+                          onChange={e => updateSummarySection(section.id, { textEN: e.target.value })}
+                          placeholder="Enter summary for this review date" />
+                      </F>
+                    )}
 
-                    {/* Translate button */}
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <TranslateBtn
-                        onClick={() => translateSummarySection(section.id)}
-                        disabled={!section.textEN.trim()}
-                        loading={translatingSection === section.id}
-                        label={section.textHE.trim() ? "Retranslate Section" : "Translate Section"}
-                      />
-                      {section.textHE.trim() && translatingSection !== section.id && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
-                          Hebrew exists — will ask before replacing
-                        </span>
-                      )}
-                      {sectionTxErrors[section.id] && (
-                        <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{sectionTxErrors[section.id]}</p>
-                      )}
-                    </div>
-                    <p className="text-xs" style={{ color: "#94A3B8" }}>AI translation is a draft — review before finalising.</p>
+                    {/* Translate button — only for non-locked sections */}
+                    {!isCopied && (
+                      <>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <TranslateBtn
+                            onClick={() => translateSummarySection(section.id)}
+                            disabled={!section.textEN.trim()}
+                            loading={translatingSection === section.id}
+                            label={section.textHE.trim() ? "Retranslate Section" : "Translate Section"}
+                          />
+                          {section.textHE.trim() && translatingSection !== section.id && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
+                              Hebrew exists — will ask before replacing
+                            </span>
+                          )}
+                          {sectionTxErrors[section.id] && (
+                            <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{sectionTxErrors[section.id]}</p>
+                          )}
+                        </div>
+                        <p className="text-xs" style={{ color: "#94A3B8" }}>AI translation is a draft — review before finalising.</p>
+                      </>
+                    )}
 
                     {/* Hebrew */}
-                    <F label="סיכום — Summary (Hebrew)">
-                      <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
-                        value={section.textHE}
-                        onChange={e => updateSummarySection(section.id, { textHE: e.target.value })}
-                        placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
-                    </F>
+                    {isCopied ? (
+                      <div>
+                        <label className={lc} style={{ ...ls, color: "#94A3B8" }}>סיכום — Summary (Hebrew) — locked</label>
+                        <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap"
+                          style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
+                          {section.textHE || "—"}
+                        </p>
+                      </div>
+                    ) : (
+                      <F label="סיכום — Summary (Hebrew)">
+                        <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
+                          value={section.textHE}
+                          onChange={e => updateSummarySection(section.id, { textHE: e.target.value })}
+                          placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
+                      </F>
+                    )}
                   </div>
                 );
               })}
@@ -1410,11 +1462,12 @@ export default function LetterEditorPage() {
           <SectionCard title="Plan" titleHe="תכנית">
             <div className="space-y-3">
               {planSteps.map((step, idx) => {
+                const isCopied = step.source === "copied";
                 const srcStyle = step.source === "new"
                   ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
                   : step.source === "edited"
                     ? { bg: "#FFFBEB", border: "#FDE68A", badge: "#FEF3C7", badgeText: "#D97706", label: "Edited" }
-                    : { bg: "white",   border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#64748B", label: "Copied" };
+                    : { bg: "#F8FAFC", border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#94A3B8", label: "Previous" };
                 return (
                   <div key={step.id} className="rounded-xl p-3 space-y-2"
                     style={{ border: `1px solid ${srcStyle.border}`, backgroundColor: srcStyle.bg }}>
@@ -1422,9 +1475,9 @@ export default function LetterEditorPage() {
                       <span className="text-xs font-semibold text-slate-400 flex-shrink-0">{idx + 1}.</span>
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: srcStyle.badge, color: srcStyle.badgeText }}>
-                        {srcStyle.label}
+                        {isCopied ? "Previous — Read-only" : srcStyle.label}
                       </span>
-                      {planSteps.length > 1 && (
+                      {!isCopied && (
                         <button type="button" onClick={() => removePlanStep(step.id)}
                           className="ml-auto text-xs flex-shrink-0 transition-colors duration-150"
                           style={{ color: "#CBD5E1" }}
@@ -1432,31 +1485,46 @@ export default function LetterEditorPage() {
                           onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
                       )}
                     </div>
-                    <input className={`w-full ${ic}`} style={is}
-                      value={step.textEN}
-                      onChange={e => updatePlanStepEN(step.id, e.target.value)}
-                      placeholder={`Plan step ${idx + 1}`} />
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <TranslateBtn
-                        onClick={() => translatePlanStep(step.id)}
-                        disabled={!step.textEN.trim()}
-                        loading={translatingPlan === step.id}
-                        label={step.textHE.trim() ? "Retranslate Step" : "Translate Step"}
-                      />
-                      {step.textHE.trim() && translatingPlan !== step.id && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
-                          Hebrew exists — will ask before replacing
-                        </span>
-                      )}
-                      {planTxErrors[step.id] && (
-                        <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{planTxErrors[step.id]}</p>
-                      )}
-                    </div>
-                    <input className={`w-full ${ic}`} style={{ ...is, direction: "rtl", textAlign: "right" }}
-                      value={step.textHE}
-                      onChange={e => updatePlanStepHE(step.id, e.target.value)}
-                      placeholder={`שלב ${idx + 1}`} />
+                    {isCopied ? (
+                      <p className="text-sm px-1 py-0.5 leading-relaxed" style={{ color: "#475569" }}>
+                        {step.textEN || "—"}
+                      </p>
+                    ) : (
+                      <input className={`w-full ${ic}`} style={is}
+                        value={step.textEN}
+                        onChange={e => updatePlanStepEN(step.id, e.target.value)}
+                        placeholder={`Plan step ${idx + 1}`} />
+                    )}
+                    {!isCopied && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <TranslateBtn
+                          onClick={() => translatePlanStep(step.id)}
+                          disabled={!step.textEN.trim()}
+                          loading={translatingPlan === step.id}
+                          label={step.textHE.trim() ? "Retranslate Step" : "Translate Step"}
+                        />
+                        {step.textHE.trim() && translatingPlan !== step.id && (
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
+                            Hebrew exists — will ask before replacing
+                          </span>
+                        )}
+                        {planTxErrors[step.id] && (
+                          <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{planTxErrors[step.id]}</p>
+                        )}
+                      </div>
+                    )}
+                    {isCopied ? (
+                      <p className="text-sm px-1 py-0.5 leading-relaxed"
+                        style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
+                        {step.textHE || "—"}
+                      </p>
+                    ) : (
+                      <input className={`w-full ${ic}`} style={{ ...is, direction: "rtl", textAlign: "right" }}
+                        value={step.textHE}
+                        onChange={e => updatePlanStepHE(step.id, e.target.value)}
+                        placeholder={`שלב ${idx + 1}`} />
+                    )}
                   </div>
                 );
               })}
