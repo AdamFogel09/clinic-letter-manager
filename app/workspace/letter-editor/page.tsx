@@ -523,6 +523,7 @@ export default function LetterEditorPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [pictureError, setPictureError] = useState<string>("");
   const [pictureProcessing, setPictureProcessing] = useState(false);
+  const [pictureCompressionInfo, setPictureCompressionInfo] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Inhalers
@@ -835,10 +836,19 @@ export default function LetterEditorPage() {
 
   const ALLOWED_IMG_EXTS = /\.(jpe?g|png|webp|heic|heif)$/i;
   const ALLOWED_IMG_TYPES = new Set(["image/jpeg","image/jpg","image/png","image/webp","image/heic","image/heif"]);
-  const MAX_IMG_BYTES = 10 * 1024 * 1024; // 10 MB
-  const MAX_IMG_DIM   = 2000;             // pixels on longest side
+  const MAX_IMG_BYTES  = 10 * 1024 * 1024; // 10 MB input limit
+  const MAX_IMG_DIM    = 1200;              // pixels on longest side after resize
+  const JPEG_QUALITY   = 0.70;             // target ~200-700 KB output
 
-  const fileToJpeg = async (file: File): Promise<string> => {
+  interface ImgCompressResult {
+    dataUrl:        string;
+    width:          number;
+    height:         number;
+    originalBytes:  number;
+    compressedBytes: number;
+  }
+
+  const fileToJpeg = async (file: File): Promise<ImgCompressResult> => {
     const bitmap = await createImageBitmap(file);
     let { width, height } = bitmap;
     if (Math.max(width, height) > MAX_IMG_DIM) {
@@ -852,18 +862,24 @@ export default function LetterEditorPage() {
     if (!ctx) { bitmap.close(); throw new Error("Canvas unavailable"); }
     ctx.drawImage(bitmap, 0, 0, width, height);
     bitmap.close();
-    return canvas.toDataURL("image/jpeg", 0.85);
+    const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+    // Estimate compressed bytes from base64 length
+    const b64 = dataUrl.split(",")[1] ?? "";
+    const compressedBytes = Math.round((b64.length * 3) / 4);
+    return { dataUrl, width, height, originalBytes: file.size, compressedBytes };
   };
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
     setPictureError("");
+    setPictureCompressionInfo([]);
     setPictureProcessing(true);
     const errors: string[] = [];
-    // Reset input so the same file can be re-selected after an error
+    const infos:  string[] = [];
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     for (const file of Array.from(files)) {
+      const isHeic = /\.(heic|heif)$/i.test(file.name) || ["image/heic","image/heif"].includes(file.type);
       const typeOk  = ALLOWED_IMG_TYPES.has(file.type) || ALLOWED_IMG_EXTS.test(file.name);
       const isImage = file.type.startsWith("image/") || ALLOWED_IMG_EXTS.test(file.name);
 
@@ -876,16 +892,27 @@ export default function LetterEditorPage() {
         continue;
       }
       try {
-        const dataUrl = await fileToJpeg(file);
-        setPictures(prev => [...prev, dataUrl]);
+        const result = await fileToJpeg(file);
+        setPictures(prev => [...prev, result.dataUrl]);
+        const origKB = (result.originalBytes  / 1024).toFixed(0);
+        const compKB = (result.compressedBytes / 1024).toFixed(0);
+        const origLabel = result.originalBytes >= 1024 * 1024
+          ? `${(result.originalBytes / 1024 / 1024).toFixed(1)} MB`
+          : `${origKB} KB`;
+        infos.push(`Image compressed: ${origLabel} → ${compKB} KB`);
       } catch (err) {
         console.error("[pictures] conversion failed:", { name: file.name, type: file.type, size: file.size, err });
-        errors.push(`Could not process "${file.name}". Please try JPG or PNG.`);
+        if (isHeic) {
+          errors.push(`Could not process this HEIC image. Please upload JPG or PNG.`);
+        } else {
+          errors.push(`Could not process "${file.name}". Please try JPG or PNG.`);
+        }
       }
     }
 
     setPictureProcessing(false);
     if (errors.length) setPictureError(errors.join("\n"));
+    if (infos.length)  setPictureCompressionInfo(infos);
   };
 
   const handleInhalerSearch = async () => {
@@ -2216,6 +2243,20 @@ export default function LetterEditorPage() {
             <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5" }}>
               {pictureError.split("\n").map((line, i) => (
                 <p key={i} className="text-sm" style={{ color: "#DC2626", margin: i > 0 ? "4px 0 0" : 0 }}>{line}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Compression feedback */}
+          {pictureCompressionInfo.length > 0 && (
+            <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, backgroundColor: "#F0FDF4", border: "1px solid #86EFAC" }}>
+              {pictureCompressionInfo.map((line, i) => (
+                <p key={i} className="text-xs" style={{ color: "#166534", margin: i > 0 ? "3px 0 0" : 0, display: "flex", alignItems: "center", gap: 6 }}>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 11, height: 11, flexShrink: 0 }}>
+                    <path d="M3 8l4 4 6-7"/>
+                  </svg>
+                  {line}
+                </p>
               ))}
             </div>
           )}
