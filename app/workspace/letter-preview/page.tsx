@@ -193,7 +193,7 @@ function A4Page({ children }: { children: React.ReactNode }) {
       flexDirection: "column",
     }}>
       <LetterHeader />
-      <div style={{ flex: "1 1 auto", padding: "8px 40px 24px" }}>
+      <div style={{ flex: "1 1 auto", padding: "28px 40px 24px" }}>
         {children}
       </div>
       <LetterFooter />
