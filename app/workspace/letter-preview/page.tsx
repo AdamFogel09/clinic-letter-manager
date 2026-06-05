@@ -846,7 +846,7 @@ export default function LetterPreviewPage() {
                 {/* Line above heading */}
                 <div style={{ borderTop: "1px solid #160B5C", marginBottom: 7 }} />
                 {/* Heading */}
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 7 }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 7 }}>
                   <h3 style={{ fontSize: 15, fontWeight: 700, color: "#160B5C", margin: 0, letterSpacing: "0.03em" }}>
                     נקודות חשובות
                   </h3>
