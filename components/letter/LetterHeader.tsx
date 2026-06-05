@@ -5,7 +5,7 @@ export default function LetterHeader() {
       <img
         src="/clinic-logo.png"
         alt="Dr. Sumit Chatterji Clinic"
-        style={{ maxHeight: 195, objectFit: "contain" }}
+        style={{ maxHeight: 220, objectFit: "contain" }}
       />
     </div>
   );
