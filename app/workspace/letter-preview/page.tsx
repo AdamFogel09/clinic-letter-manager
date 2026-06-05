@@ -180,13 +180,13 @@ function calcAge(d: string, m: string, y: string): string {
 
 // ─── Document section components ─────────────────────────────────────────────
 
-function DocSection({ title, titleHe, heOnly, children }: {
-  title: string; titleHe?: string; heOnly?: boolean; children: React.ReactNode;
+function DocSection({ title, titleHe, heOnly, plain, children }: {
+  title: string; titleHe?: string; heOnly?: boolean; plain?: boolean; children: React.ReactNode;
 }) {
   return (
     <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
       {heOnly ? (
-        // Hebrew section (אבחנה / סיכום / תכנית): full-width bar with brand lavender background
+        // Hebrew first-page sections (אבחנה/סיכום/תכנית): lavender bar — unchanged
         <div style={{
           width: "100%",
           backgroundColor: "#D8DEF6",
@@ -206,12 +206,32 @@ function DocSection({ title, titleHe, heOnly, children }: {
             {title}
           </h3>
         </div>
+      ) : plain ? (
+        // Classic underline style — used for Lung Function which has its own data layout
+        <div style={{
+          display: "flex",
+          direction: "ltr",
+          justifyContent: titleHe ? "space-between" : "flex-start",
+          alignItems: "baseline",
+          borderBottom: "1px solid #160B5C",
+          paddingBottom: 5,
+          marginBottom: 10,
+        }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", margin: 0, letterSpacing: "0.03em" }}>
+            {title}
+          </h3>
+          {titleHe && (
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", letterSpacing: "0.04em" }}>
+              {titleHe}
+            </span>
+          )}
+        </div>
       ) : (
-        // English / bilingual section: full-width bar matching Hebrew bar style
+        // All other sections: light grey full-width bar
         <div style={{
           width: "100%",
-          backgroundColor: "#D8DEF6",
-          border: "1px solid #000000",
+          backgroundColor: "#E2E2E2",
+          border: "1px solid #AAAAAA",
           display: "flex",
           alignItems: "center",
           justifyContent: (title && titleHe) ? "space-between" : "center",
@@ -222,7 +242,7 @@ function DocSection({ title, titleHe, heOnly, children }: {
           {title && (
             <h3 style={{
               fontSize: 12, fontWeight: 700,
-              color: "#1E106E",
+              color: "#1A2B4A",
               margin: 0,
               fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
               letterSpacing: "0.05em",
@@ -234,7 +254,7 @@ function DocSection({ title, titleHe, heOnly, children }: {
             <span style={{
               fontSize: title ? 11 : 12,
               fontWeight: 700,
-              color: "#1E106E",
+              color: "#1A2B4A",
               fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
               direction: "rtl",
             }}>
@@ -995,7 +1015,7 @@ export default function LetterPreviewPage() {
             )}
 
             {d && d.lungRows?.length > 0 && (
-              <DocSection title="Lung Function" titleHe="תפקוד ריאות">
+              <DocSection title="Lung Function" titleHe="תפקוד ריאות" plain>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {d.lungRows.map(row => {
                     const mainFields:  [string, string][] = [["FEV1 L", row.fev1l], ["FEV1 %", row.fev1p], ["FVC L", row.fvcl], ["FVC %", row.fvcp], ["FEV1/FVC %", row.ratio], ["FEF 25-75 %", row.fef]];
@@ -1108,11 +1128,11 @@ export default function LetterPreviewPage() {
 
             {/* Important Notes — full width */}
             <div>
-              {/* Heading bar — same bar style as all other section headers */}
+              {/* Heading bar — grey bar matching all other English section headers */}
               <div style={{
                 width: "100%",
-                backgroundColor: "#D8DEF6",
-                border: "1px solid #000000",
+                backgroundColor: "#E2E2E2",
+                border: "1px solid #AAAAAA",
                 textAlign: "center",
                 padding: "5px 0",
                 marginBottom: 10,
@@ -1120,7 +1140,7 @@ export default function LetterPreviewPage() {
               }}>
                 <h3 style={{
                   fontSize: 13, fontWeight: 700,
-                  color: "#1E106E",
+                  color: "#1A2B4A",
                   margin: 0,
                   fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
                   letterSpacing: "0.04em",

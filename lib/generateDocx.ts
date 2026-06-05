@@ -75,19 +75,31 @@ function lv(label: string, value: string): Paragraph | null {
   });
 }
 
-// Section heading — full-width bar, brand lavender background, matching Hebrew heading style
+// Section heading — full-width grey bar for all English sections
 function sectionHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 22, color: "1E106E", font: "Avenir Next" })],
+    children: [new TextRun({ text, bold: true, size: 22, color: "1A2B4A", font: "Avenir Next" })],
     alignment: AlignmentType.CENTER,
     spacing: { before: 120, after: 60 },
-    shading: { type: ShadingType.SOLID, fill: "D8DEF6", color: "D8DEF6" },
+    shading: { type: ShadingType.SOLID, fill: "E2E2E2", color: "E2E2E2" },
     border: {
-      top:    { style: "single" as const, size: 4, color: "000000", space: 4 },
-      bottom: { style: "single" as const, size: 4, color: "000000", space: 4 },
-      left:   { style: "single" as const, size: 4, color: "000000", space: 4 },
-      right:  { style: "single" as const, size: 4, color: "000000", space: 4 },
+      top:    { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
+      bottom: { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
+      left:   { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
+      right:  { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
     },
+  });
+}
+
+// Classic underline heading — used for Lung Function
+function classicSectionHeading(text: string, textHe?: string): Paragraph {
+  const runs: TextRun[] = [new TextRun({ text, bold: true, size: 28, color: "1A2B4A", font: "Avenir Next" })];
+  if (textHe) runs.push(new TextRun({ text: `   ${textHe}`, bold: true, size: 28, color: "1A2B4A", font: "Avenir Next" }));
+  return new Paragraph({
+    children: runs,
+    alignment: AlignmentType.LEFT,
+    spacing: { before: 120, after: 60 },
+    border: { bottom: { style: "single" as const, size: 6, color: "160B5C", space: 4 } },
   });
 }
 
@@ -157,7 +169,7 @@ function lungFunctionBlocks(data: LD): Block[] {
   const rows = Array.isArray(data.lungRows) ? (data.lungRows as LungRowRaw[]) : [];
   if (rows.length === 0) return [];
 
-  const blocks: Block[] = [sectionHeading("Lung Function")];
+  const blocks: Block[] = [classicSectionHeading("Lung Function", "תפקוד ריאות")];
 
   for (const row of rows) {
     if (row.date) {
@@ -648,16 +660,16 @@ export async function generateLetterDocx(
   const WHITE_SHADING  = { type: ShadingType.SOLID, fill: "FFFFFF", color: "FFFFFF" };
 
   const notesHeading = new Paragraph({
-    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 22, color: "1E106E", font: "Avenir Next" })],
+    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 22, color: "1A2B4A", font: "Avenir Next" })],
     bidirectional: true,
     alignment: AlignmentType.CENTER,
     spacing: { before: 60, after: 80 },
-    shading: { type: ShadingType.SOLID, fill: "D8DEF6", color: "D8DEF6" },
+    shading: { type: ShadingType.SOLID, fill: "E2E2E2", color: "E2E2E2" },
     border: {
-      top:    { style: "single" as const, size: 4, color: "000000", space: 4 },
-      bottom: { style: "single" as const, size: 4, color: "000000", space: 4 },
-      left:   { style: "single" as const, size: 4, color: "000000", space: 4 },
-      right:  { style: "single" as const, size: 4, color: "000000", space: 4 },
+      top:    { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
+      bottom: { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
+      left:   { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
+      right:  { style: "single" as const, size: 4, color: "AAAAAA", space: 4 },
     },
   });
 
