@@ -122,12 +122,12 @@ function DocSection({ title, titleHe, children }: {
   );
 }
 
-function LV({ label, value }: { label: string; value: string }) {
+function LV({ label, value, boldValue }: { label: string; value: string; boldValue?: boolean }) {
   if (!value) return null;
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 3 }}>
-      <span style={{ fontSize: 11, color: "#94A3B8", minWidth: 130, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 11, color: "#1A2B4A" }}>{value}</span>
+      <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, minWidth: 130, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 11, color: "#1A2B4A", fontWeight: boldValue ? 700 : 400 }}>{value}</span>
     </div>
   );
 }
@@ -256,7 +256,7 @@ export default function TemplatePreviewV2() {
                   <LV label="Occupation"     value={S.occupation} />
                   <LV label="Referred By"    value={S.referredBy} />
                   <LV label="Location"       value={S.location} />
-                  <LV label="Date"           value={S.date} />
+                  <LV label="Date"           value={S.date} boldValue />
                 </div>
                 <div style={{ borderTop: "2px solid #1A2B4A", marginTop: 9 }} />
               </div>

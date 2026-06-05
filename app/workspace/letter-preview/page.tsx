@@ -143,12 +143,12 @@ function DocSection({ title, titleHe, heOnly, children }: {
   );
 }
 
-function LV({ label, value }: { label: string; value: string }) {
+function LV({ label, value, boldValue }: { label: string; value: string; boldValue?: boolean }) {
   if (!value) return null;
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-      <span style={{ fontSize: 11, color: "#475569", fontWeight: 600, minWidth: 120, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 12, color: "#1A2B4A" }}>{value}</span>
+      <span style={{ fontSize: 11, color: "#475569", fontWeight: 700, minWidth: 120, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12, color: "#1A2B4A", fontWeight: boldValue ? 700 : 400 }}>{value}</span>
     </div>
   );
 }
@@ -520,7 +520,7 @@ export default function LetterPreviewPage() {
                     <LV label="Occupation"       value={d.occupation} />
                     <LV label="Referred By"      value={d.referredBy} />
                     <LV label="Location"         value={d.location} />
-                    <LV label="Date"             value={letterDate} />
+                    <LV label="Date"             value={letterDate} boldValue />
                   </div>
                 </div>
                 <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
