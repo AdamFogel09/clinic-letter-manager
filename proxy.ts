@@ -14,7 +14,7 @@ async function sha256hex(str: string): Promise<string> {
     .join("");
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ── 1. Private access gate ─────────────────────────────────────────────────
