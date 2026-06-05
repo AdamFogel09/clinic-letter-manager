@@ -28,14 +28,14 @@ function gap(size = 50): Paragraph {
 
 function bodyLine(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: 22, font: "Arial" })],
+    children: [new TextRun({ text, size: 20, font: "Avenir Next" })],
     spacing: { after: 40 },
   });
 }
 
 function rtlLine(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: 22, font: "Arial" })],
+    children: [new TextRun({ text, size: 20, font: "Avenir Next" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
     spacing: { after: 40 },
@@ -46,8 +46,8 @@ function rtlLine(text: string): Paragraph {
 function numberedEN(num: number, text: string): Paragraph {
   return new Paragraph({
     children: [
-      new TextRun({ text: `${num}.`, bold: true, size: 22, font: "Arial" }),
-      new TextRun({ text: `  ${text}`, size: 22, font: "Arial" }),
+      new TextRun({ text: `${num}.`, bold: true, size: 20, font: "Avenir Next" }),
+      new TextRun({ text: `  ${text}`, size: 20, font: "Avenir Next" }),
     ],
     indent: { left: 360, hanging: 360 },
     spacing: { after: 60 },
@@ -57,7 +57,7 @@ function numberedEN(num: number, text: string): Paragraph {
 // Hebrew numbered item — RTL mark anchors the number to the right edge
 function numberedHE(num: number, text: string, color = "160B5C"): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text: `${RTL_MARK}${num}.  ${text}`, size: 22, color, font: "Arial" })],
+    children: [new TextRun({ text: `${RTL_MARK}${num}.  ${text}`, size: 20, color, font: "Avenir Next" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
     spacing: { after: 60 },
@@ -68,8 +68,8 @@ function lv(label: string, value: string): Paragraph | null {
   if (!value) return null;
   return new Paragraph({
     children: [
-      new TextRun({ text: `${label}: `, bold: true, size: 22, font: "Arial" }),
-      new TextRun({ text: value, size: 22, font: "Arial" }),
+      new TextRun({ text: `${label}: `, bold: true, size: 20, font: "Avenir Next" }),
+      new TextRun({ text: value, size: 20, font: "Avenir Next" }),
     ],
     spacing: { after: 40 },
   });
@@ -78,16 +78,16 @@ function lv(label: string, value: string): Paragraph | null {
 // Section heading — 14pt bold, dark purple, thin underline
 function sectionHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 28, color: "1A2B4A", font: "Arial" })],
+    children: [new TextRun({ text, bold: true, size: 24, color: "1A2B4A", font: "Avenir Next" })],
     spacing: { before: 140, after: 60 },
     border: { bottom: { style: "single" as const, size: 4, color: "160B5C", space: 4 } },
   });
 }
 
-// Hebrew section heading — 12pt bold, dark purple, pure Hebrew text only (no mixed script)
+// Hebrew section heading — 11pt bold, dark purple
 function hebrewHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 24, color: "1A2B4A", font: "Arial" })],
+    children: [new TextRun({ text, bold: true, size: 22, color: "1A2B4A", font: "Avenir Next" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
     spacing: { before: 80, after: 40 },
@@ -96,7 +96,7 @@ function hebrewHeading(text: string): Paragraph {
 
 function subLabel(text: string, color = "475569"): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: 20, bold: true, color, font: "Arial" })],
+    children: [new TextRun({ text, size: 20, bold: true, color, font: "Avenir Next" })],
     spacing: { before: 60, after: 40 },
   });
 }
@@ -122,7 +122,7 @@ function makeTable(labels: string[], values: string[]): Table {
       new TableRow({
         children: labels.map((label) => new TableCell({
           children: [new Paragraph({
-            children: [new TextRun({ text: label, size: 17, bold: true, color: "334155", font: "Arial" })],
+            children: [new TextRun({ text: label, size: 17, bold: true, color: "334155", font: "Avenir Next" })],
             alignment: AlignmentType.CENTER,
           })],
         })),
@@ -130,7 +130,7 @@ function makeTable(labels: string[], values: string[]): Table {
       new TableRow({
         children: values.map((val) => new TableCell({
           children: [new Paragraph({
-            children: [new TextRun({ text: val?.trim() || "—", size: 22, bold: true, color: "1A2B4A", font: "Arial" })],
+            children: [new TextRun({ text: val?.trim() || "—", size: 20, bold: true, color: "1A2B4A", font: "Avenir Next" })],
             alignment: AlignmentType.CENTER,
           })],
         })),
@@ -148,7 +148,7 @@ function lungFunctionBlocks(data: LD): Block[] {
   for (const row of rows) {
     if (row.date) {
       blocks.push(new Paragraph({
-        children: [new TextRun({ text: `Date: ${row.date}`, bold: true, size: 20, color: "1A2B4A", font: "Arial" })],
+        children: [new TextRun({ text: `Date: ${row.date}`, bold: true, size: 20, color: "1A2B4A", font: "Avenir Next" })],
         spacing: { before: 120, after: 40 },
       }));
     }
@@ -293,14 +293,14 @@ export async function generateLetterDocx(
       });
     } catch {
       headerPara = new Paragraph({
-        children: [new TextRun({ text: "DR. SUMIT CHATTERJI  —  CLINIC", bold: true, size: 28, color: "1A2B4A", font: "Arial" })],
+        children: [new TextRun({ text: "DR. SUMIT CHATTERJI  —  CLINIC", bold: true, size: 24, color: "1A2B4A", font: "Avenir Next" })],
         alignment: AlignmentType.CENTER,
         border: { bottom: { style: "single" as const, size: 8, color: "1A2B4A", space: 4 } },
       });
     }
   } else {
     headerPara = new Paragraph({
-      children: [new TextRun({ text: "DR. SUMIT CHATTERJI  —  CLINIC", bold: true, size: 28, color: "1A2B4A", font: "Arial" })],
+      children: [new TextRun({ text: "DR. SUMIT CHATTERJI  —  CLINIC", bold: true, size: 24, color: "1A2B4A", font: "Avenir Next" })],
       alignment: AlignmentType.CENTER,
       border: { bottom: { style: "single" as const, size: 8, color: "1A2B4A", space: 4 } },
     });
@@ -319,16 +319,16 @@ export async function generateLetterDocx(
               borders: NO_BORDERS,
               children: [
                 new Paragraph({
-                  children: [new TextRun({ text: "Israel Medical Licence 1-143320", bold: true, size: 16, color: "1A2B4A", font: "Arial" })],
+                  children: [new TextRun({ text: "Israel Medical Licence 1-143320", bold: true, size: 16, color: "1A2B4A", font: "Avenir Next" })],
                   border: { top: { style: "single" as const, size: 10, color: "1A2B4A", space: 4 } },
                   spacing: { before: 40, after: 20 },
                 }),
                 new Paragraph({
-                  children: [new TextRun({ text: "General Medical Council (UK) Licence 4630182", bold: true, size: 16, color: "1A2B4A", font: "Arial" })],
+                  children: [new TextRun({ text: "General Medical Council (UK) Licence 4630182", bold: true, size: 16, color: "1A2B4A", font: "Avenir Next" })],
                   spacing: { after: 20 },
                 }),
                 new Paragraph({
-                  children: [new TextRun({ text: "Internal Medicine and Pulmonology", bold: true, size: 16, color: "1A2B4A", font: "Arial" })],
+                  children: [new TextRun({ text: "Internal Medicine and Pulmonology", bold: true, size: 16, color: "1A2B4A", font: "Avenir Next" })],
                 }),
               ],
             }),
@@ -337,13 +337,13 @@ export async function generateLetterDocx(
               borders: NO_BORDERS,
               children: [
                 new Paragraph({
-                  children: [new TextRun({ text: "Email: lungdrsumit@gmail.com", bold: true, size: 16, color: "1A2B4A", font: "Arial" })],
+                  children: [new TextRun({ text: "Email: lungdrsumit@gmail.com", bold: true, size: 16, color: "1A2B4A", font: "Avenir Next" })],
                   alignment: AlignmentType.RIGHT,
                   border: { top: { style: "single" as const, size: 10, color: "1A2B4A", space: 4 } },
                   spacing: { before: 40, after: 20 },
                 }),
                 new Paragraph({
-                  children: [new TextRun({ text: "Telephone: +972 53 3065358", bold: true, size: 16, color: "1A2B4A", font: "Arial" })],
+                  children: [new TextRun({ text: "Telephone: +972 53 3065358", bold: true, size: 16, color: "1A2B4A", font: "Avenir Next" })],
                   alignment: AlignmentType.RIGHT,
                 }),
               ],
@@ -361,7 +361,7 @@ export async function generateLetterDocx(
   const letterDate = [s(data.dateDay), s(data.dateMonth), s(data.dateYear)].filter(Boolean).join(" / ");
   if (letterDate) {
     children.push(new Paragraph({
-      children: [new TextRun({ text: `Date:  ${letterDate}`, size: 22, color: "64748B", font: "Arial" })],
+      children: [new TextRun({ text: `Date:  ${letterDate}`, size: 20, color: "64748B", font: "Avenir Next" })],
       alignment: AlignmentType.CENTER,
       spacing: { before: 60, after: mode === "review" ? 160 : 240 },
     }));
@@ -369,7 +369,7 @@ export async function generateLetterDocx(
 
   if (mode === "review") {
     children.push(new Paragraph({
-      children: [new TextRun({ text: "REVIEW DRAFT  —  Prepared for Anat. Please edit and return.", size: 20, color: "BE123C", italics: true, font: "Arial" })],
+      children: [new TextRun({ text: "REVIEW DRAFT  —  Prepared for Anat. Please edit and return.", size: 20, color: "BE123C", italics: true, font: "Avenir Next" })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 240 },
     }));
@@ -414,7 +414,7 @@ export async function generateLetterDocx(
     shading: isLabel ? LABEL_BG : undefined,
     margins: { top: 50, bottom: 50, left: isLabel ? 80 : 60, right: isLabel ? 60 : 80 },
     children: [new Paragraph({
-      children: [new TextRun({ text, size: 20, bold: isLabel, color: isLabel ? "1A2B4A" : "222222", font: "Arial" })],
+      children: [new TextRun({ text, size: 20, bold: isLabel, color: isLabel ? "1A2B4A" : "222222", font: "Avenir Next" })],
       spacing: { after: 0 },
     })],
   });
@@ -513,7 +513,7 @@ export async function generateLetterDocx(
     children.push(sectionHeading("Images"));
     for (let i = 0; i < pictures.length; i++) {
       children.push(new Paragraph({
-        children: [new TextRun({ text: `IMAGE ${i + 1}`, bold: true, size: 22, color: "000000", font: "Arial" })],
+        children: [new TextRun({ text: `IMAGE ${i + 1}`, bold: true, size: 22, color: "000000", font: "Avenir Next" })],
         spacing: { before: 100, after: 40 },
       }));
       const imgResult = await fetchImageAny(pictures[i]);
@@ -552,10 +552,10 @@ export async function generateLetterDocx(
     if (inhalerLink) {
       children.push(new Paragraph({
         children: [
-          new TextRun({ text: "Video guide: ", size: 22, font: "Arial" }),
+          new TextRun({ text: "Video guide: ", size: 20, font: "Avenir Next" }),
           new ExternalHyperlink({
             link: inhalerLink,
-            children: [new TextRun({ text: "Watch video guide on RightBreathe", size: 22, font: "Arial", color: "4A90D9", underline: {} })],
+            children: [new TextRun({ text: "Watch video guide on RightBreathe", size: 20, font: "Avenir Next", color: "4A90D9", underline: {} })],
           }),
         ],
         spacing: { after: 40 },
@@ -576,7 +576,7 @@ export async function generateLetterDocx(
   const WHITE_SHADING  = { type: ShadingType.SOLID, fill: "FFFFFF", color: "FFFFFF" };
 
   const notesHeading = new Paragraph({
-    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 24, color: "160B5C", font: "Arial" })],
+    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 24, color: "160B5C", font: "Avenir Next" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
     border: { bottom: { style: "single" as const, size: 4, color: "7C3AED", space: 4 } },
@@ -586,7 +586,7 @@ export async function generateLetterDocx(
 
   const noteParas = importantNoteTexts.map((note, i) =>
     new Paragraph({
-      children: [new TextRun({ text: `${RTL_MARK}${i + 1}.  ${note}`, size: 20, color: i === 2 ? "DC2626" : "160B5C", font: "Arial" })],
+      children: [new TextRun({ text: `${RTL_MARK}${i + 1}.  ${note}`, size: 20, color: i === 2 ? "DC2626" : "160B5C", font: "Avenir Next" })],
       bidirectional: true,
       alignment: AlignmentType.RIGHT,
       spacing: { after: 80 },
@@ -604,7 +604,7 @@ export async function generateLetterDocx(
       });
     } catch {
       stampImg = new Paragraph({
-        children: [new TextRun({ text: "[ Stamp ]", size: 22, font: "Arial" })],
+        children: [new TextRun({ text: "[ Stamp ]", size: 20, font: "Avenir Next" })],
         alignment: AlignmentType.CENTER,
         shading: WHITE_SHADING,
       });

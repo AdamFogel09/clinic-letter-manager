@@ -72,7 +72,7 @@ function hasTestData(val: unknown): boolean {
 function TRGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 10 }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 5px" }}>{label}</p>
+      <p style={{ fontSize: 13, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 5px" }}>{label}</p>
       <div>{children}</div>
     </div>
   );
@@ -82,8 +82,8 @@ function TRField({ label, value }: { label: string; value: string }) {
   if (!value?.trim()) return null;
   return (
     <div style={{ marginBottom: 5 }}>
-      <span style={{ fontSize: 10, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}: </span>
-      <span style={{ fontSize: 12, color: "#1A2B4A", lineHeight: 1.6 }}>{value}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}: </span>
+      <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.6 }}>{value}</span>
     </div>
   );
 }
@@ -126,14 +126,14 @@ function DocSection({ title, titleHe, heOnly, children }: {
         marginBottom: 10,
       }}>
         <h3 style={{
-          fontSize: heOnly ? 14 : 12, fontWeight: 700, color: "#1A2B4A", margin: 0,
+          fontSize: 15, fontWeight: 700, color: "#1A2B4A", margin: 0,
           textTransform: heOnly ? "none" : "uppercase",
           letterSpacing: heOnly ? "0.03em" : "0.10em",
         }}>
           {title}
         </h3>
         {titleHe && !heOnly && (
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#1A2B4A", letterSpacing: "0.04em" }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", letterSpacing: "0.04em" }}>
             {titleHe}
           </span>
         )}
@@ -147,8 +147,8 @@ function LV({ label, value, boldValue }: { label: string; value: string; boldVal
   if (!value) return null;
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-      <span style={{ fontSize: 11, color: "#000000", fontWeight: 700, minWidth: 120, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 12, color: "#1A2B4A", fontWeight: boldValue ? 700 : 400 }}>{value}</span>
+      <span style={{ fontSize: 13, color: "#000000", fontWeight: 700, minWidth: 120, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, color: "#1A2B4A", fontWeight: boldValue ? 700 : 400 }}>{value}</span>
     </div>
   );
 }
@@ -157,7 +157,7 @@ function TextBlock({ text, rtl }: { text: string; rtl?: boolean }) {
   if (!text?.trim()) return null;
   return (
     <p style={{
-      fontSize: 12, color: "#1A2B4A", lineHeight: 1.7, margin: 0,
+      fontSize: 13, color: "#1A2B4A", lineHeight: 1.7, margin: 0,
       direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
       whiteSpace: "pre-wrap",
     }}>
@@ -188,6 +188,7 @@ function A4Page({ children }: { children: React.ReactNode }) {
       maxWidth: 820,
       minHeight: 1123,
       backgroundColor: "white",
+      fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
       boxShadow: "0 4px 6px -1px rgb(0 0 0/0.07), 0 20px 40px rgb(26 43 74/0.10)",
       display: "flex",
       flexDirection: "column",
@@ -544,8 +545,8 @@ export default function LetterPreviewPage() {
                 <div style={{ direction: "rtl" }}>
                   {d.planStepsHE.filter(s => s.trim()).map((step, i) => (
                     <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start", textAlign: "right" }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, flexShrink: 0, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
-                      <span style={{ fontSize: 12, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
+                      <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
                     </div>
                   ))}
                 </div>
@@ -585,7 +586,7 @@ export default function LetterPreviewPage() {
               <DocSection title="Medications">
                 <div>
                   {d.medications.map((m, i) => (
-                    <p key={i} style={{ fontSize: 12, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {m}</p>
+                    <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {m}</p>
                   ))}
                 </div>
               </DocSection>
@@ -595,7 +596,7 @@ export default function LetterPreviewPage() {
               <DocSection title="Allergies">
                 <div>
                   {d.allergies.map((a, i) => (
-                    <p key={i} style={{ fontSize: 12, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {a}</p>
+                    <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {a}</p>
                   ))}
                 </div>
               </DocSection>
@@ -603,7 +604,7 @@ export default function LetterPreviewPage() {
 
             {d && d.vaccinations?.length > 0 && (
               <DocSection title="Vaccinations">
-                <p style={{ fontSize: 12, color: "#1A2B4A", margin: 0 }}>{d.vaccinations.join(", ")}</p>
+                <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0 }}>{d.vaccinations.join(", ")}</p>
               </DocSection>
             )}
 
@@ -612,8 +613,8 @@ export default function LetterPreviewPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "max-content 1fr max-content 1fr", columnGap: 12, rowGap: 5 }}>
                   {examRows.map(([label, value]) => (
                     <div key={label} style={{ display: "contents" }}>
-                      <span style={{ fontSize: 11, color: "#475569", fontWeight: 600 }}>{label}</span>
-                      <span style={{ fontSize: 12, color: "#1A2B4A" }}>{value}</span>
+                      <span style={{ fontSize: 13, color: "#475569", fontWeight: 600 }}>{label}</span>
+                      <span style={{ fontSize: 13, color: "#1A2B4A" }}>{value}</span>
                     </div>
                   ))}
                 </div>
@@ -625,8 +626,8 @@ export default function LetterPreviewPage() {
                 <div>
                   {d.planStepsEN.filter(s => s.trim()).map((step, i) => (
                     <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start" }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, flexShrink: 0, minWidth: 18, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
-                      <span style={{ fontSize: 12, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, minWidth: 18, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
+                      <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
                     </div>
                   ))}
                 </div>
@@ -645,7 +646,7 @@ export default function LetterPreviewPage() {
                   {/* EKG */}
                   {hasTestData(d.testResults.ekg) && (
                     <TRGroup label="EKG">
-                      <p style={{ fontSize: 12, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>
+                      <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>
                         {d.testResults.ekg.value === "Other" ? d.testResults.ekg.details : d.testResults.ekg.value}
                       </p>
                     </TRGroup>
@@ -654,7 +655,7 @@ export default function LetterPreviewPage() {
                   {/* Echocardiogram */}
                   {d.testResults.echo?.trim() && (
                     <TRGroup label="Echocardiogram">
-                      <p style={{ fontSize: 12, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{d.testResults.echo}</p>
+                      <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{d.testResults.echo}</p>
                     </TRGroup>
                   )}
 
@@ -662,7 +663,7 @@ export default function LetterPreviewPage() {
                   {hasTestData(d.testResults.blood) && (
                     <TRGroup label="Blood Tests">
                       {d.testResults.blood.date?.trim() && (
-                        <p style={{ fontSize: 11, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(d.testResults.blood.date)}</p>
+                        <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(d.testResults.blood.date)}</p>
                       )}
                       <TRField label="Type" value={d.testResults.blood.testType} />
                       <TRField label="Results" value={d.testResults.blood.details} />
@@ -714,7 +715,7 @@ export default function LetterPreviewPage() {
                   {/* Other Test */}
                   {d.testResults.otherTest?.trim() && (
                     <TRGroup label="Other Test">
-                      <p style={{ fontSize: 12, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{d.testResults.otherTest}</p>
+                      <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{d.testResults.otherTest}</p>
                     </TRGroup>
                   )}
 
@@ -735,7 +736,7 @@ export default function LetterPreviewPage() {
                         {/* Date header */}
                         {row.date && (
                           <div style={{ backgroundColor: "#F2A56B", padding: "5px 12px" }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: "#000000" }}>Date: {formatDisplayDate(row.date)}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#000000" }}>Date: {formatDisplayDate(row.date)}</span>
                           </div>
                         )}
 
@@ -745,7 +746,7 @@ export default function LetterPreviewPage() {
                               {[...mainFields, ...extraFields].map(([label, val]) => (
                                 <div key={label} style={{ textAlign: "center" }}>
                                   <div style={{ fontSize: 6.5, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.02em" }}>{label}</div>
-                                  <div style={{ fontSize: 11, color: "#1A2B4A", fontWeight: 600 }}>{val?.trim() || "—"}</div>
+                                  <div style={{ fontSize: 13, color: "#1A2B4A", fontWeight: 600 }}>{val?.trim() || "—"}</div>
                                 </div>
                               ))}
                             </div>
@@ -840,28 +841,20 @@ export default function LetterPreviewPage() {
                 <img src="/stamp.png" alt="Official Stamp" style={{ width: 210, height: 210, objectFit: "contain", display: "block" }} />
               </div>
 
-              {/* Important Notes on the right — inside purple bordered box */}
-              <div style={{
-                flex: 1,
-                backgroundColor: "#ffffff",
-                border: "2px solid #7C3AED",
-                borderRadius: 14,
-                padding: "16px 20px 18px",
-              }}>
+              {/* Important Notes on the right */}
+              <div style={{ flex: 1 }}>
+                {/* Line above heading */}
+                <div style={{ borderTop: "1px solid #160B5C", marginBottom: 7 }} />
                 {/* Heading */}
-                <div style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  borderBottom: "1.5px solid #7C3AED",
-                  paddingBottom: 8,
-                  marginBottom: 14,
-                }}>
-                  <h3 style={{ fontSize: 14, fontWeight: 700, color: "#160B5C", margin: 0, letterSpacing: "0.03em" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 7 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: "#160B5C", margin: 0, letterSpacing: "0.03em" }}>
                     נקודות חשובות
                   </h3>
                 </div>
+                {/* Line below heading */}
+                <div style={{ borderTop: "1px solid #160B5C", marginBottom: 10 }} />
 
-                {/* Notes list — flex RTL so number stays on the right */}
+                {/* Notes list — RTL */}
                 <div>
                   {[
                     "מכתב זה הוא מסמך סודי המיועד רק למטופל, או למטפל מועמד ואנשי מקצוע בתחום הבריאות המעורבים בטיפול הרפואי הישיר במטופל. אם מסמך זה התקבל בטעות, אנא החזר אותו מיד לכתובת: lungdrsumit@gmail.com .",
@@ -870,13 +863,16 @@ export default function LetterPreviewPage() {
                   ].map((text, i) => {
                     const color = i === 2 ? "#DC2626" : "#160B5C";
                     return (
-                      <div key={i} style={{ display: "flex", direction: "rtl", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
-                        <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, lineHeight: 1.8, color }}>{i + 1}.</span>
-                        <span style={{ flex: 1, fontSize: 12, lineHeight: 1.8, color, textAlign: "right" }}>{text}</span>
+                      <div key={i} style={{ display: "flex", direction: "rtl", gap: 6, alignItems: "flex-start", marginBottom: 4 }}>
+                        <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.5, color }}>{i + 1}.</span>
+                        <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color, textAlign: "right" }}>{text}</span>
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Line below notes */}
+                <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
               </div>
 
             </div>
