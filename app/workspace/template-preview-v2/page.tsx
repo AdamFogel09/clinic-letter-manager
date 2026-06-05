@@ -240,8 +240,12 @@ export default function TemplatePreviewV2() {
             <div style={{ flex: 1, padding: "20px 40px 28px" }}>
 
               <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 0, display: "block", marginLeft: "auto", marginRight: "auto" }} />
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
+                  <div style={{ backgroundColor: "#1E106E", isolation: "isolate" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block", mixBlendMode: "screen" }} />
+                  </div>
+                </div>
                 <div style={{ borderBottom: "2px solid #1A2B4A", marginBottom: 9 }} />
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px 32px" }}>
                   <LV label="Name"           value={S.name} />

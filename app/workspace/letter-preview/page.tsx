@@ -671,9 +671,14 @@ export default function LetterPreviewPage() {
           <A4Page>
             {d && (d.name || d.patId) && (
               <div style={{ marginBottom: 16, breakInside: "avoid", pageBreakInside: "avoid" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 0, display: "block", marginLeft: "auto", marginRight: "auto" }} />
-                <p style={{ textAlign: "center", color: "#1E106E", fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif", fontSize: 11, fontWeight: 500, margin: "3px 0 6px 0", letterSpacing: "0.03em", direction: "rtl" }}>מרפאת ריאות</p>
+                {/* Colorize the black logo to brand purple using screen blend mode:
+                    black pixels × screen × #1E106E bg = #1E106E; white pixels = white */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
+                  <div style={{ backgroundColor: "#1E106E", isolation: "isolate" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block", mixBlendMode: "screen" }} />
+                  </div>
+                </div>
                 <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
                 <div style={{ display: "flex", gap: 32 }}>
                   <div style={{ flex: 1 }}>
