@@ -184,29 +184,52 @@ function DocSection({ title, titleHe, heOnly, children }: {
   title: string; titleHe?: string; heOnly?: boolean; children: React.ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 16, breakInside: "avoid", pageBreakInside: "avoid" }}>
-      <div style={{
-        display: "flex",
-        direction: heOnly ? "rtl" : "ltr",
-        justifyContent: heOnly ? "flex-start" : (titleHe ? "space-between" : "flex-start"),
-        alignItems: "baseline",
-        borderBottom: "1px solid #160B5C",
-        paddingBottom: 5,
-        marginBottom: 10,
-      }}>
-        <h3 style={{
-          fontSize: heOnly ? 18 : 15, fontWeight: 700,
-          color: heOnly ? "#1E106E" : "#1A2B4A",
-          margin: 0, letterSpacing: "0.03em",
+    <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
+      {heOnly ? (
+        // Hebrew section (אבחנה / סיכום / תכנית): full-width bar with brand lavender background
+        <div style={{
+          width: "100%",
+          backgroundColor: "#D8DEF6",
+          border: "1px solid #000000",
+          textAlign: "center",
+          padding: "5px 0",
+          marginBottom: 8,
+          boxSizing: "border-box",
         }}>
-          {title}
-        </h3>
-        {titleHe && !heOnly && (
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", letterSpacing: "0.04em" }}>
-            {titleHe}
-          </span>
-        )}
-      </div>
+          <h3 style={{
+            fontSize: 13, fontWeight: 700,
+            color: "#1E106E",
+            margin: 0,
+            fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+            letterSpacing: "0.04em",
+          }}>
+            {title}
+          </h3>
+        </div>
+      ) : (
+        <div style={{
+          display: "flex",
+          direction: "ltr",
+          justifyContent: titleHe ? "space-between" : "flex-start",
+          alignItems: "baseline",
+          borderBottom: "1px solid #160B5C",
+          paddingBottom: 5,
+          marginBottom: 10,
+        }}>
+          <h3 style={{
+            fontSize: 15, fontWeight: 700,
+            color: "#1A2B4A",
+            margin: 0, letterSpacing: "0.03em",
+          }}>
+            {title}
+          </h3>
+          {titleHe && (
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", letterSpacing: "0.04em" }}>
+              {titleHe}
+            </span>
+          )}
+        </div>
+      )}
       {children}
     </div>
   );

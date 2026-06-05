@@ -84,14 +84,20 @@ function sectionHeading(text: string): Paragraph {
   });
 }
 
-// Hebrew section heading — 13.5pt bold, brand purple
+// Hebrew section heading (אבחנה / סיכום / תכנית) — full-width bar, brand lavender background
 function hebrewHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 27, color: "1E106E", font: "Avenir Next" })],
+    children: [new TextRun({ text, bold: true, size: 26, color: "1E106E", font: "Avenir Next" })],
     bidirectional: true,
-    alignment: AlignmentType.RIGHT,
-    spacing: { before: 80, after: 40 },
-    border: { bottom: { style: "single" as const, size: 4, color: "1E106E", space: 4 } },
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 80, after: 60 },
+    shading: { type: ShadingType.SOLID, fill: "D8DEF6", color: "D8DEF6" },
+    border: {
+      top:    { style: "single" as const, size: 4, color: "000000", space: 4 },
+      bottom: { style: "single" as const, size: 4, color: "000000", space: 4 },
+      left:   { style: "single" as const, size: 4, color: "000000", space: 4 },
+      right:  { style: "single" as const, size: 4, color: "000000", space: 4 },
+    },
   });
 }
 
