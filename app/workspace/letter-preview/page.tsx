@@ -89,31 +89,36 @@ function migratePreviewTestResults(raw: unknown): LetterData["testResults"] {
   if (Array.isArray(r.bronchWash)) res.bronchWash = r.bronchWash as typeof res.bronchWash;
   else if (r.bronchWash && typeof r.bronchWash === "object") {
     const o = r.bronchWash as Record<string, string>;
-    res.bronchWash = [{ id: mkId(), date: "", selected: arrSel("bronchWash"), microbiology: o.microbiology||"", cytology: o.cytology||"", cellCounts: o.cellCounts||"" }];
+    if (o.microbiology || o.cytology || o.cellCounts)
+      res.bronchWash = [{ id: mkId(), date: "", selected: arrSel("bronchWash"), microbiology: o.microbiology||"", cytology: o.cytology||"", cellCounts: o.cellCounts||"" }];
   }
 
   if (Array.isArray(r.bronchBiopsy)) res.bronchBiopsy = r.bronchBiopsy as typeof res.bronchBiopsy;
   else if (r.bronchBiopsy && typeof r.bronchBiopsy === "object") {
     const o = r.bronchBiopsy as Record<string, string>;
-    res.bronchBiopsy = [{ id: mkId(), date: "", selected: arrSel("bronchBiopsy"), pathology: o.pathology||"", microbiology: o.microbiology||"" }];
+    if (o.pathology || o.microbiology)
+      res.bronchBiopsy = [{ id: mkId(), date: "", selected: arrSel("bronchBiopsy"), pathology: o.pathology||"", microbiology: o.microbiology||"" }];
   }
 
   if (Array.isArray(r.ebus)) res.ebus = r.ebus as typeof res.ebus;
   else if (r.ebus && typeof r.ebus === "object") {
     const o = r.ebus as Record<string, string>;
-    res.ebus = [{ id: mkId(), date: "", selected: arrSel("ebus"), cytology: o.cytology||"" }];
+    if (o.cytology)
+      res.ebus = [{ id: mkId(), date: "", selected: arrSel("ebus"), cytology: o.cytology||"" }];
   }
 
   if (Array.isArray(r.pleuralFluid)) res.pleuralFluid = r.pleuralFluid as typeof res.pleuralFluid;
   else if (r.pleuralFluid && typeof r.pleuralFluid === "object") {
     const o = r.pleuralFluid as Record<string, string>;
-    res.pleuralFluid = [{ id: mkId(), date: "", selected: arrSel("pleuralFluid"), cytology: o.cytology||"", microbiology: o.microbiology||"", biochemistry: o.biochemistry||"", cellCounts: o.cellCounts||"" }];
+    if (o.cytology || o.microbiology || o.biochemistry || o.cellCounts)
+      res.pleuralFluid = [{ id: mkId(), date: "", selected: arrSel("pleuralFluid"), cytology: o.cytology||"", microbiology: o.microbiology||"", biochemistry: o.biochemistry||"", cellCounts: o.cellCounts||"" }];
   }
 
   if (Array.isArray(r.pleuralBiopsy)) res.pleuralBiopsy = r.pleuralBiopsy as typeof res.pleuralBiopsy;
   else if (r.pleuralBiopsy && typeof r.pleuralBiopsy === "object") {
     const o = r.pleuralBiopsy as Record<string, string>;
-    res.pleuralBiopsy = [{ id: mkId(), date: "", selected: arrSel("pleuralBiopsy"), pathology: o.pathology||"", microbiology: o.microbiology||"" }];
+    if (o.pathology || o.microbiology)
+      res.pleuralBiopsy = [{ id: mkId(), date: "", selected: arrSel("pleuralBiopsy"), pathology: o.pathology||"", microbiology: o.microbiology||"" }];
   }
 
   if (Array.isArray(r.otherTests)) res.otherTests = r.otherTests as typeof res.otherTests;
