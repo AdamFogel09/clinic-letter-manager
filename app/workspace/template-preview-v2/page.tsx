@@ -126,7 +126,7 @@ function LV({ label, value, boldValue }: { label: string; value: string; boldVal
   if (!value) return null;
   return (
     <div style={{ display: "flex", gap: 8, marginBottom: 3 }}>
-      <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, minWidth: 130, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 11, color: "#000000", fontWeight: 700, minWidth: 130, flexShrink: 0 }}>{label}</span>
       <span style={{ fontSize: 11, color: "#1A2B4A", fontWeight: boldValue ? 700 : 400 }}>{value}</span>
     </div>
   );
