@@ -239,7 +239,10 @@ export default function TemplatePreviewV2() {
             <LetterHeader />
             <div style={{ flex: 1, padding: "20px 40px 28px" }}>
 
-              <DocSection title="Patient Details">
+              <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 6 }} />
+                <div style={{ borderBottom: "2px solid #1A2B4A", marginBottom: 9 }} />
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px 32px" }}>
                   <LV label="Name"           value={S.name} />
                   <LV label="ID"             value={S.patId} />
@@ -255,7 +258,8 @@ export default function TemplatePreviewV2() {
                   <LV label="Location"       value={S.location} />
                   <LV label="Date"           value={S.date} />
                 </div>
-              </DocSection>
+                <div style={{ borderTop: "2px solid #1A2B4A", marginTop: 9 }} />
+              </div>
 
               <DocSection title="Diagnosis" titleHe="אבחנה">
                 <BiText en={S.diagEN} he={S.diagHE} />

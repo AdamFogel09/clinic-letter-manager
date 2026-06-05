@@ -501,9 +501,11 @@ export default function LetterPreviewPage() {
         {hasPage1 && (
           <A4Page>
             {d && (d.name || d.patId) && (
-              <DocSection title="Patient Details">
+              <div style={{ marginBottom: 16, breakInside: "avoid", pageBreakInside: "avoid" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 6 }} />
+                <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
                 <div style={{ display: "flex", gap: 32 }}>
-                  {/* Left column — identification & contact */}
                   <div style={{ flex: 1 }}>
                     <LV label="Name"          value={d.name} />
                     <LV label="ID"            value={d.patId} />
@@ -512,7 +514,6 @@ export default function LetterPreviewPage() {
                     <LV label="Email"         value={d.email} />
                     <LV label="Phone"         value={formatPhone(d.phone)} />
                   </div>
-                  {/* Right column — clinic & context details */}
                   <div style={{ flex: 1 }}>
                     <LV label="Smoking / Vaping" value={d.smoking} />
                     <LV label="Pets"             value={d.pets} />
@@ -522,7 +523,8 @@ export default function LetterPreviewPage() {
                     <LV label="Date"             value={letterDate} />
                   </div>
                 </div>
-              </DocSection>
+                <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
+              </div>
             )}
 
             {d?.diagHE && (
