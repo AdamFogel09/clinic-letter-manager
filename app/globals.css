@@ -46,6 +46,13 @@
   }
 }
 
+/* Force Avenir Next on every element inside the clinic letter preview/PDF.
+   Placed outside @layer so it is unlayered and beats Inter's injected font class. */
+.a4-page,
+.a4-page * {
+  font-family: "Avenir Next", Avenir, "Helvetica Neue", Arial, sans-serif !important;
+}
+
 @utility btn-primary {
   display: inline-flex;
   align-items: center;

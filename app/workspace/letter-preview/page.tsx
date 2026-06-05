@@ -159,7 +159,6 @@ function TextBlock({ text, rtl }: { text: string; rtl?: boolean }) {
       fontSize: 13, color: "#1A2B4A", lineHeight: 1.7, margin: 0,
       direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
       whiteSpace: "pre-wrap",
-      fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
     }}>
       {text}
     </p>
@@ -545,8 +544,8 @@ export default function LetterPreviewPage() {
                 <div style={{ direction: "rtl" }}>
                   {d.planStepsHE.filter(s => s.trim()).map((step, i) => (
                     <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start", textAlign: "right" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, color: "#1A2B4A", lineHeight: 1.8, fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif" }}>{i + 1}.</span>
-                      <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1, fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif" }}>{step}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
+                      <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
                     </div>
                   ))}
                 </div>
