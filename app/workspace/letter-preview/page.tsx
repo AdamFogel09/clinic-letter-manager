@@ -503,7 +503,7 @@ export default function LetterPreviewPage() {
             {d && (d.name || d.patId) && (
               <div style={{ marginBottom: 16, breakInside: "avoid", pageBreakInside: "avoid" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 6, display: "block", marginLeft: "auto", marginRight: "auto" }} />
+                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 2, display: "block", marginLeft: "auto", marginRight: "auto" }} />
                 <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
                 <div style={{ display: "flex", gap: 32 }}>
                   <div style={{ flex: 1 }}>
