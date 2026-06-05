@@ -830,15 +830,15 @@ export default function LetterPreviewPage() {
         <A4Page>
           {/* Stamp (left) + Important Notes box (right) — kept together, no page splits */}
           <div style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
-            <div style={{ display: "flex", gap: 28, alignItems: "stretch" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
 
               {/* Stamp on the left — standalone, no border */}
               <div style={{
-                flexShrink: 0, width: 210,
+                flexShrink: 0, width: 85,
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/stamp.png" alt="Official Stamp" style={{ width: 210, height: 210, objectFit: "contain", display: "block" }} />
+                <img src="/stamp.png" alt="Official Stamp" style={{ width: 85, height: 85, objectFit: "contain", display: "block" }} />
               </div>
 
               {/* Important Notes on the right */}
