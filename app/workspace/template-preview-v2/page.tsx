@@ -241,7 +241,7 @@ export default function TemplatePreviewV2() {
 
               <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 6 }} />
+                <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 6, display: "block", marginLeft: "auto", marginRight: "auto" }} />
                 <div style={{ borderBottom: "2px solid #1A2B4A", marginBottom: 9 }} />
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px 32px" }}>
                   <LV label="Name"           value={S.name} />
