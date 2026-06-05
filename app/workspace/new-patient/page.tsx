@@ -230,7 +230,11 @@ export default function NewPatientPage() {
     sessionStorage.removeItem("letter_draft");
     sessionStorage.removeItem("letter_draft_id");
     sessionStorage.removeItem("letter_supabase_id");
-    router.push("/workspace/letter-editor");
+    // Also pass patientId in the URL as a Safari-safe fallback for sessionStorage
+    const editorUrl = patient?.id
+      ? `/workspace/letter-editor?patientId=${patient.id}`
+      : "/workspace/letter-editor";
+    router.push(editorUrl);
   };
 
   return (

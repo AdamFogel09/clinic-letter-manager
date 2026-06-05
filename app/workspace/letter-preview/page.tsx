@@ -195,8 +195,9 @@ function DocSection({ title, titleHe, heOnly, children }: {
         marginBottom: 10,
       }}>
         <h3 style={{
-          fontSize: 15, fontWeight: 700, color: "#1A2B4A", margin: 0,
-          letterSpacing: "0.03em",
+          fontSize: heOnly ? 18 : 15, fontWeight: 700,
+          color: heOnly ? "#1E106E" : "#1A2B4A",
+          margin: 0, letterSpacing: "0.03em",
         }}>
           {title}
         </h3>
@@ -594,7 +595,7 @@ export default function LetterPreviewPage() {
                 {exporting && exportProgress && (
                   <span style={{ fontSize: 11, color: "#94A3B8" }}>{exportProgress}</span>
                 )}
-                <button
+                <button type="button"
                   onClick={handleEditLetter}
                   style={{
                     fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px",
@@ -603,7 +604,7 @@ export default function LetterPreviewPage() {
                   }}>
                   Edit Letter
                 </button>
-                <button
+                <button type="button"
                   onClick={handleExportPdf}
                   disabled={exporting}
                   style={{
@@ -638,7 +639,7 @@ export default function LetterPreviewPage() {
           ) : (
             /* ── Normal preview mode ── */
             <div style={{ display: "flex", gap: 8 }}>
-              <button
+              <button type="button"
                 onClick={handleEditLetter}
                 style={{
                   fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px",
@@ -648,7 +649,7 @@ export default function LetterPreviewPage() {
                 Edit Letter
               </button>
               {returnTo !== "review" && (
-                <button
+                <button type="button"
                   onClick={handleSendToAnat}
                   disabled={sent}
                   style={{
@@ -672,6 +673,7 @@ export default function LetterPreviewPage() {
               <div style={{ marginBottom: 16, breakInside: "avoid", pageBreakInside: "avoid" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", marginBottom: 0, display: "block", marginLeft: "auto", marginRight: "auto" }} />
+                <p style={{ textAlign: "center", color: "#1E106E", fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif", fontSize: 11, fontWeight: 500, margin: "3px 0 6px 0", letterSpacing: "0.03em", direction: "rtl" }}>מרפאת ריאות</p>
                 <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
                 <div style={{ display: "flex", gap: 32 }}>
                   <div style={{ flex: 1 }}>

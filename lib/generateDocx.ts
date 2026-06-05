@@ -84,13 +84,14 @@ function sectionHeading(text: string): Paragraph {
   });
 }
 
-// Hebrew section heading — 11pt bold, dark purple
+// Hebrew section heading — 13.5pt bold, brand purple
 function hebrewHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 22, color: "1A2B4A", font: "Avenir Next" })],
+    children: [new TextRun({ text, bold: true, size: 27, color: "1E106E", font: "Avenir Next" })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
     spacing: { before: 80, after: 40 },
+    border: { bottom: { style: "single" as const, size: 4, color: "1E106E", space: 4 } },
   });
 }
 
@@ -351,7 +352,13 @@ export async function generateLetterDocx(
       border: { bottom: { style: "single" as const, size: 8, color: "1A2B4A", space: 4 } },
     });
   }
-  const docHeader = new Header({ children: [headerPara] });
+  const subtitlePara = new Paragraph({
+    children: [new TextRun({ text: "מרפאת ריאות", size: 22, color: "1E106E", font: "Avenir Next" })],
+    alignment: AlignmentType.CENTER,
+    bidirectional: true,
+    spacing: { before: 20, after: 0 },
+  });
+  const docHeader = new Header({ children: [headerPara, subtitlePara] });
 
   // ── Footer: licenses left, contact right, dark-purple rule above ──────
   const docFooter = new Footer({

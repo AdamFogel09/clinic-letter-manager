@@ -554,18 +554,42 @@ export default function LetterEditorPage() {
     | null
   >(null);
   const [sendingToAnat, setSendingToAnat] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [saveDraftError, setSaveDraftError] = useState("");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Supabase IDs — stored as refs to avoid triggering re-renders / auto-save
   const supabasePatientIdRef = useRef<string | null>(null);
   const supabaseLetterIdRef  = useRef<string | null>(null);
+  // Tracks whether the auto-save effect has fired at least once after initialization
+  const isInitialRenderRef   = useRef(false);
 
   // ── Restore draft on mount ────────────────────────────────────────────────
   // Supabase is now the source of truth for patients and letters.
   // Temporary storage is used as a fallback during development.
   useEffect(() => {
     const run = async () => {
+    // Read stable IDs from URL — Safari-safe fallback when sessionStorage is cleared
+    const urlParams    = new URLSearchParams(window.location.search);
+    const urlPatientId = urlParams.get("patientId");
+    const urlLetterId  = urlParams.get("letterId");
+    if (urlPatientId && !supabasePatientIdRef.current) supabasePatientIdRef.current = urlPatientId;
+    if (urlLetterId  && !supabaseLetterIdRef.current)  supabaseLetterIdRef.current  = urlLetterId;
+
+    // If letterId came from URL and there is no sessionStorage draft, load from Supabase
+    if (urlLetterId && !sessionStorage.getItem("letter_draft") && !sessionStorage.getItem("draft_patient")) {
+      try {
+        const supabase = createClient();
+        const letter = await getLetterById(supabase, urlLetterId);
+        if (letter) {
+          if (letter.patient_id) supabasePatientIdRef.current = letter.patient_id;
+          const stored = supabaseLetterToStoredLetter(letter);
+          if (stored.data) sessionStorage.setItem("letter_draft", JSON.stringify(stored.data));
+        }
+      } catch { /* fall through to existing restore logic */ }
+    }
+
     const fromNewPatient = sessionStorage.getItem("draft_patient");
 
     if (fromNewPatient) {
@@ -747,6 +771,9 @@ export default function LetterEditorPage() {
         inhalerSearch, inhalers,
       }));
     } catch { /* QuotaExceededError — images too large for sessionStorage; data stays in memory */ }
+    // Mark unsaved after the first render (first run just mirrors the restored state)
+    if (isInitialRenderRef.current) setHasUnsavedChanges(true);
+    isInitialRenderRef.current = true;
   }, [
     initialized,
     name, patId, bDay, bMonth, bYear, gender, email, phone,
@@ -760,6 +787,14 @@ export default function LetterEditorPage() {
     testResults, lungRows, pictures,
     inhalerSearch, inhalers,
   ]);
+
+  // Warn before tab close / refresh when there are unsaved changes
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasUnsavedChanges]);
 
   // Close inhaler dropdown on outside click
   useEffect(() => {
@@ -883,8 +918,11 @@ export default function LetterEditorPage() {
   };
 
   const handlePreview = async () => {
-    // Save/update the draft to Supabase before opening the preview so the preview shows the latest data.
-    try { await handleSaveDraft(); } catch { /* don't block preview on save failure */ }
+    // Save before opening preview so the preview always shows the latest data.
+    const { success } = await handleSaveDraft();
+    // If the save failed and we have no existing letter ID, stay on the page.
+    // (The error message is already displayed by handleSaveDraft.)
+    if (!success && !supabaseLetterIdRef.current) return;
 
     const _diagEN = diagItemsToEN(diagItems);
     const _diagHE = diagItemsToHE(diagItems);
@@ -906,7 +944,6 @@ export default function LetterEditorPage() {
       testResults, lungRows,
       pictures, inhalers,
     }));
-    // Pass Supabase letter ID to the preview so it can update status on Send to Anat.
     if (supabaseLetterIdRef.current) {
       localStorage.setItem("letter_current_supabase_id", supabaseLetterIdRef.current);
     }
@@ -914,14 +951,9 @@ export default function LetterEditorPage() {
     router.push("/workspace/letter-preview");
   };
 
-  const handleSaveDraft = async () => {
+  const handleSaveDraft = async (): Promise<{ success: boolean }> => {
+    setIsSaving(true);
     const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
-    let letterId = sessionStorage.getItem("letter_draft_id");
-    if (!letterId) {
-      letterId = `letter-${Date.now().toString(36)}`;
-      sessionStorage.setItem("letter_draft_id", letterId);
-    }
-    localStorage.setItem("letter_current_id", letterId);
 
     const letterData = {
       name, patId, bDay, bMonth, bYear, gender,
@@ -944,21 +976,37 @@ export default function LetterEditorPage() {
       pictures, inhalers,
     };
 
-    // localStorage fallback (always runs — silent backup)
-    if (!letterId) {
-      letterId = `letter-${Date.now().toString(36)}`;
-      sessionStorage.setItem("letter_draft_id", letterId);
+    // localStorage fallback — silent backup, always runs
+    let draftId = sessionStorage.getItem("letter_draft_id");
+    if (!draftId) {
+      draftId = `letter-${Date.now().toString(36)}`;
+      sessionStorage.setItem("letter_draft_id", draftId);
     }
-    localStorage.setItem("letter_current_id", letterId);
+    localStorage.setItem("letter_current_id", draftId);
     upsertLetter({
-      id: letterId,
+      id: draftId,
       patientName: name || "Unnamed Patient",
-      patientId: patId || "",
+      patientId:   patId || "",
       letterDate,
-      status: "Draft",
+      status:  "Draft",
       savedAt: new Date().toISOString(),
-      data: letterData as Record<string, unknown>,
+      data:    letterData as Record<string, unknown>,
     });
+
+    // Resolve patient ID — try ref first, then URL params as Safari-safe fallback
+    let resolvedPatientId = supabasePatientIdRef.current;
+    if (!resolvedPatientId) {
+      const urlPatId = new URLSearchParams(window.location.search).get("patientId");
+      if (urlPatId) { resolvedPatientId = urlPatId; supabasePatientIdRef.current = urlPatId; }
+    }
+
+    // Without a letterId (UPDATE) or a patientId (INSERT), we cannot save to Supabase
+    if (!resolvedPatientId && !supabaseLetterIdRef.current) {
+      setSaveDraftError("Patient is missing. Please go back and select a patient before saving.");
+      setTimeout(() => setSaveDraftError(""), 8000);
+      setIsSaving(false);
+      return { success: false };
+    }
 
     // Save to Supabase (primary source of truth)
     try {
@@ -966,7 +1014,7 @@ export default function LetterEditorPage() {
       const supabase = createClient();
       const saved = await saveLetterToSupabase(supabase, {
         letterId:   supabaseLetterIdRef.current  ?? undefined,
-        patientId:  supabasePatientIdRef.current ?? undefined,
+        patientId:  resolvedPatientId             ?? undefined,
         status:     "Draft",
         letterDate,
         letterData: letterData as Record<string, unknown>,
@@ -976,12 +1024,17 @@ export default function LetterEditorPage() {
       localStorage.setItem("letter_current_supabase_id", saved.id);
       if (approvedStatus) setApprovedStatus("");
       setDraftSaved(true);
+      setHasUnsavedChanges(false);
       setTimeout(() => setDraftSaved(false), 2500);
+      return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[handleSaveDraft] Supabase error:", err);
+      console.error("[saveDraft] failed:", err instanceof Error ? err.message : String(err));
       setSaveDraftError(`Save failed: ${msg}`);
       setTimeout(() => setSaveDraftError(""), 6000);
+      return { success: false };
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1010,14 +1063,20 @@ export default function LetterEditorPage() {
       testResults, lungRows,
       pictures, inhalers,
     };
-    localStorage.setItem("letter_preview", JSON.stringify(letterData));
 
-    // Save to Supabase with "Waiting for Anat" status (primary source of truth)
+    // Resolve patient ID — try ref first, then URL params
+    let resolvedPatientId = supabasePatientIdRef.current;
+    if (!resolvedPatientId) {
+      const urlPatId = new URLSearchParams(window.location.search).get("patientId");
+      if (urlPatId) { resolvedPatientId = urlPatId; supabasePatientIdRef.current = urlPatId; }
+    }
+
+    // Save to Supabase — must succeed before navigating
     try {
       const supabase = createClient();
       const saved = await saveLetterToSupabase(supabase, {
         letterId:     supabaseLetterIdRef.current  ?? undefined,
-        patientId:    supabasePatientIdRef.current ?? undefined,
+        patientId:    resolvedPatientId             ?? undefined,
         status:       "Waiting for Anat",
         letterDate,
         letterData:   letterData as Record<string, unknown>,
@@ -1027,31 +1086,35 @@ export default function LetterEditorPage() {
         supabaseLetterIdRef.current = saved.id;
         sessionStorage.setItem("letter_supabase_id", saved.id);
         localStorage.setItem("letter_current_supabase_id", saved.id);
-        // Letter is now in Supabase — clear the local copy of full letter data.
         localStorage.removeItem("letter_preview");
       }
     } catch (err) {
-      console.warn("Supabase save failed, using localStorage fallback:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[sendToAnat] failed:", err instanceof Error ? err.message : String(err));
+      setSaveDraftError(`Could not send to Anat: ${msg}. Please try again.`);
+      setTimeout(() => setSaveDraftError(""), 8000);
+      setSendingToAnat(false);
+      return;
     }
 
-    // localStorage fallback
-    let letterId = sessionStorage.getItem("letter_draft_id");
-    if (!letterId) {
-      letterId = `letter-${Date.now().toString(36)}`;
-      sessionStorage.setItem("letter_draft_id", letterId);
+    // Store for anat-review page display and navigate
+    let draftId = sessionStorage.getItem("letter_draft_id");
+    if (!draftId) {
+      draftId = `letter-${Date.now().toString(36)}`;
+      sessionStorage.setItem("letter_draft_id", draftId);
     }
-    localStorage.setItem("letter_current_id", letterId);
+    localStorage.setItem("letter_current_id", draftId);
+    localStorage.setItem("letter_preview", JSON.stringify(letterData));
     upsertLetter({
-      id: letterId,
+      id:          draftId,
       patientName: name || "Unnamed Patient",
-      patientId: patId || "",
+      patientId:   patId || "",
       letterDate,
-      status: "Waiting for Anat",
+      status:  "Waiting for Anat",
       savedAt: new Date().toISOString(),
-      data: letterData as Record<string, unknown>,
+      data:    letterData as Record<string, unknown>,
     });
 
-    // Later this action will send an email notification to Anat with a secure link.
     localStorage.setItem("letter_just_sent", "1");
     setSendingToAnat(false);
     router.push("/workspace/anat-review");
@@ -2355,7 +2418,7 @@ export default function LetterEditorPage() {
       <div className="flex items-center justify-between px-5 py-3.5 bg-white flex-shrink-0"
         style={{borderBottom:"1px solid #E2E8F0"}}>
         <div className="flex items-center gap-3">
-          <button
+          <button type="button"
             onClick={() => window.history.length > 1 ? router.back() : router.push("/workspace")}
             className="inline-flex items-center gap-1.5 text-xs font-medium"
             style={{color:"#94A3B8", background:"none", border:"none", cursor:"pointer", padding:0}}
@@ -2474,19 +2537,19 @@ export default function LetterEditorPage() {
                 {saveDraftError}
               </p>
             )}
-            <button onClick={handleSaveDraft}
+            <button type="button" onClick={handleSaveDraft} disabled={isSaving}
               className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
-              style={{backgroundColor:"#1A2B4A",color:"#fff",borderColor:"#1A2B4A"}}>
-              Save Draft
+              style={{backgroundColor:"#1A2B4A",color:"#fff",borderColor:"#1A2B4A",opacity:isSaving?0.7:1,cursor:isSaving?"default":"pointer"}}>
+              {isSaving ? "Saving…" : "Save Draft"}
             </button>
-            <button onClick={handlePreview}
+            <button type="button" onClick={handlePreview} disabled={isSaving}
               className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
-              style={{borderColor:"#0D9488",color:"#0D9488",backgroundColor:"white"}}>
+              style={{borderColor:"#0D9488",color:"#0D9488",backgroundColor:"white",opacity:isSaving?0.7:1,cursor:isSaving?"default":"pointer"}}>
               Preview Letter
             </button>
-            <button onClick={handleSendToAnat} disabled={sendingToAnat}
+            <button type="button" onClick={handleSendToAnat} disabled={sendingToAnat || isSaving}
               className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
-              style={{borderColor:"#7C3AED",color:"#7C3AED",backgroundColor:"white",opacity:sendingToAnat?0.7:1,cursor:sendingToAnat?"default":"pointer"}}>
+              style={{borderColor:"#7C3AED",color:"#7C3AED",backgroundColor:"white",opacity:(sendingToAnat||isSaving)?0.7:1,cursor:(sendingToAnat||isSaving)?"default":"pointer"}}>
               {sendingToAnat ? "Preparing file…" : "Send to Anat"}
             </button>
           </div>

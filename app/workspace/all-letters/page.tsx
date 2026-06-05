@@ -216,7 +216,9 @@ export default function AllLettersPage() {
     sessionStorage.removeItem("letter_draft");
     sessionStorage.removeItem("letter_draft_id");
     sessionStorage.removeItem("letter_supabase_id");
-    router.push("/workspace/letter-editor");
+    // Pass patientId in the URL as a Safari-safe fallback for sessionStorage
+    const patId = (p as { id?: string }).id;
+    router.push(patId ? `/workspace/letter-editor?patientId=${patId}` : "/workspace/letter-editor");
   };
 
   const openInEditor = (letter: StoredLetter) => {
@@ -227,7 +229,8 @@ export default function AllLettersPage() {
     sessionStorage.removeItem("is_update_mode");
     localStorage.setItem("letter_current_id",          letter.id);
     localStorage.setItem("letter_current_supabase_id", letter.id);
-    router.push("/workspace/letter-editor");
+    // Pass letterId in the URL as a Safari-safe fallback for sessionStorage
+    router.push(`/workspace/letter-editor?letterId=${letter.id}`);
   };
 
   const openPreview = (letter: StoredLetter) => {
