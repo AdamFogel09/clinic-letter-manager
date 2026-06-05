@@ -292,10 +292,12 @@ function TextBlock({ text, rtl }: { text: string; rtl?: boolean }) {
 }
 
 const DATE_LINE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+// Strip legacy "Review date:" / "תאריך ביקורת:" labels saved before the serializer was fixed
+const OLD_LABEL = /^(Review date:|תאריך ביקורת:)\s*/i;
 
 function SummaryBlock({ text, rtl }: { text: string; rtl?: boolean }) {
   if (!text?.trim()) return null;
-  const lines = text.split("\n");
+  const lines = text.split("\n").map(l => l.replace(OLD_LABEL, ""));
   return (
     <p style={{
       fontSize: 13, color: "#1A2B4A", lineHeight: 1.7, margin: 0,
@@ -304,7 +306,15 @@ function SummaryBlock({ text, rtl }: { text: string; rtl?: boolean }) {
     }}>
       {lines.map((line, i) => (
         <span key={i}>
-          {DATE_LINE.test(line.trim()) ? <strong>{line}</strong> : line}
+          {DATE_LINE.test(line.trim()) ? (
+            <strong style={{
+              fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+              color: "#1E106E",
+              fontSize: 13,
+            }}>
+              {line}
+            </strong>
+          ) : line}
           {i < lines.length - 1 ? "\n" : null}
         </span>
       ))}

@@ -34,6 +34,7 @@ function bodyLine(text: string, bold = false): Paragraph {
 }
 
 const DATE_LINE_DOCX = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+const OLD_LABEL_DOCX = /^(Review date:|תאריך ביקורת:)\s*/i;
 
 function rtlLine(text: string, bold = false): Paragraph {
   return new Paragraph({
@@ -509,7 +510,10 @@ export async function generateLetterDocx(
     }
     if (sumHE) {
       children.push(hebrewHeading("סיכום"));
-      sumHE.split("\n").filter(Boolean).forEach((l) => children.push(rtlLine(l, DATE_LINE_DOCX.test(l.trim()))));
+      sumHE.split("\n").forEach((l) => {
+        const clean = l.replace(OLD_LABEL_DOCX, "").trim();
+        if (clean) children.push(rtlLine(clean, DATE_LINE_DOCX.test(clean)));
+      });
       children.push(gap(60));
     }
     if (planHE.length > 0) {
@@ -530,7 +534,10 @@ export async function generateLetterDocx(
   }
   if (sumEN) {
     children.push(sectionHeading("Summary"));
-    sumEN.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l, DATE_LINE_DOCX.test(l.trim()))));
+    sumEN.split("\n").forEach((l) => {
+      const clean = l.replace(OLD_LABEL_DOCX, "").trim();
+      if (clean) children.push(bodyLine(clean, DATE_LINE_DOCX.test(clean)));
+    });
     children.push(gap());
   }
   if (planEN.length > 0) {
