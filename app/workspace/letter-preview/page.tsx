@@ -1103,11 +1103,6 @@ export default function LetterPreviewPage() {
               }}>
                 {d!.pictures.map((src, i) => (
                   <div key={i} style={{ overflow: "hidden", border: "2px solid #000000", backgroundColor: "#ffffff" }}>
-                    <div style={{ padding: "4px 10px", borderBottom: "1px solid #000000" }}>
-                      <p style={{ fontSize: 10, color: "#000000", margin: 0, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                        Image {i + 1}
-                      </p>
-                    </div>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={src}

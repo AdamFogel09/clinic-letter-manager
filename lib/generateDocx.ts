@@ -579,10 +579,6 @@ export async function generateLetterDocx(
   if (pictures.length > 0) {
     children.push(sectionHeading("Images"));
     for (let i = 0; i < pictures.length; i++) {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: `IMAGE ${i + 1}`, bold: true, size: 22, color: "000000", font: "Avenir Next" })],
-        spacing: { before: 100, after: 40 },
-      }));
       const imgResult = await fetchImageAny(pictures[i]);
       if (imgResult) {
         try {
