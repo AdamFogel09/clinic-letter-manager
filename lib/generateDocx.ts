@@ -75,12 +75,19 @@ function lv(label: string, value: string): Paragraph | null {
   });
 }
 
-// Section heading — 14pt bold, dark purple, thin underline
+// Section heading — full-width bar, brand lavender background, matching Hebrew heading style
 function sectionHeading(text: string): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, bold: true, size: 24, color: "1A2B4A", font: "Avenir Next" })],
-    spacing: { before: 140, after: 60 },
-    border: { bottom: { style: "single" as const, size: 4, color: "160B5C", space: 4 } },
+    children: [new TextRun({ text, bold: true, size: 22, color: "1E106E", font: "Avenir Next" })],
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 120, after: 60 },
+    shading: { type: ShadingType.SOLID, fill: "D8DEF6", color: "D8DEF6" },
+    border: {
+      top:    { style: "single" as const, size: 4, color: "000000", space: 4 },
+      bottom: { style: "single" as const, size: 4, color: "000000", space: 4 },
+      left:   { style: "single" as const, size: 4, color: "000000", space: 4 },
+      right:  { style: "single" as const, size: 4, color: "000000", space: 4 },
+    },
   });
 }
 
@@ -641,12 +648,17 @@ export async function generateLetterDocx(
   const WHITE_SHADING  = { type: ShadingType.SOLID, fill: "FFFFFF", color: "FFFFFF" };
 
   const notesHeading = new Paragraph({
-    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 24, color: "160B5C", font: "Avenir Next" })],
+    children: [new TextRun({ text: "נקודות חשובות", bold: true, size: 22, color: "1E106E", font: "Avenir Next" })],
     bidirectional: true,
-    alignment: AlignmentType.RIGHT,
-    border: { bottom: { style: "single" as const, size: 4, color: "7C3AED", space: 4 } },
+    alignment: AlignmentType.CENTER,
     spacing: { before: 60, after: 80 },
-    shading: WHITE_SHADING,
+    shading: { type: ShadingType.SOLID, fill: "D8DEF6", color: "D8DEF6" },
+    border: {
+      top:    { style: "single" as const, size: 4, color: "000000", space: 4 },
+      bottom: { style: "single" as const, size: 4, color: "000000", space: 4 },
+      left:   { style: "single" as const, size: 4, color: "000000", space: 4 },
+      right:  { style: "single" as const, size: 4, color: "000000", space: 4 },
+    },
   });
 
   const noteParas = importantNoteTexts.map((note, i) =>

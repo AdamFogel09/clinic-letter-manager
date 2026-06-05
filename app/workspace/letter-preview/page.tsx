@@ -207,24 +207,37 @@ function DocSection({ title, titleHe, heOnly, children }: {
           </h3>
         </div>
       ) : (
+        // English / bilingual section: full-width bar matching Hebrew bar style
         <div style={{
+          width: "100%",
+          backgroundColor: "#D8DEF6",
+          border: "1px solid #000000",
           display: "flex",
-          direction: "ltr",
-          justifyContent: titleHe ? "space-between" : "flex-start",
-          alignItems: "baseline",
-          borderBottom: "1px solid #160B5C",
-          paddingBottom: 5,
+          alignItems: "center",
+          justifyContent: (title && titleHe) ? "space-between" : "center",
+          padding: "5px 10px",
           marginBottom: 10,
+          boxSizing: "border-box",
         }}>
-          <h3 style={{
-            fontSize: 15, fontWeight: 700,
-            color: "#1A2B4A",
-            margin: 0, letterSpacing: "0.03em",
-          }}>
-            {title}
-          </h3>
+          {title && (
+            <h3 style={{
+              fontSize: 12, fontWeight: 700,
+              color: "#1E106E",
+              margin: 0,
+              fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+              letterSpacing: "0.05em",
+            }}>
+              {title}
+            </h3>
+          )}
           {titleHe && (
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", letterSpacing: "0.04em" }}>
+            <span style={{
+              fontSize: title ? 11 : 12,
+              fontWeight: 700,
+              color: "#1E106E",
+              fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+              direction: "rtl",
+            }}>
               {titleHe}
             </span>
           )}
@@ -1095,16 +1108,26 @@ export default function LetterPreviewPage() {
 
             {/* Important Notes — full width */}
             <div>
-              {/* Line above heading */}
-              <div style={{ borderTop: "1px solid #160B5C", marginBottom: 7 }} />
-              {/* Heading */}
-              <div style={{ display: "flex", justifyContent: "center", marginBottom: 7 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: "#160B5C", margin: 0, letterSpacing: "0.03em" }}>
+              {/* Heading bar — same bar style as all other section headers */}
+              <div style={{
+                width: "100%",
+                backgroundColor: "#D8DEF6",
+                border: "1px solid #000000",
+                textAlign: "center",
+                padding: "5px 0",
+                marginBottom: 10,
+                boxSizing: "border-box",
+              }}>
+                <h3 style={{
+                  fontSize: 13, fontWeight: 700,
+                  color: "#1E106E",
+                  margin: 0,
+                  fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+                  letterSpacing: "0.04em",
+                }}>
                   נקודות חשובות
                 </h3>
               </div>
-              {/* Line below heading */}
-              <div style={{ borderTop: "1px solid #160B5C", marginBottom: 10 }} />
 
               {/* Notes list — RTL */}
               <div>
