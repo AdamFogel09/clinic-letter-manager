@@ -540,19 +540,14 @@ export async function duplicateLetter(
   const newSumEN = sectionsToSumEN(newSections);
   const newSumHE = sectionsToSumHE(newSections);
 
-  // Copy diagnosis items (mark as copied)
+  // Copy diagnosis as a single block (mark as copied)
   const copiedDiagItems: DiagnosisItem[] = source.diagnosis_items?.length
-    ? source.diagnosis_items.map(i => ({ ...i, source: "copied" as const }))
+    ? [{ ...source.diagnosis_items[0], textEN: diagItemsToEN(source.diagnosis_items), textHE: diagItemsToHE(source.diagnosis_items), source: "copied" as const }]
     : (() => {
-        const en = (source.diagnosis_english || "").split("\n").filter(Boolean);
-        const he = (source.diagnosis_hebrew  || "").split("\n").filter(Boolean);
-        if (!en.length && !he.length) return [];
-        const len = Math.max(en.length, he.length);
-        return Array.from({ length: len }, (_, i) => ({
-          id: `d-dup-${Date.now().toString(36)}-${i}`,
-          textEN: en[i] || "", textHE: he[i] || "",
-          source: "copied" as const,
-        }));
+        const en = (source.diagnosis_english || "").trim();
+        const he = (source.diagnosis_hebrew  || "").trim();
+        if (!en && !he) return [];
+        return [{ id: `d-dup-${Date.now().toString(36)}-0`, textEN: en, textHE: he, source: "copied" as const }];
       })();
   const newDiagEN = diagItemsToEN(copiedDiagItems) || source.diagnosis_english || "";
   const newDiagHE = diagItemsToHE(copiedDiagItems) || source.diagnosis_hebrew  || "";

@@ -441,20 +441,12 @@ function newStepId(): string {
   return `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
 }
 
-/** Convert flat diagEN/diagHE text blocks to structured items (backward compat). */
+/** Convert flat diagEN/diagHE text blocks to a single structured item (backward compat). */
 function flatToDiagItems(en: string, he: string): DiagnosisItem[] {
-  const enLines = en.split("\n").map(l => l.trim()).filter(Boolean);
-  const heLines = he.split("\n").map(l => l.trim()).filter(Boolean);
-  if (!enLines.length && !heLines.length) {
+  if (!en.trim() && !he.trim()) {
     return [{ id: newItemId(), textEN: "", textHE: "", source: "new" }];
   }
-  const len = Math.max(enLines.length, heLines.length);
-  return Array.from({ length: len }, (_, i) => ({
-    id:     newItemId(),
-    textEN: enLines[i] || "",
-    textHE: heLines[i] || "",
-    source: "copied" as const,
-  }));
+  return [{ id: newItemId(), textEN: en.trim(), textHE: he.trim(), source: "copied" as const }];
 }
 
 /** Convert parallel planStepsEN/HE arrays to structured steps (backward compat). */
@@ -1323,49 +1315,52 @@ export default function LetterEditorPage() {
           {/* ── Diagnosis ── */}
           <SectionCard title="Diagnosis" titleHe="אבחנה">
             <div className="space-y-3">
-              {diagItems.map((item, idx) => {
+              {diagItems.map((item) => {
                 const isCopied = item.source === "copied";
-                const srcStyle = item.source === "new"
-                  ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
-                  : item.source === "edited"
-                    ? { bg: "#FFFBEB", border: "#FDE68A", badge: "#FEF3C7", badgeText: "#D97706", label: "Edited" }
-                    : { bg: "#F8FAFC", border: "#E2E8F0", badge: "#F1F5F9", badgeText: "#94A3B8", label: "Previous" };
+                const hasMultiple = diagItems.length > 1;
                 return (
-                  <div key={item.id} className="rounded-xl p-3 space-y-2"
-                    style={{ border: `1px solid ${srcStyle.border}`, backgroundColor: srcStyle.bg }}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-400 flex-shrink-0">{idx + 1}.</span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: srcStyle.badge, color: srcStyle.badgeText }}>
-                        {isCopied ? "Previous — Read-only" : srcStyle.label}
-                      </span>
-                      {!isCopied && (
-                        <button type="button" onClick={() => removeDiagItem(item.id)}
-                          className="ml-auto text-xs transition-colors duration-150 flex-shrink-0"
-                          style={{ color: "#CBD5E1" }}
-                          onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                          onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
-                          Remove
-                        </button>
-                      )}
-                    </div>
+                  <div key={item.id} className="space-y-2">
+                    {/* Header row — only shown when there are multiple blocks */}
+                    {hasMultiple && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={isCopied
+                            ? { backgroundColor: "#F1F5F9", color: "#94A3B8" }
+                            : { backgroundColor: "#EDE9FE", color: "#7C3AED" }}>
+                          {isCopied ? "Previous" : "New Diagnosis"}
+                        </span>
+                        {!isCopied && (
+                          <button type="button" onClick={() => removeDiagItem(item.id)}
+                            className="ml-auto text-xs transition-colors duration-150"
+                            style={{ color: "#CBD5E1" }}
+                            onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                            onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {/* English */}
                     {isCopied ? (
-                      <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
-                        {item.textEN || "—"}
-                      </p>
+                      <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
+                          {item.textEN || "—"}
+                        </p>
+                      </div>
                     ) : (
-                      <textarea className={ta} style={is} rows={2}
+                      <textarea className={ta} style={is} rows={5}
                         value={item.textEN}
                         onChange={e => updateDiagItemEN(item.id, e.target.value)}
-                        placeholder="Diagnosis item in English" />
+                        placeholder="Enter full diagnosis in English" />
                     )}
+                    {/* Translate button */}
                     {!isCopied && (
                       <div className="flex items-center gap-2 flex-wrap">
                         <TranslateBtn
                           onClick={() => translateDiagItem(item.id)}
                           disabled={!item.textEN.trim()}
                           loading={translatingDiag === item.id}
-                          label={item.textHE.trim() ? "Retranslate" : "Translate to Hebrew"}
+                          label={item.textHE.trim() ? "Retranslate to Hebrew" : "Translate to Hebrew"}
                         />
                         {item.textHE.trim() && translatingDiag !== item.id && (
                           <span className="text-xs font-medium px-2 py-0.5 rounded-full"
@@ -1378,13 +1373,16 @@ export default function LetterEditorPage() {
                         )}
                       </div>
                     )}
+                    {/* Hebrew */}
                     {isCopied ? (
-                      <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap"
-                        style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
-                        {item.textHE || "—"}
-                      </p>
+                      <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap"
+                          style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
+                          {item.textHE || "—"}
+                        </p>
+                      </div>
                     ) : (
-                      <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={2}
+                      <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
                         value={item.textHE}
                         onChange={e => updateDiagItemHE(item.id, e.target.value)}
                         placeholder="אבחנה בעברית — לאחר תרגום" />
@@ -1392,11 +1390,14 @@ export default function LetterEditorPage() {
                   </div>
                 );
               })}
-              <button type="button" onClick={addDiagItem}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
-                style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
-                + Add Diagnosis Item
-              </button>
+              {/* Add Diagnosis — only when all current items are copied (update mode) */}
+              {diagItems.every(i => i.source === "copied") && (
+                <button type="button" onClick={addDiagItem}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
+                  style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
+                  + Add Diagnosis
+                </button>
+              )}
               <p className="text-xs" style={{ color: "#94A3B8" }}>AI translation is a draft — review before finalising.</p>
             </div>
           </SectionCard>
