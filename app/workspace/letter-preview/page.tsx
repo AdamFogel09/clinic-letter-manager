@@ -828,54 +828,49 @@ export default function LetterPreviewPage() {
 
         {/* ── Final Page: Important Notes + Signature ── */}
         <A4Page>
-          {/* Stamp (left) + Important Notes box (right) — kept together, no page splits */}
+          {/* Important Notes + Stamp below — kept together, no page splits */}
           <div style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
 
-              {/* Stamp on the left — standalone, no border */}
-              <div style={{
-                flexShrink: 0, width: 85,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/stamp.png" alt="Official Stamp" style={{ width: 85, height: 85, objectFit: "contain", display: "block" }} />
+            {/* Important Notes — full width */}
+            <div>
+              {/* Line above heading */}
+              <div style={{ borderTop: "1px solid #160B5C", marginBottom: 7 }} />
+              {/* Heading */}
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 7 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: "#160B5C", margin: 0, letterSpacing: "0.03em" }}>
+                  נקודות חשובות
+                </h3>
+              </div>
+              {/* Line below heading */}
+              <div style={{ borderTop: "1px solid #160B5C", marginBottom: 10 }} />
+
+              {/* Notes list — RTL */}
+              <div>
+                {[
+                  "מכתב זה הוא מסמך סודי המיועד רק למטופל, או למטפל מועמד ואנשי מקצוע בתחום הבריאות המעורבים בטיפול הרפואי הישיר במטופל. אם מסמך זה התקבל בטעות, אנא החזר אותו מיד לכתובת: lungdrsumit@gmail.com .",
+                  "יש להעביר מכתב זה לרופא המשפחה כדי לעיין בתוכנית הניהול והחקירה.",
+                  "כל ביקור במרפאה (כולל ביקורות מעקב ולאחר בדיקות) נדרשות בתשלום.",
+                ].map((text, i) => {
+                  const color = i === 2 ? "#DC2626" : "#160B5C";
+                  return (
+                    <div key={i} style={{ display: "flex", direction: "rtl", gap: 6, alignItems: "flex-start", marginBottom: 4 }}>
+                      <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.5, color }}>{i + 1}.</span>
+                      <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color, textAlign: "right" }}>{text}</span>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Important Notes on the right */}
-              <div style={{ flex: 1 }}>
-                {/* Line above heading */}
-                <div style={{ borderTop: "1px solid #160B5C", marginBottom: 7 }} />
-                {/* Heading */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 7 }}>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, color: "#160B5C", margin: 0, letterSpacing: "0.03em" }}>
-                    נקודות חשובות
-                  </h3>
-                </div>
-                {/* Line below heading */}
-                <div style={{ borderTop: "1px solid #160B5C", marginBottom: 10 }} />
-
-                {/* Notes list — RTL */}
-                <div>
-                  {[
-                    "מכתב זה הוא מסמך סודי המיועד רק למטופל, או למטפל מועמד ואנשי מקצוע בתחום הבריאות המעורבים בטיפול הרפואי הישיר במטופל. אם מסמך זה התקבל בטעות, אנא החזר אותו מיד לכתובת: lungdrsumit@gmail.com .",
-                    "יש להעביר מכתב זה לרופא המשפחה כדי לעיין בתוכנית הניהול והחקירה.",
-                    "כל ביקור במרפאה (כולל ביקורות מעקב ולאחר בדיקות) נדרשות בתשלום.",
-                  ].map((text, i) => {
-                    const color = i === 2 ? "#DC2626" : "#160B5C";
-                    return (
-                      <div key={i} style={{ display: "flex", direction: "rtl", gap: 6, alignItems: "flex-start", marginBottom: 4 }}>
-                        <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.5, color }}>{i + 1}.</span>
-                        <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color, textAlign: "right" }}>{text}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Line below notes */}
-                <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
-              </div>
-
+              {/* Line below notes */}
+              <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
             </div>
+
+            {/* Stamp below notes — centred, large */}
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/stamp.png" alt="Official Stamp" style={{ width: 180, height: 180, objectFit: "contain" }} />
+            </div>
+
           </div>
         </A4Page>
 
