@@ -7,16 +7,12 @@ export default function LetterHeader() {
         alt="Dr. Sumit Chatterji Clinic"
         style={{ maxHeight: 170, objectFit: "contain" }}
       />
-      <p style={{
-        margin: "10px 0 0",
-        fontFamily: "'Avenir Next', 'Avenir', sans-serif",
-        fontSize: "21px",
-        fontWeight: 700,
-        letterSpacing: "0.01em",
-        color: "#1a1a1a",
-      }}>
-        מרפאת ריאות
-      </p>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/lungistitute.png"
+        alt="מרפאת ריאות"
+        style={{ marginTop: "10px", maxHeight: 40, objectFit: "contain" }}
+      />
     </div>
   );
 }
