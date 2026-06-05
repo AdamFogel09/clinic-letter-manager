@@ -291,6 +291,27 @@ function TextBlock({ text, rtl }: { text: string; rtl?: boolean }) {
   );
 }
 
+const DATE_LINE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+
+function SummaryBlock({ text, rtl }: { text: string; rtl?: boolean }) {
+  if (!text?.trim()) return null;
+  const lines = text.split("\n");
+  return (
+    <p style={{
+      fontSize: 13, color: "#1A2B4A", lineHeight: 1.7, margin: 0,
+      direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
+      whiteSpace: "pre-wrap",
+    }}>
+      {lines.map((line, i) => (
+        <span key={i}>
+          {DATE_LINE.test(line.trim()) ? <strong>{line}</strong> : line}
+          {i < lines.length - 1 ? "\n" : null}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function InhalerIconSmall() {
   return (
     <svg viewBox="0 0 40 56" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 30, height: 42 }}>
@@ -785,7 +806,7 @@ export default function LetterPreviewPage() {
 
             {d?.sumHE && (
               <DocSection title="סיכום" heOnly>
-                <TextBlock text={d.sumHE} rtl />
+                <SummaryBlock text={d.sumHE} rtl />
               </DocSection>
             )}
 
@@ -815,7 +836,7 @@ export default function LetterPreviewPage() {
 
             {d?.sumEN && (
               <DocSection title="Summary">
-                <TextBlock text={d.sumEN} />
+                <SummaryBlock text={d.sumEN} />
               </DocSection>
             )}
 

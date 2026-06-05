@@ -26,16 +26,18 @@ function gap(size = 50): Paragraph {
   return new Paragraph({ children: [], spacing: { after: size } });
 }
 
-function bodyLine(text: string): Paragraph {
+function bodyLine(text: string, bold = false): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: 20, font: "Avenir Next" })],
+    children: [new TextRun({ text, size: 20, font: "Avenir Next", bold })],
     spacing: { after: 40 },
   });
 }
 
-function rtlLine(text: string): Paragraph {
+const DATE_LINE_DOCX = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+
+function rtlLine(text: string, bold = false): Paragraph {
   return new Paragraph({
-    children: [new TextRun({ text, size: 20, font: "Avenir Next" })],
+    children: [new TextRun({ text, size: 20, font: "Avenir Next", bold })],
     bidirectional: true,
     alignment: AlignmentType.RIGHT,
     spacing: { after: 40 },
@@ -507,7 +509,7 @@ export async function generateLetterDocx(
     }
     if (sumHE) {
       children.push(hebrewHeading("סיכום"));
-      sumHE.split("\n").filter(Boolean).forEach((l) => children.push(rtlLine(l)));
+      sumHE.split("\n").filter(Boolean).forEach((l) => children.push(rtlLine(l, DATE_LINE_DOCX.test(l.trim()))));
       children.push(gap(60));
     }
     if (planHE.length > 0) {
@@ -528,7 +530,7 @@ export async function generateLetterDocx(
   }
   if (sumEN) {
     children.push(sectionHeading("Summary"));
-    sumEN.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l)));
+    sumEN.split("\n").filter(Boolean).forEach((l) => children.push(bodyLine(l, DATE_LINE_DOCX.test(l.trim()))));
     children.push(gap());
   }
   if (planEN.length > 0) {

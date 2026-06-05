@@ -36,14 +36,14 @@ export interface PlanStep {
 export function sectionsToSumEN(sections: SummarySection[]): string {
   return sections
     .filter(s => s.textEN.trim())
-    .map(s => s.date ? `Review date: ${s.date}\n${s.textEN}` : s.textEN)
+    .map(s => s.date ? `${s.date}\n${s.textEN}` : s.textEN)
     .join("\n\n");
 }
 
 export function sectionsToSumHE(sections: SummarySection[]): string {
   return sections
     .filter(s => s.textHE.trim())
-    .map(s => s.date ? `תאריך ביקורת: ${s.date}\n${s.textHE}` : s.textHE)
+    .map(s => s.date ? `${s.date}\n${s.textHE}` : s.textHE)
     .join("\n\n");
 }
 
