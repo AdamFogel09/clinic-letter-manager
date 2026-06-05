@@ -127,8 +127,7 @@ function DocSection({ title, titleHe, heOnly, children }: {
       }}>
         <h3 style={{
           fontSize: 15, fontWeight: 700, color: "#1A2B4A", margin: 0,
-          textTransform: heOnly ? "none" : "uppercase",
-          letterSpacing: heOnly ? "0.03em" : "0.10em",
+          letterSpacing: "0.03em",
         }}>
           {title}
         </h3>
