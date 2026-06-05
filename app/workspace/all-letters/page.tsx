@@ -113,15 +113,22 @@ function PatientCard({
             </p>
           ) : (
             <div className="px-5 sm:px-6 py-3 flex flex-col gap-2">
-              {letters.map((letter) => {
+              {letters.map((letter, idx) => {
                 const c = STATUS_COLORS[letter.status] ?? { bg: "#F1F5F9", text: "#475569" };
                 const isDuplicating = duplicatingId === letter.id;
+                const isLatest = idx === 0;
                 return (
                   <div key={letter.id}
                     className="flex items-center justify-between gap-3 py-2.5 px-4 rounded-xl bg-white border"
-                    style={{ borderColor: "#E2E8F0" }}>
+                    style={{ borderColor: isLatest ? "#0D9488" : "#E2E8F0" }}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {isLatest && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ backgroundColor: "#CCFBF1", color: "#0D9488" }}>
+                            Latest
+                          </span>
+                        )}
                         {letter.letterDate && (
                           <span className="text-xs font-medium" style={{ color: "#1A2B4A" }}>{letter.letterDate}</span>
                         )}
@@ -152,7 +159,7 @@ function PatientCard({
                       <button onClick={() => onOpenLetter(letter)}
                         className="text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
                         style={{ backgroundColor: "#1A2B4A", color: "#fff" }}>
-                        Continue
+                        {isLatest ? "Edit Latest" : "Continue"}
                       </button>
                     </div>
                   </div>

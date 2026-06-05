@@ -601,6 +601,51 @@ export async function duplicateLetter(
   return { id: data.id };
 }
 
+/**
+ * After a new final PDF is successfully saved, delete old PDF and DOCX files from
+ * Supabase Storage for every OTHER letter belonging to the same patient.
+ * Safe: never touches the current letter. DB rows are only cleared after storage
+ * deletion succeeds, so partial failures leave data consistent.
+ */
+export async function cleanupOldLetterFiles(
+  supabase: SupabaseClient,
+  currentLetterId: string,
+  patientUuid: string
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("letters")
+    .select("id, final_pdf_url, editable_docx_url")
+    .eq("patient_id", patientUuid)
+    .neq("id", currentLetterId);
+
+  if (error || !data) {
+    console.warn("[cleanupOldLetterFiles] Could not load old letters:", error?.message);
+    return;
+  }
+
+  for (const row of data as { id: string; final_pdf_url: string | null; editable_docx_url: string | null }[]) {
+    const paths = [row.final_pdf_url, row.editable_docx_url].filter((p): p is string => !!p);
+    if (paths.length === 0) continue;
+
+    const { error: deleteErr } = await supabase.storage.from("clinic-letters").remove(paths);
+    if (deleteErr) {
+      console.warn(`[cleanupOldLetterFiles] Storage delete failed for letter ${row.id.slice(0, 8)}:`, deleteErr.message);
+      continue;
+    }
+
+    const clear: Record<string, null> = {};
+    if (row.final_pdf_url)     clear.final_pdf_url     = null;
+    if (row.editable_docx_url) clear.editable_docx_url = null;
+
+    const { error: updateErr } = await supabase.from("letters").update(clear).eq("id", row.id);
+    if (updateErr) {
+      console.warn(`[cleanupOldLetterFiles] DB clear failed for letter ${row.id.slice(0, 8)}:`, updateErr.message);
+    } else {
+      console.log(`[cleanupOldLetterFiles] Deleted ${paths.length} old file(s) for letter ${row.id.slice(0, 8)}`);
+    }
+  }
+}
+
 /** Count letters per status for dashboard cards. Scoped to the logged-in user. */
 export async function getLetterCounts(
   supabase: SupabaseClient

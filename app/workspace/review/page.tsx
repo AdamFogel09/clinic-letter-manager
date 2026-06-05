@@ -20,7 +20,7 @@ import {
   type StoredLetter,
   type LetterStatus,
 } from "@/lib/letterStore";
-import { generateLetterDocx, triggerDownload, finalDocxFilename } from "@/lib/generateDocx";
+import { finalPdfFilename } from "@/lib/generateDocx";
 
 // ─── Storage helpers ─────────────────────────────────────────────────────────
 
@@ -255,57 +255,14 @@ function ReadyCard({
   const location     = (d.location as string) || "";
   const date         = letter.letterDate || "";
 
-  const [exportingDocx,    setExportingDocx]    = useState(false);
-  const [docxUploadStatus, setDocxUploadStatus] = useState<"idle"|"uploading"|"done"|"error">("idle");
-  const [docxUploadError,  setDocxUploadError]  = useState("");
-  const [localDocxPath,    setLocalDocxPath]    = useState<string | null>(null);
-  const [downloading,      setDownloading]      = useState(false);
-  const [downloadError,    setDownloadError]    = useState("");
-  const [showModal,        setShowModal]        = useState(false);
-  const [sending,          setSending]          = useState(false);
-  const [noEmailError,     setNoEmailError]     = useState(false);
-  const [sendError,        setSendError]        = useState("");
+  const [downloading,  setDownloading]  = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const [showModal,    setShowModal]    = useState(false);
+  const [sending,      setSending]      = useState(false);
+  const [noEmailError, setNoEmailError] = useState(false);
+  const [sendError,    setSendError]    = useState("");
 
-  const effectiveDocxPath = localDocxPath || letter.editableDocxPath || null;
-  const effectivePdfPath  = letter.finalPdfPath || null;
-
-  const handleExportDocx = async () => {
-    if (exportingDocx) return;
-    setExportingDocx(true);
-    setDocxUploadStatus("idle");
-    setDocxUploadError("");
-    try {
-      const blob     = await generateLetterDocx(d, "final");
-      const filename = finalDocxFilename(patientId, patientName, location, date);
-      triggerDownload(blob, filename);
-
-      // Upload to Supabase Storage
-      setDocxUploadStatus("uploading");
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const safePatId    = safePathSegment(patientId);
-      const storagePath  = `${user.id}/${safePatId}/${letter.id}/${filename}`;
-      const { error: uploadErr } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(storagePath, blob, {
-          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          upsert: true,
-        });
-      if (uploadErr) throw new Error(uploadErr.message);
-
-      await updateLetterFileUrls(supabase, letter.id, { editableDocxUrl: storagePath });
-      setLocalDocxPath(storagePath);
-      setDocxUploadStatus("done");
-    } catch (err) {
-      console.error("DOCX export/upload failed:", err);
-      setDocxUploadStatus("error");
-      setDocxUploadError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setExportingDocx(false);
-    }
-  };
+  const effectivePdfPath = letter.finalPdfPath || null;
 
   const handleDownload = async (storagePath: string, filename: string) => {
     if (downloading) return;
@@ -369,7 +326,7 @@ function ReadyCard({
             style={{ backgroundColor: colors.bg, color: colors.text }}>Ready for Patient</span>
         </div>
 
-        {/* Row 1: export actions */}
+        {/* Export actions */}
         <div className="flex items-center gap-2 mt-3 pt-3 flex-wrap" style={{ borderTop: "1px solid #F1F5F9" }}>
           <button onClick={onPreview}
             className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150"
@@ -377,14 +334,6 @@ function ReadyCard({
             onMouseEnter={e => (e.currentTarget.style.transform = "translateY(-1px)")}
             onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
             Preview Final Letter
-          </button>
-          <button onClick={handleExportDocx} disabled={exportingDocx}
-            className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150"
-            style={{ backgroundColor: "white", color: exportingDocx ? "#94A3B8" : "#1A2B4A",
-              borderColor: exportingDocx ? "#E2E8F0" : "#1A2B4A", cursor: exportingDocx ? "default" : "pointer" }}
-            onMouseEnter={e => { if (!exportingDocx) (e.currentTarget.style.transform = "translateY(-1px)"); }}
-            onMouseLeave={e => { (e.currentTarget.style.transform = "none"); }}>
-            {exportingDocx ? "Generating…" : "Export Editable DOCX"}
           </button>
           <button onClick={onExportPdf}
             className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150"
@@ -395,57 +344,25 @@ function ReadyCard({
           </button>
         </div>
 
-        {/* Upload feedback */}
-        {(docxUploadStatus !== "idle") && (
-          <div className="mt-2">
-            {docxUploadStatus === "uploading" && (
-              <p className="text-xs" style={{ color: "#94A3B8" }}>Uploading DOCX…</p>
-            )}
-            {docxUploadStatus === "done" && (
-              <p className="text-xs flex items-center gap-1" style={{ color: "#0D9488" }}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 flex-shrink-0"><path d="M3 8l4 4 6-7"/></svg>
-                DOCX saved successfully
-              </p>
-            )}
-            {docxUploadStatus === "error" && (
-              <p className="text-xs" style={{ color: "#BE123C" }}>Could not save DOCX: {docxUploadError}</p>
-            )}
-          </div>
-        )}
-
-        {/* Row 2: download saved files (visible only when files exist in storage) */}
-        {(effectivePdfPath || effectiveDocxPath) && (
+        {/* Download saved PDF (only shown after export) */}
+        {effectivePdfPath && (
           <div className="flex items-center gap-2 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: "1px dashed #F1F5F9" }}>
             <span className="text-xs flex-shrink-0" style={{ color: "#94A3B8" }}>Saved:</span>
-            {effectivePdfPath && (
-              <button
-                onClick={() => handleDownload(effectivePdfPath, finalDocxFilename(patientId, patientName, location, date).replace(".docx", ".pdf"))}
-                disabled={downloading}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
-                style={{ backgroundColor: "white", color: "#0D9488", borderColor: "#0D9488", cursor: downloading ? "default" : "pointer" }}
-                onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
-                onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
-                Download Saved PDF
-              </button>
-            )}
-            {effectiveDocxPath && (
-              <button
-                onClick={() => handleDownload(effectiveDocxPath, finalDocxFilename(patientId, patientName, location, date))}
-                disabled={downloading}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
-                style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#1A2B4A", cursor: downloading ? "default" : "pointer" }}
-                onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
-                onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
-                Download Saved DOCX
-              </button>
-            )}
+            <button
+              onClick={() => handleDownload(effectivePdfPath, finalPdfFilename(patientId, patientName, location, date))}
+              disabled={downloading}
+              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
+              style={{ backgroundColor: "white", color: "#0D9488", borderColor: "#0D9488", cursor: downloading ? "default" : "pointer" }}
+              onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
+              onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
+              Download Saved PDF
+            </button>
             {downloadError && <p className="text-xs w-full" style={{ color: "#BE123C" }}>{downloadError}</p>}
           </div>
         )}
 
-        {/* Row 3: send email to patient */}
+        {/* Send PDF to patient */}
         <div className="flex items-center gap-3 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: "1px dashed #F1F5F9" }}>
           <div className="flex-1 min-w-0">
             {noEmailError && <p className="text-xs flex items-center gap-1.5" style={{ color: "#BE123C" }}>
@@ -493,8 +410,7 @@ function SentCard({ letter }: { letter: StoredLetter }) {
   const [downloading,   setDownloading]   = useState(false);
   const [downloadError, setDownloadError] = useState("");
 
-  const hasPdf  = !!letter.finalPdfPath;
-  const hasDocx = !!letter.editableDocxPath;
+  const hasPdf = !!letter.finalPdfPath;
 
   const handleDownload = async (storagePath: string, filename: string) => {
     if (downloading) return;
@@ -541,34 +457,20 @@ function SentCard({ letter }: { letter: StoredLetter }) {
         </div>
       </div>
 
-      {/* Download saved files */}
-      {(hasPdf || hasDocx) && (
+      {/* Download saved PDF */}
+      {hasPdf && (
         <div className="flex items-center gap-2 mt-3 pt-3 flex-wrap" style={{ borderTop: "1px dashed #F1F5F9" }}>
           <span className="text-xs flex-shrink-0" style={{ color: "#94A3B8" }}>Saved:</span>
-          {hasPdf && (
-            <button
-              onClick={() => handleDownload(letter.finalPdfPath!, finalDocxFilename(patientId, patientName, location, date).replace(".docx", ".pdf"))}
-              disabled={downloading}
-              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
-              style={{ backgroundColor: "white", color: "#0D9488", borderColor: "#0D9488", cursor: downloading ? "default" : "pointer" }}
-              onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
-              onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
-              Download Saved PDF
-            </button>
-          )}
-          {hasDocx && (
-            <button
-              onClick={() => handleDownload(letter.editableDocxPath!, finalDocxFilename(patientId, patientName, location, date))}
-              disabled={downloading}
-              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
-              style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#1A2B4A", cursor: downloading ? "default" : "pointer" }}
-              onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
-              onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
-              Download Saved DOCX
-            </button>
-          )}
+          <button
+            onClick={() => handleDownload(letter.finalPdfPath!, finalPdfFilename(patientId, patientName, location, date))}
+            disabled={downloading}
+            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
+            style={{ backgroundColor: "white", color: "#0D9488", borderColor: "#0D9488", cursor: downloading ? "default" : "pointer" }}
+            onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
+            onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
+            Download Saved PDF
+          </button>
           {downloadError && <p className="text-xs w-full" style={{ color: "#BE123C" }}>{downloadError}</p>}
         </div>
       )}

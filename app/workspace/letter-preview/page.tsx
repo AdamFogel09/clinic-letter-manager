@@ -7,7 +7,7 @@ import LetterHeader from "@/components/letter/LetterHeader";
 import LetterFooter from "@/components/letter/LetterFooter";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, getLetterById } from "@/lib/supabase/letters";
+import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, getLetterById, cleanupOldLetterFiles } from "@/lib/supabase/letters";
 import { exportLetterPdfBlob } from "@/lib/generatePdf";
 import { triggerDownload } from "@/lib/generateDocx";
 
@@ -439,6 +439,15 @@ export default function LetterPreviewPage() {
 
           await updateLetterFileUrls(supabase, letterId, { finalPdfUrl: storagePath });
           setPdfUploadStatus("done");
+
+          // Fire-and-forget: delete old PDF/DOCX files for this patient's other letters
+          getLetterById(supabase, letterId).then((letter) => {
+            if (letter?.patient_id) {
+              cleanupOldLetterFiles(supabase, letterId, letter.patient_id).catch((e) =>
+                console.warn("[preview] Storage cleanup error:", e)
+              );
+            }
+          }).catch(() => { /* cleanup is best-effort */ });
         } catch (uploadErr) {
           console.warn("[preview] PDF upload error:", uploadErr);
           setPdfUploadStatus("error");
