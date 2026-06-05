@@ -116,19 +116,16 @@ export interface SupabaseLetter {
 
 // Default test results shape — mirrors the letter editor's DEFAULT_TEST_RESULTS
 const DEFAULT_TEST_RESULTS = {
-  ekg:          { value: "", details: "" },
-  echo:         "",
-  blood:        { date: "", testType: "", details: "" },
-  bronchWash:   { microbiology: "", cytology: "", cellCounts: "" },
-  bronchBiopsy: { pathology: "", microbiology: "" },
-  ebus:         { cytology: "" },
-  pleuralFluid: { cytology: "", microbiology: "", biochemistry: "", cellCounts: "" },
-  pleuralBiopsy:{ pathology: "", microbiology: "" },
-  otherTest:    "",
-  selected: {
-    echo: false, blood: false, otherTest: false,
-    bronchWash: [], bronchBiopsy: [], ebus: [], pleuralFluid: [], pleuralBiopsy: [],
-  },
+  ekg:           [] as unknown[],
+  echo:          "",
+  echoEnabled:   false,
+  blood:         [] as unknown[],
+  bronchWash:    [] as unknown[],
+  bronchBiopsy:  [] as unknown[],
+  ebus:          [] as unknown[],
+  pleuralFluid:  [] as unknown[],
+  pleuralBiopsy: [] as unknown[],
+  otherTests:    [] as unknown[],
 };
 
 // ─── Conversion ───────────────────────────────────────────────────────────────

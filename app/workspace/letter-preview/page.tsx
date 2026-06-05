@@ -36,16 +36,16 @@ interface LetterData {
   heartSounds: string; heartOther: string;
   lungAusc: string; lungOther: string; otherFindings: string;
   testResults: {
-    ekg:          { value: string; details: string };
-    echo:         string;
-    blood:        { date: string; testType: string; details: string };
-    bronchWash:   { microbiology: string; cytology: string; cellCounts: string };
-    bronchBiopsy: { pathology: string; microbiology: string };
-    ebus:         { cytology: string };
-    pleuralFluid: { cytology: string; microbiology: string; biochemistry: string; cellCounts: string };
-    pleuralBiopsy:{ pathology: string; microbiology: string };
-    otherTest:    string;
-    selected?:    Record<string, boolean | string[]>;
+    ekg:           Array<{ id: string; date: string; result: string }>;
+    echo:          string;
+    echoEnabled:   boolean;
+    blood:         Array<{ id: string; date: string; testType: string; details: string }>;
+    bronchWash:    Array<{ id: string; date: string; selected: string[]; microbiology: string; cytology: string; cellCounts: string }>;
+    bronchBiopsy:  Array<{ id: string; date: string; selected: string[]; pathology: string; microbiology: string }>;
+    ebus:          Array<{ id: string; date: string; selected: string[]; cytology: string }>;
+    pleuralFluid:  Array<{ id: string; date: string; selected: string[]; cytology: string; microbiology: string; biochemistry: string; cellCounts: string }>;
+    pleuralBiopsy: Array<{ id: string; date: string; selected: string[]; pathology: string; microbiology: string }>;
+    otherTests:    Array<{ id: string; date: string; testName: string; result: string }>;
   };
   planStepsEN: string[]; planStepsHE: string[];
   lungRows: LungRow[];
@@ -56,6 +56,73 @@ interface LetterData {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function mkId() { return `tr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,5)}`; }
+
+function migratePreviewTestResults(raw: unknown): LetterData["testResults"] {
+  const empty: LetterData["testResults"] = { ekg: [], echo: "", echoEnabled: false, blood: [], bronchWash: [], bronchBiopsy: [], ebus: [], pleuralFluid: [], pleuralBiopsy: [], otherTests: [] };
+  if (!raw || typeof raw !== "object") return empty;
+  const r = raw as Record<string, unknown>;
+  const sel = ((r.selected ?? {}) as Record<string, unknown>);
+  const res = { ...empty };
+  const arrSel = (k: string): string[] => Array.isArray(sel[k]) ? sel[k] as string[] : [];
+
+  if (Array.isArray(r.ekg)) res.ekg = r.ekg as typeof res.ekg;
+  else if (r.ekg && typeof r.ekg === "object") {
+    const o = r.ekg as { value?: string; details?: string };
+    if (o.value) res.ekg = [{ id: mkId(), date: "", result: o.value === "Other" ? (o.details || "") : o.value }];
+  } else if (typeof r.ekg === "string" && (r.ekg as string).trim()) {
+    res.ekg = [{ id: mkId(), date: "", result: r.ekg as string }];
+  }
+
+  if (typeof r.echo === "string") res.echo = r.echo as string;
+  if (typeof r.echoEnabled === "boolean") res.echoEnabled = r.echoEnabled as boolean;
+  else if (typeof sel.echo === "boolean") res.echoEnabled = sel.echo as boolean;
+  else if (res.echo.trim()) res.echoEnabled = true;
+
+  if (Array.isArray(r.blood)) res.blood = r.blood as typeof res.blood;
+  else if (r.blood && typeof r.blood === "object") {
+    const o = r.blood as { date?: string; testType?: string; details?: string };
+    if (o.date || o.testType || o.details) res.blood = [{ id: mkId(), date: o.date || "", testType: o.testType || "", details: o.details || "" }];
+  }
+
+  if (Array.isArray(r.bronchWash)) res.bronchWash = r.bronchWash as typeof res.bronchWash;
+  else if (r.bronchWash && typeof r.bronchWash === "object") {
+    const o = r.bronchWash as Record<string, string>;
+    res.bronchWash = [{ id: mkId(), date: "", selected: arrSel("bronchWash"), microbiology: o.microbiology||"", cytology: o.cytology||"", cellCounts: o.cellCounts||"" }];
+  }
+
+  if (Array.isArray(r.bronchBiopsy)) res.bronchBiopsy = r.bronchBiopsy as typeof res.bronchBiopsy;
+  else if (r.bronchBiopsy && typeof r.bronchBiopsy === "object") {
+    const o = r.bronchBiopsy as Record<string, string>;
+    res.bronchBiopsy = [{ id: mkId(), date: "", selected: arrSel("bronchBiopsy"), pathology: o.pathology||"", microbiology: o.microbiology||"" }];
+  }
+
+  if (Array.isArray(r.ebus)) res.ebus = r.ebus as typeof res.ebus;
+  else if (r.ebus && typeof r.ebus === "object") {
+    const o = r.ebus as Record<string, string>;
+    res.ebus = [{ id: mkId(), date: "", selected: arrSel("ebus"), cytology: o.cytology||"" }];
+  }
+
+  if (Array.isArray(r.pleuralFluid)) res.pleuralFluid = r.pleuralFluid as typeof res.pleuralFluid;
+  else if (r.pleuralFluid && typeof r.pleuralFluid === "object") {
+    const o = r.pleuralFluid as Record<string, string>;
+    res.pleuralFluid = [{ id: mkId(), date: "", selected: arrSel("pleuralFluid"), cytology: o.cytology||"", microbiology: o.microbiology||"", biochemistry: o.biochemistry||"", cellCounts: o.cellCounts||"" }];
+  }
+
+  if (Array.isArray(r.pleuralBiopsy)) res.pleuralBiopsy = r.pleuralBiopsy as typeof res.pleuralBiopsy;
+  else if (r.pleuralBiopsy && typeof r.pleuralBiopsy === "object") {
+    const o = r.pleuralBiopsy as Record<string, string>;
+    res.pleuralBiopsy = [{ id: mkId(), date: "", selected: arrSel("pleuralBiopsy"), pathology: o.pathology||"", microbiology: o.microbiology||"" }];
+  }
+
+  if (Array.isArray(r.otherTests)) res.otherTests = r.otherTests as typeof res.otherTests;
+  else if (typeof r.otherTest === "string" && (r.otherTest as string).trim()) {
+    res.otherTests = [{ id: mkId(), date: "", testName: "", result: r.otherTest as string }];
+  }
+
+  return res;
+}
 
 function formatDisplayDate(d: string): string {
   const [dd, mm, yyyy] = (d || "").split("/");
@@ -337,7 +404,11 @@ export default function LetterPreviewPage() {
   useEffect(() => {
     const raw = localStorage.getItem("letter_preview");
     if (raw) {
-      try { setData(JSON.parse(raw)); } catch { /* malformed — ignore */ }
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.testResults) parsed.testResults = migratePreviewTestResults(parsed.testResults);
+        setData(parsed);
+      } catch { /* malformed — ignore */ }
     }
   }, []);
 
@@ -643,11 +714,14 @@ export default function LetterPreviewPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
                   {/* EKG */}
-                  {hasTestData(d.testResults.ekg) && (
+                  {d.testResults.ekg.length > 0 && (
                     <TRGroup label="EKG">
-                      <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>
-                        {d.testResults.ekg.value === "Other" ? d.testResults.ekg.details : d.testResults.ekg.value}
-                      </p>
+                      {d.testResults.ekg.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.ekg.length - 1 ? 8 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          {entry.result?.trim() && <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>}
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
@@ -659,62 +733,95 @@ export default function LetterPreviewPage() {
                   )}
 
                   {/* Blood Tests */}
-                  {hasTestData(d.testResults.blood) && (
+                  {d.testResults.blood.length > 0 && d.testResults.blood.some(e => e.testType || e.details) && (
                     <TRGroup label="Blood Tests">
-                      {d.testResults.blood.date?.trim() && (
-                        <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(d.testResults.blood.date)}</p>
-                      )}
-                      <TRField label="Type" value={d.testResults.blood.testType} />
-                      <TRField label="Results" value={d.testResults.blood.details} />
+                      {d.testResults.blood.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.blood.length - 1 ? 10 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          <TRField label="Type" value={entry.testType} />
+                          <TRField label="Results" value={entry.details} />
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
                   {/* Bronchoscopy Washing */}
-                  {hasTestData(d.testResults.bronchWash) && (
+                  {d.testResults.bronchWash.length > 0 && d.testResults.bronchWash.some(e => e.microbiology || e.cytology || e.cellCounts) && (
                     <TRGroup label="Bronchoscopy Washing">
-                      <TRField label="Microbiology" value={d.testResults.bronchWash.microbiology} />
-                      <TRField label="Cytology"     value={d.testResults.bronchWash.cytology} />
-                      <TRField label="Cell Counts"  value={d.testResults.bronchWash.cellCounts} />
+                      {d.testResults.bronchWash.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.bronchWash.length - 1 ? 10 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          <TRField label="Microbiology" value={entry.microbiology} />
+                          <TRField label="Cytology"     value={entry.cytology} />
+                          <TRField label="Cell Counts"  value={entry.cellCounts} />
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
                   {/* Bronchoscopy Biopsy */}
-                  {hasTestData(d.testResults.bronchBiopsy) && (
+                  {d.testResults.bronchBiopsy.length > 0 && d.testResults.bronchBiopsy.some(e => e.pathology || e.microbiology) && (
                     <TRGroup label="Bronchoscopy Biopsy">
-                      <TRField label="Pathology"    value={d.testResults.bronchBiopsy.pathology} />
-                      <TRField label="Microbiology" value={d.testResults.bronchBiopsy.microbiology} />
+                      {d.testResults.bronchBiopsy.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.bronchBiopsy.length - 1 ? 10 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          <TRField label="Pathology"    value={entry.pathology} />
+                          <TRField label="Microbiology" value={entry.microbiology} />
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
                   {/* EBUS */}
-                  {hasTestData(d.testResults.ebus) && (
+                  {d.testResults.ebus.length > 0 && d.testResults.ebus.some(e => e.cytology) && (
                     <TRGroup label="EBUS">
-                      <TRField label="Cytology" value={d.testResults.ebus.cytology} />
+                      {d.testResults.ebus.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.ebus.length - 1 ? 10 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          <TRField label="Cytology" value={entry.cytology} />
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
                   {/* Pleural Fluid */}
-                  {hasTestData(d.testResults.pleuralFluid) && (
+                  {d.testResults.pleuralFluid.length > 0 && d.testResults.pleuralFluid.some(e => e.cytology || e.microbiology || e.biochemistry || e.cellCounts) && (
                     <TRGroup label="Pleural Fluid">
-                      <TRField label="Cytology"     value={d.testResults.pleuralFluid.cytology} />
-                      <TRField label="Microbiology" value={d.testResults.pleuralFluid.microbiology} />
-                      <TRField label="Biochemistry" value={d.testResults.pleuralFluid.biochemistry} />
-                      <TRField label="Cell Counts"  value={d.testResults.pleuralFluid.cellCounts} />
+                      {d.testResults.pleuralFluid.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.pleuralFluid.length - 1 ? 10 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          <TRField label="Cytology"     value={entry.cytology} />
+                          <TRField label="Microbiology" value={entry.microbiology} />
+                          <TRField label="Biochemistry" value={entry.biochemistry} />
+                          <TRField label="Cell Counts"  value={entry.cellCounts} />
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
                   {/* Pleural Biopsy */}
-                  {hasTestData(d.testResults.pleuralBiopsy) && (
+                  {d.testResults.pleuralBiopsy.length > 0 && d.testResults.pleuralBiopsy.some(e => e.pathology || e.microbiology) && (
                     <TRGroup label="Pleural Biopsy">
-                      <TRField label="Pathology"    value={d.testResults.pleuralBiopsy.pathology} />
-                      <TRField label="Microbiology" value={d.testResults.pleuralBiopsy.microbiology} />
+                      {d.testResults.pleuralBiopsy.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.pleuralBiopsy.length - 1 ? 10 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          <TRField label="Pathology"    value={entry.pathology} />
+                          <TRField label="Microbiology" value={entry.microbiology} />
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
                   {/* Other Test */}
-                  {d.testResults.otherTest?.trim() && (
+                  {d.testResults.otherTests.length > 0 && d.testResults.otherTests.some(e => e.testName || e.result) && (
                     <TRGroup label="Other Test">
-                      <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{d.testResults.otherTest}</p>
+                      {d.testResults.otherTests.map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.otherTests.length - 1 ? 10 : 0 }}>
+                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                          {entry.testName?.trim() && <TRField label="Test" value={entry.testName} />}
+                          {entry.result?.trim() && <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>}
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 

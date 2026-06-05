@@ -15,44 +15,126 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface TRSelected {
-  echo: boolean; blood: boolean; otherTest: boolean;
-  bronchWash: string[]; bronchBiopsy: string[]; ebus: string[];
-  pleuralFluid: string[]; pleuralBiopsy: string[];
-  [key: string]: unknown;
-}
+interface EkgEntry           { id: string; date: string; result: string; }
+interface BloodEntry         { id: string; date: string; testType: string; details: string; }
+interface BronchWashEntry    { id: string; date: string; selected: string[]; microbiology: string; cytology: string; cellCounts: string; }
+interface BronchBiopsyEntry  { id: string; date: string; selected: string[]; pathology: string; microbiology: string; }
+interface EbusEntry          { id: string; date: string; selected: string[]; cytology: string; }
+interface PleuralFluidEntry  { id: string; date: string; selected: string[]; cytology: string; microbiology: string; biochemistry: string; cellCounts: string; }
+interface PleuralBiopsyEntry { id: string; date: string; selected: string[]; pathology: string; microbiology: string; }
+interface OtherTestEntry     { id: string; date: string; testName: string; result: string; }
 
 interface TestResultsData {
-  ekg:          { value: string; details: string };
-  echo:         string;
-  blood:        { date: string; testType: string; details: string };
-  bronchWash:   { microbiology: string; cytology: string; cellCounts: string };
-  bronchBiopsy: { pathology: string; microbiology: string };
-  ebus:         { cytology: string };
-  pleuralFluid: { cytology: string; microbiology: string; biochemistry: string; cellCounts: string };
-  pleuralBiopsy:{ pathology: string; microbiology: string };
-  otherTest:    string;
-  selected:     TRSelected;
+  ekg:           EkgEntry[];
+  echo:          string;
+  echoEnabled:   boolean;
+  blood:         BloodEntry[];
+  bronchWash:    BronchWashEntry[];
+  bronchBiopsy:  BronchBiopsyEntry[];
+  ebus:          EbusEntry[];
+  pleuralFluid:  PleuralFluidEntry[];
+  pleuralBiopsy: PleuralBiopsyEntry[];
+  otherTests:    OtherTestEntry[];
 }
 
-const DEFAULT_TR_SELECTED: TRSelected = {
-  echo: false, blood: false, otherTest: false,
-  bronchWash: [], bronchBiopsy: [], ebus: [],
-  pleuralFluid: [], pleuralBiopsy: [],
+const DEFAULT_TEST_RESULTS: TestResultsData = {
+  ekg:           [],
+  echo:          "",
+  echoEnabled:   false,
+  blood:         [],
+  bronchWash:    [],
+  bronchBiopsy:  [],
+  ebus:          [],
+  pleuralFluid:  [],
+  pleuralBiopsy: [],
+  otherTests:    [],
 };
 
-const DEFAULT_TEST_RESULTS: TestResultsData = {
-  ekg:          { value: "", details: "" },
-  echo:         "",
-  blood:        { date: "", testType: "", details: "" },
-  bronchWash:   { microbiology: "", cytology: "", cellCounts: "" },
-  bronchBiopsy: { pathology: "", microbiology: "" },
-  ebus:         { cytology: "" },
-  pleuralFluid: { cytology: "", microbiology: "", biochemistry: "", cellCounts: "" },
-  pleuralBiopsy:{ pathology: "", microbiology: "" },
-  otherTest:    "",
-  selected:     { ...DEFAULT_TR_SELECTED },
-};
+function newTRId(): string {
+  return `tr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+}
+function newEkgEntry():           EkgEntry           { return { id: newTRId(), date: "", result: "" }; }
+function newBloodEntry():         BloodEntry         { return { id: newTRId(), date: "", testType: "", details: "" }; }
+function newBronchWashEntry():    BronchWashEntry    { return { id: newTRId(), date: "", selected: [], microbiology: "", cytology: "", cellCounts: "" }; }
+function newBronchBiopsyEntry():  BronchBiopsyEntry  { return { id: newTRId(), date: "", selected: [], pathology: "", microbiology: "" }; }
+function newEbusEntry():          EbusEntry          { return { id: newTRId(), date: "", selected: [], cytology: "" }; }
+function newPleuralFluidEntry():  PleuralFluidEntry  { return { id: newTRId(), date: "", selected: [], cytology: "", microbiology: "", biochemistry: "", cellCounts: "" }; }
+function newPleuralBiopsyEntry(): PleuralBiopsyEntry { return { id: newTRId(), date: "", selected: [], pathology: "", microbiology: "" }; }
+function newOtherTestEntry():     OtherTestEntry     { return { id: newTRId(), date: "", testName: "", result: "" }; }
+
+function migrateTestResults(raw: unknown): TestResultsData {
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_TEST_RESULTS };
+  const r = raw as Record<string, unknown>;
+  const sel = ((r.selected ?? {}) as Record<string, unknown>);
+  const res: TestResultsData = { ...DEFAULT_TEST_RESULTS };
+
+  // EKG: old formats were string or { value, details }; new is array
+  if (Array.isArray(r.ekg)) res.ekg = r.ekg as EkgEntry[];
+  else if (r.ekg && typeof r.ekg === "object") {
+    const o = r.ekg as { value?: string; details?: string };
+    if (o.value) res.ekg = [{ id: newTRId(), date: "", result: o.value === "Other" ? (o.details || "") : o.value }];
+  } else if (typeof r.ekg === "string" && (r.ekg as string).trim()) {
+    res.ekg = [{ id: newTRId(), date: "", result: r.ekg as string }];
+  }
+
+  // Echo: preserved as single text field + echoEnabled boolean
+  if (typeof r.echo === "string") res.echo = r.echo as string;
+  if (typeof r.echoEnabled === "boolean") res.echoEnabled = r.echoEnabled as boolean;
+  else if (typeof sel.echo === "boolean") res.echoEnabled = sel.echo as boolean;
+  else if (res.echo.trim()) res.echoEnabled = true;
+
+  // Blood: old was { date, testType, details }; new is array
+  if (Array.isArray(r.blood)) res.blood = r.blood as BloodEntry[];
+  else if (r.blood && typeof r.blood === "object") {
+    const o = r.blood as { date?: string; testType?: string; details?: string };
+    if (o.date || o.testType || o.details) res.blood = [{ id: newTRId(), date: o.date || "", testType: o.testType || "", details: o.details || "" }];
+  }
+
+  const arrSel = (key: string): string[] => Array.isArray(sel[key]) ? sel[key] as string[] : [];
+
+  // BronchWash
+  if (Array.isArray(r.bronchWash)) res.bronchWash = r.bronchWash as BronchWashEntry[];
+  else if (r.bronchWash && typeof r.bronchWash === "object") {
+    const o = r.bronchWash as Record<string, string>;
+    res.bronchWash = [{ id: newTRId(), date: "", selected: arrSel("bronchWash"), microbiology: o.microbiology || "", cytology: o.cytology || "", cellCounts: o.cellCounts || "" }];
+  }
+
+  // BronchBiopsy
+  if (Array.isArray(r.bronchBiopsy)) res.bronchBiopsy = r.bronchBiopsy as BronchBiopsyEntry[];
+  else if (r.bronchBiopsy && typeof r.bronchBiopsy === "object") {
+    const o = r.bronchBiopsy as Record<string, string>;
+    res.bronchBiopsy = [{ id: newTRId(), date: "", selected: arrSel("bronchBiopsy"), pathology: o.pathology || "", microbiology: o.microbiology || "" }];
+  }
+
+  // EBUS
+  if (Array.isArray(r.ebus)) res.ebus = r.ebus as EbusEntry[];
+  else if (r.ebus && typeof r.ebus === "object") {
+    const o = r.ebus as Record<string, string>;
+    res.ebus = [{ id: newTRId(), date: "", selected: arrSel("ebus"), cytology: o.cytology || "" }];
+  }
+
+  // PleuralFluid
+  if (Array.isArray(r.pleuralFluid)) res.pleuralFluid = r.pleuralFluid as PleuralFluidEntry[];
+  else if (r.pleuralFluid && typeof r.pleuralFluid === "object") {
+    const o = r.pleuralFluid as Record<string, string>;
+    res.pleuralFluid = [{ id: newTRId(), date: "", selected: arrSel("pleuralFluid"), cytology: o.cytology || "", microbiology: o.microbiology || "", biochemistry: o.biochemistry || "", cellCounts: o.cellCounts || "" }];
+  }
+
+  // PleuralBiopsy
+  if (Array.isArray(r.pleuralBiopsy)) res.pleuralBiopsy = r.pleuralBiopsy as PleuralBiopsyEntry[];
+  else if (r.pleuralBiopsy && typeof r.pleuralBiopsy === "object") {
+    const o = r.pleuralBiopsy as Record<string, string>;
+    res.pleuralBiopsy = [{ id: newTRId(), date: "", selected: arrSel("pleuralBiopsy"), pathology: o.pathology || "", microbiology: o.microbiology || "" }];
+  }
+
+  // OtherTests: old was string field "otherTest"; new is array "otherTests"
+  if (Array.isArray(r.otherTests)) res.otherTests = r.otherTests as OtherTestEntry[];
+  else if (typeof r.otherTest === "string" && (r.otherTest as string).trim()) {
+    res.otherTests = [{ id: newTRId(), date: "", testName: "", result: r.otherTest as string }];
+  }
+
+  return res;
+}
 
 interface LungRow {
   id: number;
@@ -609,32 +691,7 @@ export default function LetterEditorPage() {
           if (d.lungAusc)     setLungAusc(d.lungAusc);
           if (d.lungOther)    setLungOther(d.lungOther);
           if (d.otherFindings) setOtherFindings(d.otherFindings);
-          if (d.testResults) {
-            if (typeof d.testResults.ekg === 'object') {
-              if (!d.testResults.selected) {
-                // Derive selected state from existing content (format before 'selected' was added)
-                const hasStr = (s: unknown) => typeof s === 'string' && (s as string).trim().length > 0;
-                const sel: TRSelected = { ...DEFAULT_TR_SELECTED };
-                sel.echo = hasStr(d.testResults.echo);
-                sel.blood = hasStr(d.testResults.blood?.date) || hasStr(d.testResults.blood?.testType) || hasStr(d.testResults.blood?.details);
-                sel.otherTest = hasStr(d.testResults.otherTest);
-                for (const [key, fields] of Object.entries(GROUP_FIELDS)) {
-                  (sel as Record<string, unknown>)[key] = fields.map(([f]) => f).filter(f => hasStr((d.testResults as Record<string, Record<string,string>>)[key]?.[f]));
-                }
-                setTestResults({ ...d.testResults, selected: sel });
-              } else {
-                setTestResults(d.testResults);
-              }
-            } else if (typeof d.testResults.ekg === 'string') {
-              setTestResults({
-                ...DEFAULT_TEST_RESULTS,
-                ekg:       { value: d.testResults.ekg ? "Other" : "", details: d.testResults.ekg || "" },
-                echo:      d.testResults.echo || "",
-                otherTest: d.testResults.otherTest || "",
-                selected:  { ...DEFAULT_TR_SELECTED, echo: !!d.testResults.echo, otherTest: !!d.testResults.otherTest },
-              });
-            }
-          }
+          if (d.testResults) setTestResults(migrateTestResults(d.testResults));
           if (d.lungRows?.length) setLungRows(d.lungRows);
           if (d.pictures?.length) setPictures(d.pictures);
           if (d.inhalerSearch)   setInhalerSearch(d.inhalerSearch);
@@ -797,11 +854,11 @@ export default function LetterEditorPage() {
       testResults, lungRows,
       pictures, inhalerName, inhalerLink, inhalerImageUrl,
     }));
-    // Pass Supabase letter ID to the preview tab so it can update status on Send to Anat.
+    // Pass Supabase letter ID to the preview so it can update status on Send to Anat.
     if (supabaseLetterIdRef.current) {
       localStorage.setItem("letter_current_supabase_id", supabaseLetterIdRef.current);
     }
-    window.open("/workspace/letter-preview", "_blank");
+    router.push("/workspace/letter-preview");
   };
 
   const handleSaveDraft = async () => {
@@ -946,33 +1003,20 @@ export default function LetterEditorPage() {
     router.push("/workspace/anat-review");
   };
 
-  const toggleSimpleGroup = (group: 'echo' | 'blood' | 'otherTest') => {
-    setTestResults(prev => {
-      const on = prev.selected[group] as boolean;
-      if (on) {
-        const next = { ...prev, selected: { ...prev.selected, [group]: false } };
-        if (group === 'echo') next.echo = "";
-        if (group === 'blood') next.blood = { date: "", testType: "", details: "" };
-        if (group === 'otherTest') next.otherTest = "";
-        return next;
-      }
-      return { ...prev, selected: { ...prev.selected, [group]: true } };
-    });
-  };
-
-  const toggleSubField = (group: keyof typeof GROUP_FIELDS, field: string) => {
-    setTestResults(prev => {
-      const current = prev.selected[group as keyof TRSelected] as string[];
-      const on = current.includes(field);
-      if (on) {
-        return {
-          ...prev,
-          [group]: { ...(prev[group as keyof TestResultsData] as object), [field]: "" },
-          selected: { ...prev.selected, [group]: current.filter(f => f !== field) },
-        };
-      }
-      return { ...prev, selected: { ...prev.selected, [group]: [...current, field] } };
-    });
+  const toggleTRSubField = (
+    key: 'bronchWash' | 'bronchBiopsy' | 'ebus' | 'pleuralFluid' | 'pleuralBiopsy',
+    id: string,
+    field: string,
+  ) => {
+    type SubE = { id: string; selected: string[]; [k: string]: unknown };
+    setTestResults(prev => ({
+      ...prev,
+      [key]: (prev[key] as unknown as SubE[]).map(e => {
+        if (e.id !== id) return e;
+        const on = e.selected.includes(field);
+        return { ...e, selected: on ? e.selected.filter(f => f !== field) : [...e.selected, field], ...(on ? { [field]: "" } : {}) };
+      }),
+    }));
   };
 
   // Privacy rule: Do not send patient identifiers to AI.
@@ -1626,183 +1670,270 @@ export default function LetterEditorPage() {
       );
 
       case "tests": {
+        const entryCard = { backgroundColor: "#FAFBFF", borderColor: "#E2E8F0" };
+        const addFirstBtn = (label: string, onClick: () => void) => (
+          <button type="button" onClick={onClick}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
+            style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
+            + {label}
+          </button>
+        );
+        const addMoreBtn = (label: string, onClick: () => void) => (
+          <button type="button" onClick={onClick}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all duration-150 hover:-translate-y-px"
+            style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
+            + {label}
+          </button>
+        );
+        const removeBtn = (onClick: () => void) => (
+          <button type="button" onClick={onClick}
+            className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
+            onMouseEnter={ev => (ev.currentTarget.style.color = "#BE123C")}
+            onMouseLeave={ev => (ev.currentTarget.style.color = "#CBD5E1")}>
+            Remove
+          </button>
+        );
+        const entryHeader = (count: number, idx: number, onRemove: () => void) => (
+          <div className="flex items-center justify-between mb-3">
+            {count > 1 ? <span className="text-xs font-semibold" style={{ color: "#64748B" }}>Entry {idx + 1}</span> : <span />}
+            {removeBtn(onRemove)}
+          </div>
+        );
+        const dateRow = (value: string, onChange: (v: string) => void) => (
+          <div className="flex items-start gap-3 mb-3">
+            <span className="text-xs font-semibold mt-2.5 flex-shrink-0" style={{ color: "#64748B" }}>Date</span>
+            <SplitDateInput value={value} validateFuture onChange={onChange} />
+          </div>
+        );
+
         return (
           <SectionCard title="Test Results">
             <div className="space-y-5">
 
               {/* 1. EKG */}
               <TestGroup title="EKG">
-                <div className="flex gap-2 mb-2">
-                  {["Normal", "Other"].map(opt => (
-                    <button key={opt} type="button"
-                      onClick={() => setTestResults(prev => ({ ...prev, ekg: { ...prev.ekg, value: prev.ekg.value === opt ? "" : opt } }))}
-                      className="px-4 py-2 rounded-xl border text-sm font-medium transition-all duration-150"
-                      style={{ borderColor: testResults.ekg.value === opt ? "#1A2B4A" : "#E2E8F0", backgroundColor: testResults.ekg.value === opt ? "#1A2B4A" : "white", color: testResults.ekg.value === opt ? "white" : "#64748B" }}>
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-                {testResults.ekg.value === "Other" && (
-                  <textarea className={ta} style={is} rows={2}
-                    value={testResults.ekg.details}
-                    onChange={e => setTestResults(prev => ({ ...prev, ekg: { ...prev.ekg, details: e.target.value } }))}
-                    placeholder="Describe EKG findings" />
-                )}
-                {!testResults.ekg.value && (
-                  <p className="text-xs" style={{ color: "#CBD5E1" }}>Select Normal or Other above.</p>
-                )}
+                {testResults.ekg.length === 0
+                  ? addFirstBtn("Add EKG", () => setTestResults(prev => ({ ...prev, ekg: [...prev.ekg, newEkgEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.ekg.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.ekg.length, idx, () => setTestResults(prev => ({ ...prev, ekg: prev.ekg.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, ekg: prev.ekg.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <label className={lc} style={ls}>Result</label>
+                          <textarea className={ta} style={is} rows={2} value={entry.result}
+                            onChange={ev => setTestResults(prev => ({ ...prev, ekg: prev.ekg.map(e => e.id === entry.id ? { ...e, result: ev.target.value } : e) }))}
+                            placeholder="e.g. Normal sinus rhythm" />
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another EKG", () => setTestResults(prev => ({ ...prev, ekg: [...prev.ekg, newEkgEntry()] })))}
+                    </div>
+                  )}
               </TestGroup>
 
               {/* 2. Echocardiogram */}
               <TestGroup title="Echocardiogram">
-                {!testResults.selected.echo ? (
-                  <button type="button" onClick={() => toggleSimpleGroup('echo')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
-                    style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
-                    + Add Result
-                  </button>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Result added</span>
-                      <button type="button" onClick={() => toggleSimpleGroup('echo')}
-                        className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
-                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
-                        Clear
-                      </button>
-                    </div>
-                    <textarea className={ta} style={is} rows={2}
-                      value={testResults.echo}
-                      onChange={e => setTestResults(prev => ({ ...prev, echo: e.target.value }))}
-                      placeholder="Echocardiogram findings" />
-                  </>
-                )}
+                {!testResults.echoEnabled
+                  ? (
+                    <button type="button" onClick={() => setTestResults(prev => ({ ...prev, echoEnabled: true }))}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
+                      style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
+                      + Add Result
+                    </button>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Result added</span>
+                        <button type="button" onClick={() => setTestResults(prev => ({ ...prev, echoEnabled: false, echo: "" }))}
+                          className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
+                          onMouseEnter={ev => (ev.currentTarget.style.color = "#BE123C")}
+                          onMouseLeave={ev => (ev.currentTarget.style.color = "#CBD5E1")}>
+                          Clear
+                        </button>
+                      </div>
+                      <textarea className={ta} style={is} rows={2} value={testResults.echo}
+                        onChange={ev => setTestResults(prev => ({ ...prev, echo: ev.target.value }))}
+                        placeholder="Echocardiogram findings" />
+                    </>
+                  )}
               </TestGroup>
 
               {/* 3. Blood Tests */}
               <TestGroup title="Blood Tests">
-                {!testResults.selected.blood ? (
-                  <button type="button" onClick={() => toggleSimpleGroup('blood')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
-                    style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
-                    + Add Blood Tests
-                  </button>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Blood Tests added</span>
-                      <button type="button" onClick={() => toggleSimpleGroup('blood')}
-                        className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
-                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
-                        Clear
-                      </button>
+                {testResults.blood.length === 0
+                  ? addFirstBtn("Add Blood Tests", () => setTestResults(prev => ({ ...prev, blood: [...prev.blood, newBloodEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.blood.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.blood.length, idx, () => setTestResults(prev => ({ ...prev, blood: prev.blood.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, blood: prev.blood.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <F label="Test Type / Name">
+                              <input className={ic} style={is} value={entry.testType}
+                                onChange={ev => setTestResults(prev => ({ ...prev, blood: prev.blood.map(e => e.id === entry.id ? { ...e, testType: ev.target.value } : e) }))}
+                                placeholder="e.g. FBC, Eosinophils, Total IgE" />
+                            </F>
+                            <F label="Result / Details" full>
+                              <textarea className={ta} style={is} rows={2} value={entry.details}
+                                onChange={ev => setTestResults(prev => ({ ...prev, blood: prev.blood.map(e => e.id === entry.id ? { ...e, details: ev.target.value } : e) }))}
+                                placeholder="e.g. Eosinophils 0.4 × 10⁹/L, Total IgE 225 IU/mL" />
+                            </F>
+                          </div>
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another Blood Test", () => setTestResults(prev => ({ ...prev, blood: [...prev.blood, newBloodEntry()] })))}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <F label="Date of Tests">
-                        <SplitDateInput
-                          value={testResults.blood.date}
-                          onChange={v => setTestResults(prev => ({ ...prev, blood: { ...prev.blood, date: v } }))}
-                          validateFuture
-                        />
-                      </F>
-                      <F label="Test Type / Name">
-                        <input className={ic} style={is} value={testResults.blood.testType}
-                          onChange={e => setTestResults(prev => ({ ...prev, blood: { ...prev.blood, testType: e.target.value } }))}
-                          placeholder="e.g. FBC, Eosinophils, Total IgE" />
-                      </F>
-                      <F label="Result / Details" full>
-                        <textarea className={ta} style={is} rows={2}
-                          value={testResults.blood.details}
-                          onChange={e => setTestResults(prev => ({ ...prev, blood: { ...prev.blood, details: e.target.value } }))}
-                          placeholder="e.g. Eosinophils 0.4 × 10⁹/L, Total IgE 225 IU/mL" />
-                      </F>
-                    </div>
-                  </>
-                )}
+                  )}
               </TestGroup>
 
               {/* 4. Bronchoscopy Washing */}
               <TestGroup title="Bronchoscopy Washing">
-                <SubToggle
-                  fields={GROUP_FIELDS.bronchWash}
-                  selected={testResults.selected.bronchWash}
-                  values={testResults.bronchWash as Record<string, string>}
-                  onToggle={f => toggleSubField("bronchWash", f)}
-                  onChange={(f, v) => setTestResults(prev => ({ ...prev, bronchWash: { ...prev.bronchWash, [f]: v } }))}
-                />
+                {testResults.bronchWash.length === 0
+                  ? addFirstBtn("Add Bronchoscopy Washing", () => setTestResults(prev => ({ ...prev, bronchWash: [...prev.bronchWash, newBronchWashEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.bronchWash.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.bronchWash.length, idx, () => setTestResults(prev => ({ ...prev, bronchWash: prev.bronchWash.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, bronchWash: prev.bronchWash.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <SubToggle
+                            fields={GROUP_FIELDS.bronchWash}
+                            selected={entry.selected}
+                            values={{ microbiology: entry.microbiology, cytology: entry.cytology, cellCounts: entry.cellCounts }}
+                            onToggle={f => toggleTRSubField("bronchWash", entry.id, f)}
+                            onChange={(f, v) => setTestResults(prev => ({ ...prev, bronchWash: prev.bronchWash.map(e => e.id === entry.id ? { ...e, [f]: v } : e) }))}
+                          />
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another Bronchoscopy Washing", () => setTestResults(prev => ({ ...prev, bronchWash: [...prev.bronchWash, newBronchWashEntry()] })))}
+                    </div>
+                  )}
               </TestGroup>
 
               {/* 5. Bronchoscopy Biopsy */}
               <TestGroup title="Bronchoscopy Biopsy">
-                <SubToggle
-                  fields={GROUP_FIELDS.bronchBiopsy}
-                  selected={testResults.selected.bronchBiopsy}
-                  values={testResults.bronchBiopsy as Record<string, string>}
-                  onToggle={f => toggleSubField("bronchBiopsy", f)}
-                  onChange={(f, v) => setTestResults(prev => ({ ...prev, bronchBiopsy: { ...prev.bronchBiopsy, [f]: v } }))}
-                />
+                {testResults.bronchBiopsy.length === 0
+                  ? addFirstBtn("Add Bronchoscopy Biopsy", () => setTestResults(prev => ({ ...prev, bronchBiopsy: [...prev.bronchBiopsy, newBronchBiopsyEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.bronchBiopsy.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.bronchBiopsy.length, idx, () => setTestResults(prev => ({ ...prev, bronchBiopsy: prev.bronchBiopsy.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, bronchBiopsy: prev.bronchBiopsy.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <SubToggle
+                            fields={GROUP_FIELDS.bronchBiopsy}
+                            selected={entry.selected}
+                            values={{ pathology: entry.pathology, microbiology: entry.microbiology }}
+                            onToggle={f => toggleTRSubField("bronchBiopsy", entry.id, f)}
+                            onChange={(f, v) => setTestResults(prev => ({ ...prev, bronchBiopsy: prev.bronchBiopsy.map(e => e.id === entry.id ? { ...e, [f]: v } : e) }))}
+                          />
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another Bronchoscopy Biopsy", () => setTestResults(prev => ({ ...prev, bronchBiopsy: [...prev.bronchBiopsy, newBronchBiopsyEntry()] })))}
+                    </div>
+                  )}
               </TestGroup>
 
               {/* 6. EBUS */}
               <TestGroup title="EBUS">
-                <SubToggle
-                  fields={GROUP_FIELDS.ebus}
-                  selected={testResults.selected.ebus}
-                  values={testResults.ebus as Record<string, string>}
-                  onToggle={f => toggleSubField("ebus", f)}
-                  onChange={(f, v) => setTestResults(prev => ({ ...prev, ebus: { ...prev.ebus, [f]: v } }))}
-                />
+                {testResults.ebus.length === 0
+                  ? addFirstBtn("Add EBUS", () => setTestResults(prev => ({ ...prev, ebus: [...prev.ebus, newEbusEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.ebus.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.ebus.length, idx, () => setTestResults(prev => ({ ...prev, ebus: prev.ebus.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, ebus: prev.ebus.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <SubToggle
+                            fields={GROUP_FIELDS.ebus}
+                            selected={entry.selected}
+                            values={{ cytology: entry.cytology }}
+                            onToggle={f => toggleTRSubField("ebus", entry.id, f)}
+                            onChange={(f, v) => setTestResults(prev => ({ ...prev, ebus: prev.ebus.map(e => e.id === entry.id ? { ...e, [f]: v } : e) }))}
+                          />
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another EBUS", () => setTestResults(prev => ({ ...prev, ebus: [...prev.ebus, newEbusEntry()] })))}
+                    </div>
+                  )}
               </TestGroup>
 
               {/* 7. Pleural Fluid */}
               <TestGroup title="Pleural Fluid">
-                <SubToggle
-                  fields={GROUP_FIELDS.pleuralFluid}
-                  selected={testResults.selected.pleuralFluid}
-                  values={testResults.pleuralFluid as Record<string, string>}
-                  onToggle={f => toggleSubField("pleuralFluid", f)}
-                  onChange={(f, v) => setTestResults(prev => ({ ...prev, pleuralFluid: { ...prev.pleuralFluid, [f]: v } }))}
-                />
+                {testResults.pleuralFluid.length === 0
+                  ? addFirstBtn("Add Pleural Fluid", () => setTestResults(prev => ({ ...prev, pleuralFluid: [...prev.pleuralFluid, newPleuralFluidEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.pleuralFluid.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.pleuralFluid.length, idx, () => setTestResults(prev => ({ ...prev, pleuralFluid: prev.pleuralFluid.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, pleuralFluid: prev.pleuralFluid.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <SubToggle
+                            fields={GROUP_FIELDS.pleuralFluid}
+                            selected={entry.selected}
+                            values={{ cytology: entry.cytology, microbiology: entry.microbiology, biochemistry: entry.biochemistry, cellCounts: entry.cellCounts }}
+                            onToggle={f => toggleTRSubField("pleuralFluid", entry.id, f)}
+                            onChange={(f, v) => setTestResults(prev => ({ ...prev, pleuralFluid: prev.pleuralFluid.map(e => e.id === entry.id ? { ...e, [f]: v } : e) }))}
+                          />
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another Pleural Fluid", () => setTestResults(prev => ({ ...prev, pleuralFluid: [...prev.pleuralFluid, newPleuralFluidEntry()] })))}
+                    </div>
+                  )}
               </TestGroup>
 
               {/* 8. Pleural Biopsy */}
               <TestGroup title="Pleural Biopsy">
-                <SubToggle
-                  fields={GROUP_FIELDS.pleuralBiopsy}
-                  selected={testResults.selected.pleuralBiopsy}
-                  values={testResults.pleuralBiopsy as Record<string, string>}
-                  onToggle={f => toggleSubField("pleuralBiopsy", f)}
-                  onChange={(f, v) => setTestResults(prev => ({ ...prev, pleuralBiopsy: { ...prev.pleuralBiopsy, [f]: v } }))}
-                />
+                {testResults.pleuralBiopsy.length === 0
+                  ? addFirstBtn("Add Pleural Biopsy", () => setTestResults(prev => ({ ...prev, pleuralBiopsy: [...prev.pleuralBiopsy, newPleuralBiopsyEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.pleuralBiopsy.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.pleuralBiopsy.length, idx, () => setTestResults(prev => ({ ...prev, pleuralBiopsy: prev.pleuralBiopsy.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, pleuralBiopsy: prev.pleuralBiopsy.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <SubToggle
+                            fields={GROUP_FIELDS.pleuralBiopsy}
+                            selected={entry.selected}
+                            values={{ pathology: entry.pathology, microbiology: entry.microbiology }}
+                            onToggle={f => toggleTRSubField("pleuralBiopsy", entry.id, f)}
+                            onChange={(f, v) => setTestResults(prev => ({ ...prev, pleuralBiopsy: prev.pleuralBiopsy.map(e => e.id === entry.id ? { ...e, [f]: v } : e) }))}
+                          />
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another Pleural Biopsy", () => setTestResults(prev => ({ ...prev, pleuralBiopsy: [...prev.pleuralBiopsy, newPleuralBiopsyEntry()] })))}
+                    </div>
+                  )}
               </TestGroup>
 
               {/* 9. Other Test */}
               <TestGroup title="Other Test" last>
-                {!testResults.selected.otherTest ? (
-                  <button type="button" onClick={() => toggleSimpleGroup('otherTest')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
-                    style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
-                    + Add Other Test
-                  </button>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Other Test added</span>
-                      <button type="button" onClick={() => toggleSimpleGroup('otherTest')}
-                        className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
-                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
-                        Clear
-                      </button>
+                {testResults.otherTests.length === 0
+                  ? addFirstBtn("Add Other Test", () => setTestResults(prev => ({ ...prev, otherTests: [...prev.otherTests, newOtherTestEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.otherTests.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.otherTests.length, idx, () => setTestResults(prev => ({ ...prev, otherTests: prev.otherTests.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, otherTests: prev.otherTests.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <div className="space-y-3">
+                            <F label="Test Name">
+                              <input className={ic} style={is} value={entry.testName}
+                                onChange={ev => setTestResults(prev => ({ ...prev, otherTests: prev.otherTests.map(e => e.id === entry.id ? { ...e, testName: ev.target.value } : e) }))}
+                                placeholder="e.g. CT Chest, Sleep Study" />
+                            </F>
+                            <F label="Result" full>
+                              <textarea className={ta} style={is} rows={3} value={entry.result}
+                                onChange={ev => setTestResults(prev => ({ ...prev, otherTests: prev.otherTests.map(e => e.id === entry.id ? { ...e, result: ev.target.value } : e) }))}
+                                placeholder="Any other test or result not listed above" />
+                            </F>
+                          </div>
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another Other Test", () => setTestResults(prev => ({ ...prev, otherTests: [...prev.otherTests, newOtherTestEntry()] })))}
                     </div>
-                    <textarea className={ta} style={is} rows={3}
-                      value={testResults.otherTest}
-                      onChange={e => setTestResults(prev => ({ ...prev, otherTest: e.target.value }))}
-                      placeholder="Any other test or result not listed above" />
-                  </>
-                )}
+                  )}
               </TestGroup>
 
             </div>

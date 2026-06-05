@@ -192,35 +192,73 @@ function testResultsBlocks(data: LD): Block[] {
     items.forEach((b) => { if (b) { blocks.push(b); hasAny = true; } });
   };
 
-  const ekgVal = s((tr.ekg as Record<string, string>)?.value);
-  const ekgDet = s((tr.ekg as Record<string, string>)?.details);
-  if (ekgVal) { blocks.push(subLabel("EKG")); push(bodyLine(ekgVal === "Other" ? ekgDet : ekgVal)); }
+  type AnyEntry = Record<string, unknown>;
 
-  if (s(tr.echo as string)) { blocks.push(subLabel("Echocardiogram")); push(bodyLine(s(tr.echo as string))); }
-
-  const bl = (tr.blood as Record<string, string>) ?? {};
-  if (bl.date || bl.testType || bl.details) {
-    blocks.push(subLabel("Blood Tests"));
-    push(lv("Date", s(bl.date)), lv("Type", s(bl.testType)), lv("Results", s(bl.details)));
-  }
-
-  const subGroups: [string, Record<string, string>][] = [
-    ["Bronchoscopy Washing",  tr.bronchWash    as Record<string, string>],
-    ["Bronchoscopy Biopsy",   tr.bronchBiopsy  as Record<string, string>],
-    ["EBUS",                  tr.ebus          as Record<string, string>],
-    ["Pleural Fluid",         tr.pleuralFluid  as Record<string, string>],
-    ["Pleural Biopsy",        tr.pleuralBiopsy as Record<string, string>],
-  ];
-  for (const [label, groupData] of subGroups) {
-    if (!groupData) continue;
-    const entries = Object.entries(groupData).filter(([, v]) => s(v));
-    if (entries.length > 0) {
-      blocks.push(subLabel(label));
-      entries.forEach(([k, v]) => push(lv(k.charAt(0).toUpperCase() + k.slice(1), s(v))));
+  // EKG — array of entries (new format) or legacy { value, details }
+  const ekgEntries: AnyEntry[] = Array.isArray(tr.ekg) ? tr.ekg as AnyEntry[]
+    : (tr.ekg && typeof tr.ekg === "object") ? (() => {
+        const o = tr.ekg as { value?: string; details?: string };
+        return o.value ? [{ result: o.value === "Other" ? (o.details || "") : o.value }] : [];
+      })()
+    : (typeof tr.ekg === "string" && s(tr.ekg as string)) ? [{ result: tr.ekg }] : [];
+  if (ekgEntries.length > 0) {
+    blocks.push(subLabel("EKG"));
+    for (const e of ekgEntries) {
+      if (s(e.date as string)) push(lv("Date", s(e.date as string)));
+      if (s(e.result as string)) push(bodyLine(s(e.result as string)));
     }
   }
 
-  if (s(tr.otherTest as string)) { blocks.push(subLabel("Other Test")); push(bodyLine(s(tr.otherTest as string))); }
+  // Echocardiogram — single field
+  if (s(tr.echo as string)) { blocks.push(subLabel("Echocardiogram")); push(bodyLine(s(tr.echo as string))); }
+
+  // Blood — array of entries (new) or legacy { date, testType, details }
+  const bloodEntries: AnyEntry[] = Array.isArray(tr.blood) ? tr.blood as AnyEntry[]
+    : (tr.blood && typeof tr.blood === "object") ? (() => {
+        const o = tr.blood as { date?: string; testType?: string; details?: string };
+        return (o.date || o.testType || o.details) ? [o as AnyEntry] : [];
+      })() : [];
+  if (bloodEntries.length > 0) {
+    blocks.push(subLabel("Blood Tests"));
+    for (const e of bloodEntries) {
+      push(lv("Date", s(e.date as string)), lv("Type", s(e.testType as string)), lv("Results", s(e.details as string)));
+    }
+  }
+
+  // Sub-groups: each supports array (new) or single object (legacy)
+  const subGroupDefs: [string, string, [string, string][]][] = [
+    ["Bronchoscopy Washing",  "bronchWash",   [["microbiology","Microbiology"],["cytology","Cytology"],["cellCounts","Cell Counts"]]],
+    ["Bronchoscopy Biopsy",   "bronchBiopsy", [["pathology","Pathology"],["microbiology","Microbiology"]]],
+    ["EBUS",                  "ebus",         [["cytology","Cytology"]]],
+    ["Pleural Fluid",         "pleuralFluid", [["cytology","Cytology"],["microbiology","Microbiology"],["biochemistry","Biochemistry"],["cellCounts","Cell Counts"]]],
+    ["Pleural Biopsy",        "pleuralBiopsy",[["pathology","Pathology"],["microbiology","Microbiology"]]],
+  ];
+  for (const [label, key, fields] of subGroupDefs) {
+    const raw = tr[key];
+    const entries: AnyEntry[] = Array.isArray(raw) ? raw as AnyEntry[]
+      : (raw && typeof raw === "object") ? [raw as AnyEntry] : [];
+    const hasContent = entries.some(e => fields.some(([f]) => s(e[f] as string)));
+    if (!hasContent) continue;
+    blocks.push(subLabel(label));
+    for (const e of entries) {
+      if (s(e.date as string)) push(lv("Date", s(e.date as string)));
+      for (const [f, fl] of fields) {
+        if (s(e[f] as string)) push(lv(fl, s(e[f] as string)));
+      }
+    }
+  }
+
+  // Other Tests — array (new) or legacy string "otherTest"
+  const otherEntries: AnyEntry[] = Array.isArray(tr.otherTests) ? tr.otherTests as AnyEntry[]
+    : (typeof tr.otherTest === "string" && s(tr.otherTest as string)) ? [{ result: tr.otherTest }] : [];
+  if (otherEntries.length > 0) {
+    blocks.push(subLabel("Other Test"));
+    for (const e of otherEntries) {
+      if (s(e.date as string)) push(lv("Date", s(e.date as string)));
+      if (s(e.testName as string)) push(lv("Test", s(e.testName as string)));
+      if (s(e.result as string)) push(bodyLine(s(e.result as string)));
+    }
+  }
 
   if (!hasAny) return [];
   return [sectionHeading("Test Results"), ...blocks, gap()];
