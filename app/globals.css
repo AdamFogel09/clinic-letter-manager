@@ -53,6 +53,10 @@
   font-family: "Avenir Next", Avenir, "Helvetica Neue", Arial, sans-serif !important;
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @utility btn-primary {
   display: inline-flex;
   align-items: center;

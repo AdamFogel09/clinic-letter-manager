@@ -521,6 +521,8 @@ export default function LetterEditorPage() {
   // Pictures
   const [pictures, setPictures] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [pictureError, setPictureError] = useState<string>("");
+  const [pictureProcessing, setPictureProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Inhalers
@@ -723,26 +725,28 @@ export default function LetterEditorPage() {
   // Letters are now saved to Supabase. Temporary storage is only fallback for unsaved draft state.
   useEffect(() => {
     if (!initialized) return;
-    sessionStorage.setItem("letter_draft", JSON.stringify({
-      name, patId, bDay, bMonth, bYear, gender, email, phone,
-      smoking, pets, occupation, referredBy, location,
-      dateDay, dateMonth, dateYear,
-      diagItems,
-      diagEN: diagItemsToEN(diagItems),
-      diagHE: diagItemsToHE(diagItems),
-      summarySections,
-      sumEN: sectionsToSumEN(summarySections),
-      sumHE: sectionsToSumHE(summarySections),
-      planSteps,
-      planStepsEN: planStepsToENArr(planSteps),
-      planStepsHE: planStepsToHEArr(planSteps),
-      medHistory, famHistory,
-      medications, allergies, vaccinations,
-      appearance, clubbing, lymph, bp, pulse, rr, spo2,
-      heartSounds, heartOther, lungAusc, lungOther, otherFindings,
-      testResults, lungRows, pictures,
-      inhalerSearch, inhalers,
-    }));
+    try {
+      sessionStorage.setItem("letter_draft", JSON.stringify({
+        name, patId, bDay, bMonth, bYear, gender, email, phone,
+        smoking, pets, occupation, referredBy, location,
+        dateDay, dateMonth, dateYear,
+        diagItems,
+        diagEN: diagItemsToEN(diagItems),
+        diagHE: diagItemsToHE(diagItems),
+        summarySections,
+        sumEN: sectionsToSumEN(summarySections),
+        sumHE: sectionsToSumHE(summarySections),
+        planSteps,
+        planStepsEN: planStepsToENArr(planSteps),
+        planStepsHE: planStepsToHEArr(planSteps),
+        medHistory, famHistory,
+        medications, allergies, vaccinations,
+        appearance, clubbing, lymph, bp, pulse, rr, spo2,
+        heartSounds, heartOther, lungAusc, lungOther, otherFindings,
+        testResults, lungRows, pictures,
+        inhalerSearch, inhalers,
+      }));
+    } catch { /* QuotaExceededError — images too large for sessionStorage; data stays in memory */ }
   }, [
     initialized,
     name, patId, bDay, bMonth, bYear, gender, email, phone,
@@ -794,16 +798,59 @@ export default function LetterEditorPage() {
     if (idx >= 0 && idx < inputs.length - 1) inputs[idx + 1].focus();
   };
 
-  const handleFiles = (files: FileList | null) => {
+  const ALLOWED_IMG_EXTS = /\.(jpe?g|png|webp|heic|heif)$/i;
+  const ALLOWED_IMG_TYPES = new Set(["image/jpeg","image/jpg","image/png","image/webp","image/heic","image/heif"]);
+  const MAX_IMG_BYTES = 10 * 1024 * 1024; // 10 MB
+  const MAX_IMG_DIM   = 2000;             // pixels on longest side
+
+  const fileToJpeg = async (file: File): Promise<string> => {
+    const bitmap = await createImageBitmap(file);
+    let { width, height } = bitmap;
+    if (Math.max(width, height) > MAX_IMG_DIM) {
+      const scale = MAX_IMG_DIM / Math.max(width, height);
+      width  = Math.round(width  * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { bitmap.close(); throw new Error("Canvas unavailable"); }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    return canvas.toDataURL("image/jpeg", 0.85);
+  };
+
+  const handleFiles = async (files: FileList | null) => {
     if (!files) return;
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith("image/")) return;
-      const reader = new FileReader();
-      reader.onload = e => {
-        if (e.target?.result) setPictures(prev => [...prev, e.target!.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    setPictureError("");
+    setPictureProcessing(true);
+    const errors: string[] = [];
+    // Reset input so the same file can be re-selected after an error
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    for (const file of Array.from(files)) {
+      const typeOk  = ALLOWED_IMG_TYPES.has(file.type) || ALLOWED_IMG_EXTS.test(file.name);
+      const isImage = file.type.startsWith("image/") || ALLOWED_IMG_EXTS.test(file.name);
+
+      if (!isImage || !typeOk) {
+        errors.push(`"${file.name}" is not a supported format. Please use JPG, PNG, WebP, or HEIC.`);
+        continue;
+      }
+      if (file.size > MAX_IMG_BYTES) {
+        errors.push(`"${file.name}" is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.`);
+        continue;
+      }
+      try {
+        const dataUrl = await fileToJpeg(file);
+        setPictures(prev => [...prev, dataUrl]);
+      } catch (err) {
+        console.error("[pictures] conversion failed:", { name: file.name, type: file.type, size: file.size, err });
+        errors.push(`Could not process "${file.name}". Please try JPG or PNG.`);
+      }
+    }
+
+    setPictureProcessing(false);
+    if (errors.length) setPictureError(errors.join("\n"));
   };
 
   const handleInhalerSearch = async () => {
@@ -2028,7 +2075,7 @@ export default function LetterEditorPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
             multiple
             hidden
             onChange={e => handleFiles(e.target.files)}
@@ -2036,31 +2083,55 @@ export default function LetterEditorPage() {
 
           {/* Drop zone */}
           <div
-            onClick={() => fileInputRef.current?.click()}
-            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+            onClick={() => { if (!pictureProcessing) fileInputRef.current?.click(); }}
+            onDragOver={e => { e.preventDefault(); if (!pictureProcessing) setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={e => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
-            className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all duration-150"
+            className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed transition-all duration-150"
             style={{
               borderColor: isDragging ? "#1A2B4A" : "#CBD5E1",
               backgroundColor: isDragging ? "#EBF3FB" : "#FAFAFA",
               padding: pictures.length > 0 ? "24px 20px" : "48px 20px",
+              cursor: pictureProcessing ? "default" : "pointer",
+              opacity: pictureProcessing ? 0.7 : 1,
             }}
           >
-            <svg viewBox="0 0 40 36" fill="none" stroke={isDragging ? "#1A2B4A" : "#CBD5E1"} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
-              style={{ width: 40, height: 36, marginBottom: 12 }}>
-              <rect x="2" y="6" width="36" height="26" rx="4"/>
-              <circle cx="14" cy="17" r="4"/>
-              <path d="M2 28l10-9 7 7 5-5 14 10"/>
-              <path d="M26 2l5 5M31 2l-5 5" strokeWidth={2}/>
-            </svg>
-            <p className="text-sm font-medium mb-1" style={{ color: isDragging ? "#1A2B4A" : "#64748B" }}>
-              {isDragging ? "Drop images to upload" : "Drag & drop images here"}
-            </p>
-            <p className="text-xs" style={{ color: "#94A3B8" }}>
-              or <span style={{ color: "#4A90D9", fontWeight: 600 }}>click to browse</span> · PNG, JPG, HEIC
-            </p>
+            {pictureProcessing ? (
+              <>
+                <div style={{
+                  width: 32, height: 32, borderRadius: "50%", marginBottom: 12,
+                  border: "3px solid #CBD5E1", borderTopColor: "#4A90D9",
+                  animation: "spin 0.8s linear infinite",
+                }} />
+                <p className="text-sm font-medium" style={{ color: "#64748B" }}>Processing images…</p>
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 40 36" fill="none" stroke={isDragging ? "#1A2B4A" : "#CBD5E1"} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"
+                  style={{ width: 40, height: 36, marginBottom: 12 }}>
+                  <rect x="2" y="6" width="36" height="26" rx="4"/>
+                  <circle cx="14" cy="17" r="4"/>
+                  <path d="M2 28l10-9 7 7 5-5 14 10"/>
+                  <path d="M26 2l5 5M31 2l-5 5" strokeWidth={2}/>
+                </svg>
+                <p className="text-sm font-medium mb-1" style={{ color: isDragging ? "#1A2B4A" : "#64748B" }}>
+                  {isDragging ? "Drop images to upload" : "Drag & drop images here"}
+                </p>
+                <p className="text-xs" style={{ color: "#94A3B8" }}>
+                  or <span style={{ color: "#4A90D9", fontWeight: 600 }}>click to browse</span> · JPG, PNG, WebP, HEIC
+                </p>
+              </>
+            )}
           </div>
+
+          {/* Inline error message */}
+          {pictureError && (
+            <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, backgroundColor: "#FEF2F2", border: "1px solid #FCA5A5" }}>
+              {pictureError.split("\n").map((line, i) => (
+                <p key={i} className="text-sm" style={{ color: "#DC2626", margin: i > 0 ? "4px 0 0" : 0 }}>{line}</p>
+              ))}
+            </div>
+          )}
 
           {/* Image previews */}
           {pictures.length > 0 && (
