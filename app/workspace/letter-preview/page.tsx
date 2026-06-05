@@ -7,7 +7,7 @@ import LetterHeader from "@/components/letter/LetterHeader";
 import LetterFooter from "@/components/letter/LetterFooter";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, updateLetterFileUrls } from "@/lib/supabase/letters";
+import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, getLetterById } from "@/lib/supabase/letters";
 import { exportLetterPdfBlob } from "@/lib/generatePdf";
 import { triggerDownload } from "@/lib/generateDocx";
 
@@ -426,19 +426,38 @@ export default function LetterPreviewPage() {
   };
 
   useEffect(() => {
-    const raw = localStorage.getItem("letter_preview");
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed?.testResults) parsed.testResults = migratePreviewTestResults(parsed.testResults);
-        if (!Array.isArray(parsed?.inhalers)) {
-          parsed.inhalers = parsed?.inhalerName
-            ? [{ id: "inh-0", name: parsed.inhalerName, link: parsed.inhalerLink || "", imageUrl: parsed.inhalerImageUrl || "" }]
-            : [];
-        }
-        setData(parsed);
-      } catch { /* malformed — ignore */ }
-    }
+    const run = async () => {
+      const raw = localStorage.getItem("letter_preview");
+      let parsed: Record<string, unknown> | null = null;
+      if (raw) {
+        try {
+          parsed = JSON.parse(raw);
+          if (parsed?.testResults) parsed.testResults = migratePreviewTestResults(parsed.testResults) as unknown as Record<string, unknown>;
+          if (!Array.isArray(parsed?.inhalers)) {
+            parsed!.inhalers = parsed?.inhalerName
+              ? [{ id: "inh-0", name: parsed!.inhalerName, link: parsed!.inhalerLink || "", imageUrl: parsed!.inhalerImageUrl || "" }]
+              : [];
+          }
+        } catch { parsed = null; }
+      }
+
+      // Safari: if pictures are missing from localStorage (quota exceeded during save),
+      // load them from Supabase using the letter ID written just before navigation.
+      const supabaseId = localStorage.getItem("letter_current_supabase_id");
+      if (supabaseId && (!parsed?.pictures || (parsed.pictures as string[]).length === 0)) {
+        try {
+          const supabase = createClient();
+          const letter = await getLetterById(supabase, supabaseId);
+          if (letter?.pictures?.length) {
+            if (!parsed) parsed = {};
+            parsed.pictures = letter.pictures;
+          }
+        } catch { /* Supabase unavailable — proceed without pictures */ }
+      }
+
+      if (parsed) setData(parsed as unknown as LetterData);
+    };
+    run();
   }, []);
 
   const d = data;

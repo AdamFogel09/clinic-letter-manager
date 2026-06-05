@@ -930,7 +930,11 @@ export default function LetterEditorPage() {
     const _sumHE  = sectionsToSumHE(summarySections);
     const _planEN = planStepsToENArr(planSteps);
     const _planHE = planStepsToHEArr(planSteps);
-    localStorage.setItem("letter_preview", JSON.stringify({
+    // Write preview data to localStorage so the preview page can render immediately.
+    // Safari's 5 MB localStorage quota can be exceeded by base64 images, so we
+    // try the full payload first; on failure, retry without pictures (the preview
+    // page will fetch them from Supabase using letter_current_supabase_id).
+    const _previewPayload = {
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
@@ -943,7 +947,15 @@ export default function LetterEditorPage() {
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
       testResults, lungRows,
       pictures, inhalers,
-    }));
+    };
+    try {
+      localStorage.setItem("letter_preview", JSON.stringify(_previewPayload));
+    } catch {
+      // QuotaExceededError — retry without pictures; preview page loads them from Supabase
+      try {
+        localStorage.setItem("letter_preview", JSON.stringify({ ..._previewPayload, pictures: [] }));
+      } catch { /* ignore — preview page will fetch from Supabase */ }
+    }
     if (supabaseLetterIdRef.current) {
       localStorage.setItem("letter_current_supabase_id", supabaseLetterIdRef.current);
     }
@@ -976,22 +988,27 @@ export default function LetterEditorPage() {
       pictures, inhalers,
     };
 
-    // localStorage fallback — silent backup, always runs
+    // localStorage fallback — silent backup, always runs.
+    // Wrapped in try/catch: Safari's 5 MB quota throws QuotaExceededError on
+    // large payloads (base64 images). Supabase is the source of truth, so a
+    // failed local write must never crash the save or block the Supabase call.
     let draftId = sessionStorage.getItem("letter_draft_id");
     if (!draftId) {
       draftId = `letter-${Date.now().toString(36)}`;
-      sessionStorage.setItem("letter_draft_id", draftId);
+      try { sessionStorage.setItem("letter_draft_id", draftId); } catch { /* quota */ }
     }
-    localStorage.setItem("letter_current_id", draftId);
-    upsertLetter({
-      id: draftId,
-      patientName: name || "Unnamed Patient",
-      patientId:   patId || "",
-      letterDate,
-      status:  "Draft",
-      savedAt: new Date().toISOString(),
-      data:    letterData as Record<string, unknown>,
-    });
+    try {
+      localStorage.setItem("letter_current_id", draftId);
+      upsertLetter({
+        id: draftId,
+        patientName: name || "Unnamed Patient",
+        patientId:   patId || "",
+        letterDate,
+        status:  "Draft",
+        savedAt: new Date().toISOString(),
+        data:    letterData as Record<string, unknown>,
+      });
+    } catch { /* QuotaExceededError on Safari — Supabase is the source of truth */ }
 
     // Resolve patient ID — try ref first, then URL params as Safari-safe fallback
     let resolvedPatientId = supabasePatientIdRef.current;
@@ -1097,23 +1114,30 @@ export default function LetterEditorPage() {
       return;
     }
 
-    // Store for anat-review page display and navigate
+    // Store for anat-review page display and navigate.
+    // Wrapped in try/catch: same Safari quota guard as handleSaveDraft.
     let draftId = sessionStorage.getItem("letter_draft_id");
     if (!draftId) {
       draftId = `letter-${Date.now().toString(36)}`;
-      sessionStorage.setItem("letter_draft_id", draftId);
+      try { sessionStorage.setItem("letter_draft_id", draftId); } catch { /* quota */ }
     }
-    localStorage.setItem("letter_current_id", draftId);
-    localStorage.setItem("letter_preview", JSON.stringify(letterData));
-    upsertLetter({
-      id:          draftId,
-      patientName: name || "Unnamed Patient",
-      patientId:   patId || "",
-      letterDate,
-      status:  "Waiting for Anat",
-      savedAt: new Date().toISOString(),
-      data:    letterData as Record<string, unknown>,
-    });
+    try {
+      localStorage.setItem("letter_current_id", draftId);
+      try {
+        localStorage.setItem("letter_preview", JSON.stringify(letterData));
+      } catch {
+        try { localStorage.setItem("letter_preview", JSON.stringify({ ...letterData, pictures: [] })); } catch { /* quota */ }
+      }
+      upsertLetter({
+        id:          draftId,
+        patientName: name || "Unnamed Patient",
+        patientId:   patId || "",
+        letterDate,
+        status:  "Waiting for Anat",
+        savedAt: new Date().toISOString(),
+        data:    letterData as Record<string, unknown>,
+      });
+    } catch { /* QuotaExceededError on Safari */ }
 
     localStorage.setItem("letter_just_sent", "1");
     setSendingToAnat(false);
