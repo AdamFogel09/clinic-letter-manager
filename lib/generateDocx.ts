@@ -209,8 +209,16 @@ function testResultsBlocks(data: LD): Block[] {
     }
   }
 
-  // Echocardiogram — single field
-  if (s(tr.echo as string)) { blocks.push(subLabel("Echocardiogram")); push(bodyLine(s(tr.echo as string))); }
+  // Echocardiogram — array of entries (new) or legacy string
+  const echoEntries: AnyEntry[] = Array.isArray(tr.echo) ? tr.echo as AnyEntry[]
+    : (typeof tr.echo === "string" && s(tr.echo as string)) ? [{ result: tr.echo }] : [];
+  if (echoEntries.length > 0) {
+    blocks.push(subLabel("Echocardiogram"));
+    for (const e of echoEntries) {
+      if (s(e.date as string)) push(lv("Date", s(e.date as string)));
+      if (s(e.result as string)) push(bodyLine(s(e.result as string)));
+    }
+  }
 
   // Blood — array of entries (new) or legacy { date, testType, details }
   const bloodEntries: AnyEntry[] = Array.isArray(tr.blood) ? tr.blood as AnyEntry[]
@@ -581,23 +589,29 @@ export async function generateLetterDocx(
     children.push(gap());
   }
 
-  // ── Inhaler ────────────────────────────────────────────────────────────
-  const inhalerName = s(data.inhalerName);
-  if (inhalerName) {
-    children.push(sectionHeading("Inhaler — Patient to Purchase"));
-    children.push(bodyLine(inhalerName));
-    const inhalerLink = s(data.inhalerLink);
-    if (inhalerLink) {
-      children.push(new Paragraph({
-        children: [
-          new TextRun({ text: "Video guide: ", size: 20, font: "Avenir Next" }),
-          new ExternalHyperlink({
-            link: inhalerLink,
-            children: [new TextRun({ text: "Watch video guide on RightBreathe", size: 20, font: "Avenir Next", color: "4A90D9", underline: {} })],
-          }),
-        ],
-        spacing: { after: 40 },
-      }));
+  // ── Inhalers ────────────────────────────────────────────────────────────
+  type InhEntry = { name?: string; link?: string; imageUrl?: string };
+  const inhEntries: InhEntry[] = Array.isArray(data.inhalers) ? data.inhalers as InhEntry[]
+    : s(data.inhalerName) ? [{ name: s(data.inhalerName), link: s(data.inhalerLink), imageUrl: s(data.inhalerImageUrl) }] : [];
+  if (inhEntries.some(e => e.name)) {
+    children.push(sectionHeading("Inhalers — Patient to Purchase"));
+    for (const inh of inhEntries) {
+      const nm = s(inh.name);
+      if (!nm) continue;
+      children.push(bodyLine(nm));
+      const lnk = s(inh.link);
+      if (lnk) {
+        children.push(new Paragraph({
+          children: [
+            new TextRun({ text: "Video guide: ", size: 20, font: "Avenir Next" }),
+            new ExternalHyperlink({
+              link: lnk,
+              children: [new TextRun({ text: "Watch video guide on RightBreathe", size: 20, font: "Avenir Next", color: "4A90D9", underline: {} })],
+            }),
+          ],
+          spacing: { after: 40 },
+        }));
+      }
     }
     children.push(gap());
   }

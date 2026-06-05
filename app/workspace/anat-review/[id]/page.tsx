@@ -242,9 +242,11 @@ export default function AnatReviewLetterPage() {
         testResults: updated.test_results || {},
         lungRows:    updated.lung_function_tests || [],
         pictures:    updated.pictures || [],
-        inhalerName:     (updated.inhaler as Record<string, string>)?.name      || "",
-        inhalerLink:     (updated.inhaler as Record<string, string>)?.link      || "",
-        inhalerImageUrl: (updated.inhaler as Record<string, string>)?.image_url || "",
+        inhalers:    Array.isArray(updated.inhaler)
+          ? updated.inhaler
+          : ((updated.inhaler as Record<string, string>)?.name
+              ? [{ id: "inh-0", name: (updated.inhaler as Record<string, string>).name, link: (updated.inhaler as Record<string, string>).link || "", imageUrl: (updated.inhaler as Record<string, string>).image_url || "" }]
+              : []),
       };
       localStorage.setItem("letter_preview",           JSON.stringify(d));
       localStorage.setItem("letter_current_supabase_id", id);

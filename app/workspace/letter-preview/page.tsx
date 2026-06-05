@@ -37,8 +37,7 @@ interface LetterData {
   lungAusc: string; lungOther: string; otherFindings: string;
   testResults: {
     ekg:           Array<{ id: string; date: string; result: string }>;
-    echo:          string;
-    echoEnabled:   boolean;
+    echo:          Array<{ id: string; date: string; result: string }>;
     blood:         Array<{ id: string; date: string; testType: string; details: string }>;
     bronchWash:    Array<{ id: string; date: string; selected: string[]; microbiology: string; cytology: string; cellCounts: string }>;
     bronchBiopsy:  Array<{ id: string; date: string; selected: string[]; pathology: string; microbiology: string }>;
@@ -50,9 +49,7 @@ interface LetterData {
   planStepsEN: string[]; planStepsHE: string[];
   lungRows: LungRow[];
   pictures: string[];
-  inhalerName: string;
-  inhalerLink: string;
-  inhalerImageUrl: string;
+  inhalers: Array<{ id: string; name: string; link: string; imageUrl: string }>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -60,7 +57,7 @@ interface LetterData {
 function mkId() { return `tr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,5)}`; }
 
 function migratePreviewTestResults(raw: unknown): LetterData["testResults"] {
-  const empty: LetterData["testResults"] = { ekg: [], echo: "", echoEnabled: false, blood: [], bronchWash: [], bronchBiopsy: [], ebus: [], pleuralFluid: [], pleuralBiopsy: [], otherTests: [] };
+  const empty: LetterData["testResults"] = { ekg: [], echo: [], blood: [], bronchWash: [], bronchBiopsy: [], ebus: [], pleuralFluid: [], pleuralBiopsy: [], otherTests: [] };
   if (!raw || typeof raw !== "object") return empty;
   const r = raw as Record<string, unknown>;
   const sel = ((r.selected ?? {}) as Record<string, unknown>);
@@ -75,10 +72,10 @@ function migratePreviewTestResults(raw: unknown): LetterData["testResults"] {
     res.ekg = [{ id: mkId(), date: "", result: r.ekg as string }];
   }
 
-  if (typeof r.echo === "string") res.echo = r.echo as string;
-  if (typeof r.echoEnabled === "boolean") res.echoEnabled = r.echoEnabled as boolean;
-  else if (typeof sel.echo === "boolean") res.echoEnabled = sel.echo as boolean;
-  else if (res.echo.trim()) res.echoEnabled = true;
+  if (Array.isArray(r.echo)) res.echo = r.echo as typeof res.echo;
+  else if (typeof r.echo === "string" && (r.echo as string).trim()) {
+    res.echo = [{ id: mkId(), date: "", result: r.echo as string }];
+  }
 
   if (Array.isArray(r.blood)) res.blood = r.blood as typeof res.blood;
   else if (r.blood && typeof r.blood === "object") {
@@ -412,6 +409,11 @@ export default function LetterPreviewPage() {
       try {
         const parsed = JSON.parse(raw);
         if (parsed?.testResults) parsed.testResults = migratePreviewTestResults(parsed.testResults);
+        if (!Array.isArray(parsed?.inhalers)) {
+          parsed.inhalers = parsed?.inhalerName
+            ? [{ id: "inh-0", name: parsed.inhalerName, link: parsed.inhalerLink || "", imageUrl: parsed.inhalerImageUrl || "" }]
+            : [];
+        }
         setData(parsed);
       } catch { /* malformed — ignore */ }
     }
@@ -447,7 +449,7 @@ export default function LetterPreviewPage() {
   // Page 3: objective data + inhalers
   const hasPage3 = !!(d && (
     hasTestData(d.testResults) ||
-    (d.lungRows?.length > 0) || d.inhalerName
+    (d.lungRows?.length > 0) || (d.inhalers?.length > 0)
   ));
   const hasPictures = !!(d && d.pictures?.length > 0);
 
@@ -731,9 +733,15 @@ export default function LetterPreviewPage() {
                   )}
 
                   {/* Echocardiogram */}
-                  {d.testResults.echo?.trim() && (
+                  {d.testResults.echo?.length > 0 && (
                     <TRGroup label="Echocardiogram">
-                      <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{d.testResults.echo}</p>
+                      {d.testResults.echo.map((entry, idx) => (
+                        <div key={entry.id ?? idx} style={{ marginBottom: d.testResults.echo.length > 1 && idx < d.testResults.echo.length - 1 ? 8 : 0 }}>
+                          {d.testResults.echo.length > 1 && <p style={{ fontSize: 11, fontWeight: 600, color: "#64748B", margin: "0 0 2px" }}>Entry {idx + 1}</p>}
+                          {entry.date && <p style={{ fontSize: 11, color: "#64748B", margin: "0 0 2px" }}>Date: {formatDisplayDate(entry.date)}</p>}
+                          <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>
+                        </div>
+                      ))}
                     </TRGroup>
                   )}
 
@@ -870,38 +878,42 @@ export default function LetterPreviewPage() {
               </DocSection>
             )}
 
-            {d?.inhalerName && (
+            {d?.inhalers?.length > 0 && (
               <DocSection title="" titleHe="סרטון המסביר איך להשתמש במשאף שלך">
-                <div style={{ display: "flex", gap: 16, alignItems: "center", padding: "10px 14px", border: "1px solid #E2E8F0", borderRadius: 12, backgroundColor: "#FAFBFF" }}>
-                  <div style={{
-                    width: 72, height: 72, borderRadius: 10,
-                    backgroundColor: "#EBF3FB", border: "1px solid #E2E8F0",
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                    overflow: "hidden",
-                  }}>
-                    {d.inhalerImageUrl
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      ? <img src={d.inhalerImageUrl} alt={d.inhalerName} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                      : <InhalerIconSmall />
-                    }
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#1A2B4A", margin: "0 0 4px" }}>{d.inhalerName}</p>
-                    {d.inhalerLink && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <svg viewBox="0 0 16 16" fill="none" stroke="#4A90D9" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, flexShrink: 0 }}>
-                          <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M9 1h6m0 0v6m0-6L7 9"/>
-                        </svg>
-                        <a href={d.inhalerLink} target="_blank" rel="noopener noreferrer"
-                          style={{ fontSize: 11, color: "#4A90D9", textDecoration: "none", fontWeight: 500 }}>
-                          Watch video guide on RightBreathe
-                        </a>
-                        <span style={{ fontSize: 11, color: "#64748B", fontWeight: 400 }}>
-                          (גלול עד למטה אחרי כניסה לקישור בכדי לצפות בסרטון ההדרכה)
-                        </span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {d.inhalers.map((inh, idx) => inh.name ? (
+                    <div key={inh.id ?? idx} style={{ display: "flex", gap: 16, alignItems: "center", padding: "10px 14px", border: "1px solid #E2E8F0", borderRadius: 12, backgroundColor: "#FAFBFF" }}>
+                      <div style={{
+                        width: 72, height: 72, borderRadius: 10,
+                        backgroundColor: "#EBF3FB", border: "1px solid #E2E8F0",
+                        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                        overflow: "hidden",
+                      }}>
+                        {inh.imageUrl
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          ? <img src={inh.imageUrl} alt={inh.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          : <InhalerIconSmall />
+                        }
                       </div>
-                    )}
-                  </div>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "#1A2B4A", margin: "0 0 4px" }}>{inh.name}</p>
+                        {inh.link && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <svg viewBox="0 0 16 16" fill="none" stroke="#4A90D9" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, flexShrink: 0 }}>
+                              <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M9 1h6m0 0v6m0-6L7 9"/>
+                            </svg>
+                            <a href={inh.link} target="_blank" rel="noopener noreferrer"
+                              style={{ fontSize: 11, color: "#4A90D9", textDecoration: "none", fontWeight: 500 }}>
+                              Watch video guide on RightBreathe
+                            </a>
+                            <span style={{ fontSize: 11, color: "#64748B", fontWeight: 400 }}>
+                              (גלול עד למטה אחרי כניסה לקישור בכדי לצפות בסרטון ההדרכה)
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null)}
                 </div>
               </DocSection>
             )}

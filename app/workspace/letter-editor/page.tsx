@@ -23,11 +23,12 @@ interface EbusEntry          { id: string; date: string; selected: string[]; cyt
 interface PleuralFluidEntry  { id: string; date: string; selected: string[]; cytology: string; microbiology: string; biochemistry: string; cellCounts: string; }
 interface PleuralBiopsyEntry { id: string; date: string; selected: string[]; pathology: string; microbiology: string; }
 interface OtherTestEntry     { id: string; date: string; testName: string; result: string; }
+interface EchoEntry          { id: string; date: string; result: string; }
+interface InhalerEntry       { id: string; name: string; link: string; imageUrl: string; }
 
 interface TestResultsData {
   ekg:           EkgEntry[];
-  echo:          string;
-  echoEnabled:   boolean;
+  echo:          EchoEntry[];
   blood:         BloodEntry[];
   bronchWash:    BronchWashEntry[];
   bronchBiopsy:  BronchBiopsyEntry[];
@@ -39,8 +40,7 @@ interface TestResultsData {
 
 const DEFAULT_TEST_RESULTS: TestResultsData = {
   ekg:           [],
-  echo:          "",
-  echoEnabled:   false,
+  echo:          [],
   blood:         [],
   bronchWash:    [],
   bronchBiopsy:  [],
@@ -61,6 +61,9 @@ function newEbusEntry():          EbusEntry          { return { id: newTRId(), d
 function newPleuralFluidEntry():  PleuralFluidEntry  { return { id: newTRId(), date: "", selected: [], cytology: "", microbiology: "", biochemistry: "", cellCounts: "" }; }
 function newPleuralBiopsyEntry(): PleuralBiopsyEntry { return { id: newTRId(), date: "", selected: [], pathology: "", microbiology: "" }; }
 function newOtherTestEntry():     OtherTestEntry     { return { id: newTRId(), date: "", testName: "", result: "" }; }
+function newEchoEntry():          EchoEntry          { return { id: newTRId(), date: "", result: "" }; }
+function newInhalerId(): string { return `inh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`; }
+function newInhalerEntry(): InhalerEntry { return { id: newInhalerId(), name: "", link: "", imageUrl: "" }; }
 
 function migrateTestResults(raw: unknown): TestResultsData {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_TEST_RESULTS };
@@ -77,11 +80,11 @@ function migrateTestResults(raw: unknown): TestResultsData {
     res.ekg = [{ id: newTRId(), date: "", result: r.ekg as string }];
   }
 
-  // Echo: preserved as single text field + echoEnabled boolean
-  if (typeof r.echo === "string") res.echo = r.echo as string;
-  if (typeof r.echoEnabled === "boolean") res.echoEnabled = r.echoEnabled as boolean;
-  else if (typeof sel.echo === "boolean") res.echoEnabled = sel.echo as boolean;
-  else if (res.echo.trim()) res.echoEnabled = true;
+  // Echo: old was string + echoEnabled boolean; new is array
+  if (Array.isArray(r.echo)) res.echo = r.echo as EchoEntry[];
+  else if (typeof r.echo === "string" && (r.echo as string).trim()) {
+    res.echo = [{ id: newTRId(), date: "", result: r.echo as string }];
+  }
 
   // Blood: old was { date, testType, details }; new is array
   if (Array.isArray(r.blood)) res.blood = r.blood as BloodEntry[];
@@ -529,10 +532,8 @@ export default function LetterEditorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Inhalers
+  const [inhalers, setInhalers] = useState<InhalerEntry[]>([]);
   const [inhalerSearch, setInhalerSearch] = useState("");
-  const [inhalerName, setInhalerName] = useState("");
-  const [inhalerLink, setInhalerLink] = useState("");
-  const [inhalerImageUrl, setInhalerImageUrl] = useState("");
   const [inhalerDropdown, setInhalerDropdown] = useState(false);
   const [inhalerResults, setInhalerResults] = useState<Array<{name:string;imageUrl:string;pageUrl:string}>>([]);
   const [inhalerSearching, setInhalerSearching] = useState(false);
@@ -700,9 +701,8 @@ export default function LetterEditorPage() {
           if (d.lungRows?.length) setLungRows(d.lungRows);
           if (d.pictures?.length) setPictures(d.pictures);
           if (d.inhalerSearch)   setInhalerSearch(d.inhalerSearch);
-          if (d.inhalerName)     setInhalerName(d.inhalerName);
-          if (d.inhalerLink)     setInhalerLink(d.inhalerLink);
-          if (d.inhalerImageUrl) setInhalerImageUrl(d.inhalerImageUrl);
+          if (Array.isArray(d.inhalers)) setInhalers(d.inhalers);
+          else if (d.inhalerName) setInhalers([{ id: newInhalerId(), name: d.inhalerName as string, link: (d.inhalerLink as string) || "", imageUrl: (d.inhalerImageUrl as string) || "" }]);
         } catch { /* malformed — ignore */ }
       }
     }
@@ -741,7 +741,7 @@ export default function LetterEditorPage() {
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
       testResults, lungRows, pictures,
-      inhalerSearch, inhalerName, inhalerLink, inhalerImageUrl,
+      inhalerSearch, inhalers,
     }));
   }, [
     initialized,
@@ -754,7 +754,7 @@ export default function LetterEditorPage() {
     appearance, clubbing, lymph, bp, pulse, rr, spo2,
     heartSounds, heartOther, lungAusc, lungOther, otherFindings,
     testResults, lungRows, pictures,
-    inhalerSearch, inhalerName, inhalerLink,
+    inhalerSearch, inhalers,
   ]);
 
   // Close inhaler dropdown on outside click
@@ -857,7 +857,7 @@ export default function LetterEditorPage() {
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
       testResults, lungRows,
-      pictures, inhalerName, inhalerLink, inhalerImageUrl,
+      pictures, inhalers,
     }));
     // Pass Supabase letter ID to the preview so it can update status on Send to Anat.
     if (supabaseLetterIdRef.current) {
@@ -893,7 +893,7 @@ export default function LetterEditorPage() {
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
       testResults, lungRows,
-      pictures, inhalerName, inhalerLink, inhalerImageUrl,
+      pictures, inhalers,
     };
 
     // localStorage fallback (always runs — silent backup)
@@ -959,7 +959,7 @@ export default function LetterEditorPage() {
       appearance, clubbing, lymph, bp, pulse, rr, spo2,
       heartSounds, heartOther, lungAusc, lungOther, otherFindings,
       testResults, lungRows,
-      pictures, inhalerName, inhalerLink, inhalerImageUrl,
+      pictures, inhalers,
     };
     localStorage.setItem("letter_preview", JSON.stringify(letterData));
 
@@ -1511,7 +1511,6 @@ export default function LetterEditorPage() {
           <SectionCard title="Plan" titleHe="תכנית">
             <div className="space-y-3">
               {planSteps.map((step, idx) => {
-                const isCopied = step.source === "copied";
                 const srcStyle = step.source === "new"
                   ? { bg: "#F5F3FF", border: "#DDD6FE", badge: "#EDE9FE", badgeText: "#7C3AED", label: "New" }
                   : step.source === "edited"
@@ -1524,27 +1523,19 @@ export default function LetterEditorPage() {
                       <span className="text-xs font-semibold text-slate-400 flex-shrink-0">{idx + 1}.</span>
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: srcStyle.badge, color: srcStyle.badgeText }}>
-                        {isCopied ? "Previous — Read-only" : srcStyle.label}
+                        {srcStyle.label}
                       </span>
-                      {!isCopied && (
-                        <button type="button" onClick={() => removePlanStep(step.id)}
-                          className="ml-auto text-xs flex-shrink-0 transition-colors duration-150"
-                          style={{ color: "#CBD5E1" }}
-                          onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                          onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
-                      )}
+                      <button type="button" onClick={() => removePlanStep(step.id)}
+                        className="ml-auto text-xs flex-shrink-0 transition-colors duration-150"
+                        style={{ color: "#CBD5E1" }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
                     </div>
-                    {isCopied ? (
-                      <p className="text-sm px-1 py-0.5 leading-relaxed" style={{ color: "#475569" }}>
-                        {step.textEN || "—"}
-                      </p>
-                    ) : (
-                      <input className={`w-full ${ic}`} style={is}
-                        value={step.textEN}
-                        onChange={e => updatePlanStepEN(step.id, e.target.value)}
-                        placeholder={`Plan step ${idx + 1}`} />
-                    )}
-                    {!isCopied && (
+                    <input className={`w-full ${ic}`} style={is}
+                      value={step.textEN}
+                      onChange={e => updatePlanStepEN(step.id, e.target.value)}
+                      placeholder={`Plan step ${idx + 1}`} />
+                    {step.source !== "copied" && (
                       <div className="flex items-center gap-2 flex-wrap">
                         <TranslateBtn
                           onClick={() => translatePlanStep(step.id)}
@@ -1563,17 +1554,10 @@ export default function LetterEditorPage() {
                         )}
                       </div>
                     )}
-                    {isCopied ? (
-                      <p className="text-sm px-1 py-0.5 leading-relaxed"
-                        style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
-                        {step.textHE || "—"}
-                      </p>
-                    ) : (
-                      <input className={`w-full ${ic}`} style={{ ...is, direction: "rtl", textAlign: "right" }}
-                        value={step.textHE}
-                        onChange={e => updatePlanStepHE(step.id, e.target.value)}
-                        placeholder={`שלב ${idx + 1}`} />
-                    )}
+                    <input className={`w-full ${ic}`} style={{ ...is, direction: "rtl", textAlign: "right" }}
+                      value={step.textHE}
+                      onChange={e => updatePlanStepHE(step.id, e.target.value)}
+                      placeholder={`שלב ${idx + 1}`} />
                   </div>
                 );
               })}
@@ -1738,28 +1722,22 @@ export default function LetterEditorPage() {
 
               {/* 2. Echocardiogram */}
               <TestGroup title="Echocardiogram">
-                {!testResults.echoEnabled
-                  ? (
-                    <button type="button" onClick={() => setTestResults(prev => ({ ...prev, echoEnabled: true }))}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
-                      style={{ borderColor: "#E2E8F0", color: "#94A3B8" }}>
-                      + Add Result
-                    </button>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>✓ Result added</span>
-                        <button type="button" onClick={() => setTestResults(prev => ({ ...prev, echoEnabled: false, echo: "" }))}
-                          className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
-                          onMouseEnter={ev => (ev.currentTarget.style.color = "#BE123C")}
-                          onMouseLeave={ev => (ev.currentTarget.style.color = "#CBD5E1")}>
-                          Clear
-                        </button>
-                      </div>
-                      <textarea className={ta} style={is} rows={2} value={testResults.echo}
-                        onChange={ev => setTestResults(prev => ({ ...prev, echo: ev.target.value }))}
-                        placeholder="Echocardiogram findings" />
-                    </>
+                {testResults.echo.length === 0
+                  ? addFirstBtn("Add Echocardiogram", () => setTestResults(prev => ({ ...prev, echo: [...prev.echo, newEchoEntry()] })))
+                  : (
+                    <div className="space-y-3">
+                      {testResults.echo.map((entry, idx) => (
+                        <div key={entry.id} className="rounded-xl border p-4" style={entryCard}>
+                          {entryHeader(testResults.echo.length, idx, () => setTestResults(prev => ({ ...prev, echo: prev.echo.filter(e => e.id !== entry.id) })))}
+                          {dateRow(entry.date, v => setTestResults(prev => ({ ...prev, echo: prev.echo.map(e => e.id === entry.id ? { ...e, date: v } : e) })))}
+                          <label className={lc} style={ls}>Result</label>
+                          <textarea className={ta} style={is} rows={2} value={entry.result}
+                            onChange={ev => setTestResults(prev => ({ ...prev, echo: prev.echo.map(e => e.id === entry.id ? { ...e, result: ev.target.value } : e) }))}
+                            placeholder="e.g. Normal LV function, EF 60%" />
+                        </div>
+                      ))}
+                      {addMoreBtn("Add another Echocardiogram", () => setTestResults(prev => ({ ...prev, echo: [...prev.echo, newEchoEntry()] })))}
+                    </div>
                   )}
               </TestGroup>
 
@@ -2182,10 +2160,8 @@ export default function LetterEditorPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setInhalerName(r.name);
-                          setInhalerLink(r.pageUrl);
-                          setInhalerImageUrl(r.imageUrl);
-                          setInhalerSearch(r.name);
+                          setInhalers(prev => [...prev, { id: newInhalerId(), name: r.name, link: r.pageUrl, imageUrl: r.imageUrl }]);
+                          setInhalerSearch("");
                           setInhalerDropdown(false);
                           setInhalerResults([]);
                         }}
@@ -2199,68 +2175,64 @@ export default function LetterEditorPage() {
               )}
             </div>
 
-            {/* ── Selected inhaler card ── */}
-            {inhalerName ? (
-              <div className="rounded-2xl border p-4" style={{ borderColor: "#E2E8F0", backgroundColor: "#FAFBFF" }}>
-                <div className="flex gap-4 items-start">
-                  <div className="flex-shrink-0 rounded-xl overflow-hidden flex items-center justify-center"
-                    style={{ width: 88, height: 88, backgroundColor: "#EBF3FB", border: "1px solid #E2E8F0" }}>
-                    {inhalerImageUrl
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      ? <img src={inhalerImageUrl} alt={inhalerName} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                      : <InhalerIcon />
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-3">
-                    <div>
-                      <label className={lc} style={ls}>Inhaler Name</label>
-                      <input className={ic} style={is} value={inhalerName}
-                        onChange={e => setInhalerName(e.target.value)} placeholder="Inhaler name" />
+            {/* ── Added inhalers list ── */}
+            {inhalers.length > 0 && (
+              <div className="space-y-3">
+                {inhalers.map((inh, idx) => (
+                  <div key={inh.id} className="rounded-2xl border p-4" style={{ borderColor: "#E2E8F0", backgroundColor: "#FAFBFF" }}>
+                    <div className="flex items-center justify-between mb-3">
+                      {inhalers.length > 1 && <span className="text-xs font-semibold" style={{ color: "#64748B" }}>Inhaler {idx + 1}</span>}
+                      {inhalers.length === 1 && <span />}
+                      <button type="button"
+                        className="text-xs transition-colors duration-150" style={{ color: "#CBD5E1" }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}
+                        onClick={() => setInhalers(prev => prev.filter(i => i.id !== inh.id))}>
+                        Remove
+                      </button>
                     </div>
-                    <div>
-                      <label className={lc} style={ls}>RightBreathe Link</label>
-                      <input className={ic} style={is} value={inhalerLink}
-                        onChange={e => setInhalerLink(e.target.value)} placeholder="https://www.rightbreathe.com/medicines/..." />
+                    <div className="flex gap-4 items-start">
+                      <div className="flex-shrink-0 rounded-xl overflow-hidden flex items-center justify-center"
+                        style={{ width: 72, height: 72, backgroundColor: "#EBF3FB", border: "1px solid #E2E8F0" }}>
+                        {inh.imageUrl
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          ? <img src={inh.imageUrl} alt={inh.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          : <InhalerIcon />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-3">
+                        <div>
+                          <label className={lc} style={ls}>Inhaler Name</label>
+                          <input className={ic} style={is} value={inh.name}
+                            onChange={e => setInhalers(prev => prev.map(i => i.id === inh.id ? { ...i, name: e.target.value } : i))}
+                            placeholder="Inhaler name" />
+                        </div>
+                        <div>
+                          <label className={lc} style={ls}>RightBreathe Link</label>
+                          <input className={ic} style={is} value={inh.link}
+                            onChange={e => setInhalers(prev => prev.map(i => i.id === inh.id ? { ...i, link: e.target.value } : i))}
+                            placeholder="https://www.rightbreathe.com/medicines/..." />
+                        </div>
+                        <div>
+                          <label className={lc} style={ls}>Image URL (optional)</label>
+                          <input className={ic} style={is} value={inh.imageUrl}
+                            onChange={e => setInhalers(prev => prev.map(i => i.id === inh.id ? { ...i, imageUrl: e.target.value } : i))}
+                            placeholder="https://..." />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className={lc} style={ls}>Image URL (optional)</label>
-                      <input className={ic} style={is} value={inhalerImageUrl}
-                        onChange={e => setInhalerImageUrl(e.target.value)} placeholder="https://..." />
-                    </div>
                   </div>
-                </div>
-                <button type="button"
-                  className="mt-3 text-xs transition-colors duration-150"
-                  style={{ color: "#CBD5E1" }}
-                  onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                  onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}
-                  onClick={() => { setInhalerName(""); setInhalerLink(""); setInhalerImageUrl(""); setInhalerSearch(""); }}>
-                  Clear selection
-                </button>
-              </div>
-            ) : (
-              /* ── Manual fallback / empty state ── */
-              <div className="rounded-2xl border p-5" style={{ borderColor: "#E2E8F0", backgroundColor: "#FAFBFF" }}>
-                <p className="text-xs font-semibold mb-3" style={{ color: "#64748B" }}>Or add inhaler manually</p>
-                <div className="space-y-3">
-                  <div>
-                    <label className={lc} style={ls}>Inhaler Name</label>
-                    <input className={ic} style={is} value={inhalerName}
-                      onChange={e => setInhalerName(e.target.value)} placeholder="e.g. Salbutamol 100mcg MDI (Ventolin)" />
-                  </div>
-                  <div>
-                    <label className={lc} style={ls}>RightBreathe Link</label>
-                    <input className={ic} style={is} value={inhalerLink}
-                      onChange={e => setInhalerLink(e.target.value)} placeholder="https://www.rightbreathe.com/medicines/..." />
-                  </div>
-                  <div>
-                    <label className={lc} style={ls}>Image URL (optional)</label>
-                    <input className={ic} style={is} value={inhalerImageUrl}
-                      onChange={e => setInhalerImageUrl(e.target.value)} placeholder="https://..." />
-                  </div>
-                </div>
+                ))}
               </div>
             )}
+
+            {/* ── Add manually button ── */}
+            <button type="button"
+              onClick={() => setInhalers(prev => [...prev, newInhalerEntry()])}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all duration-150"
+              style={{ borderColor: "#E2E8F0", color: "#64748B" }}>
+              + Add inhaler manually
+            </button>
           </div>
         </SectionCard>
       );

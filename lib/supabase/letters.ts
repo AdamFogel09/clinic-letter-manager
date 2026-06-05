@@ -117,8 +117,7 @@ export interface SupabaseLetter {
 // Default test results shape — mirrors the letter editor's DEFAULT_TEST_RESULTS
 const DEFAULT_TEST_RESULTS = {
   ekg:           [] as unknown[],
-  echo:          "",
-  echoEnabled:   false,
+  echo:          [] as unknown[],
   blood:         [] as unknown[],
   bronchWash:    [] as unknown[],
   bronchBiopsy:  [] as unknown[],
@@ -240,13 +239,13 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
       lungAusc:      exam.lungAusc      || "",
       lungOther:     exam.lungOther     || "",
       otherFindings: exam.otherFindings || "",
-      // Test / lung / pictures / inhaler
+      // Test / lung / pictures / inhalers
       testResults:        letter.test_results         || DEFAULT_TEST_RESULTS,
       lungRows:           letter.lung_function_tests  || [],
       pictures:           letter.pictures             || [],
-      inhalerName:        inh.name                    || "",
-      inhalerLink:        inh.link                    || "",
-      inhalerImageUrl:    inh.image_url               || "",
+      inhalers:           Array.isArray(letter.inhaler)
+        ? letter.inhaler
+        : (inh.name ? [{ id: "inh-0", name: inh.name, link: inh.link || "", imageUrl: inh.image_url || "" }] : []),
     } as Record<string, unknown>,
   };
 }
@@ -302,11 +301,7 @@ function editorDataToColumns(d: Record<string, unknown>, patientId?: string, sta
     test_results:        (d.testResults        as Record<string, unknown>) || {},
     lung_function_tests: (d.lungRows           as Record<string, unknown>[]) || [],
     pictures:            (d.pictures           as string[]) || [],
-    inhaler: {
-      name:      (d.inhalerName     as string) || "",
-      link:      (d.inhalerLink     as string) || "",
-      image_url: (d.inhalerImageUrl as string) || "",
-    },
+    inhaler:             (d.inhalers           as unknown[]) || [],
   };
 }
 
@@ -602,7 +597,7 @@ export async function duplicateLetter(
       test_results:        source.test_results        || {},
       lung_function_tests: source.lung_function_tests || [],
       pictures:            source.pictures            || [],
-      inhaler:             source.inhaler             || { name: "", link: "" },
+      inhaler:             source.inhaler             || [],
     })
     .select("id")
     .single();
