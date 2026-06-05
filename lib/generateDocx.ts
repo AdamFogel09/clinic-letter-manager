@@ -91,17 +91,6 @@ function sectionHeading(text: string): Paragraph {
   });
 }
 
-// Classic underline heading — used for Lung Function
-function classicSectionHeading(text: string, textHe?: string): Paragraph {
-  const runs: TextRun[] = [new TextRun({ text, bold: true, size: 28, color: "1A2B4A", font: "Avenir Next" })];
-  if (textHe) runs.push(new TextRun({ text: `   ${textHe}`, bold: true, size: 28, color: "1A2B4A", font: "Avenir Next" }));
-  return new Paragraph({
-    children: runs,
-    alignment: AlignmentType.LEFT,
-    spacing: { before: 120, after: 60 },
-    border: { bottom: { style: "single" as const, size: 6, color: "160B5C", space: 4 } },
-  });
-}
 
 // Hebrew section heading (אבחנה / סיכום / תכנית) — full-width bar, brand lavender background
 function hebrewHeading(text: string): Paragraph {
@@ -169,7 +158,7 @@ function lungFunctionBlocks(data: LD): Block[] {
   const rows = Array.isArray(data.lungRows) ? (data.lungRows as LungRowRaw[]) : [];
   if (rows.length === 0) return [];
 
-  const blocks: Block[] = [classicSectionHeading("Lung Function", "תפקוד ריאות")];
+  const blocks: Block[] = [sectionHeading("תפקוד ריאות")];
 
   for (const row of rows) {
     if (row.date) {

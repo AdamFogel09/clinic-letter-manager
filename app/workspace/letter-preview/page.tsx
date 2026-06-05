@@ -1015,7 +1015,7 @@ export default function LetterPreviewPage() {
             )}
 
             {d && d.lungRows?.length > 0 && (
-              <DocSection title="Lung Function" titleHe="תפקוד ריאות" plain>
+              <DocSection title="" titleHe="תפקוד ריאות">
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {d.lungRows.map(row => {
                     const mainFields:  [string, string][] = [["FEV1 L", row.fev1l], ["FEV1 %", row.fev1p], ["FVC L", row.fvcl], ["FVC %", row.fvcp], ["FEV1/FVC %", row.ratio], ["FEF 25-75 %", row.fef]];
