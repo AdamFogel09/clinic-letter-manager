@@ -551,6 +551,7 @@ export default function LetterEditorPage() {
   // Guards the auto-save effect from firing before the initial restore is complete
   const [initialized, setInitialized] = useState(false);
   const [isUpdateMode, setIsUpdateMode] = useState(false);
+  const [approvedStatus, setApprovedStatus] = useState<string>("");
   // Pending translate-overwrite confirmation (per item/section/step)
   const [txConfirm, setTxConfirm] = useState<
     | { type: "diagItem";  itemId: string }
@@ -713,6 +714,13 @@ export default function LetterEditorPage() {
       sessionStorage.removeItem("is_update_mode");
     }
 
+    // Detect if we're editing a letter that was already approved / sent
+    const approvedSt = sessionStorage.getItem("edit_from_approved_status");
+    if (approvedSt) {
+      setApprovedStatus(approvedSt);
+      sessionStorage.removeItem("edit_from_approved_status");
+    }
+
     setInitialized(true);
     }; // end run()
     run();
@@ -863,6 +871,7 @@ export default function LetterEditorPage() {
     if (supabaseLetterIdRef.current) {
       localStorage.setItem("letter_current_supabase_id", supabaseLetterIdRef.current);
     }
+    localStorage.setItem("letter_status", "Draft");
     router.push("/workspace/letter-preview");
   };
 
@@ -926,6 +935,7 @@ export default function LetterEditorPage() {
       supabaseLetterIdRef.current = saved.id;
       sessionStorage.setItem("letter_supabase_id", saved.id);
       localStorage.setItem("letter_current_supabase_id", saved.id);
+      if (approvedStatus) setApprovedStatus("");
       setDraftSaved(true);
       setTimeout(() => setDraftSaved(false), 2500);
     } catch (err) {
@@ -1529,7 +1539,7 @@ export default function LetterEditorPage() {
                         className="ml-auto text-xs flex-shrink-0 transition-colors duration-150"
                         style={{ color: "#CBD5E1" }}
                         onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>×</button>
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>Remove</button>
                     </div>
                     <input className={`w-full ${ic}`} style={is}
                       value={step.textEN}
@@ -2311,6 +2321,32 @@ export default function LetterEditorPage() {
             style={{ borderColor: "#D97706", color: "#92400E", backgroundColor: "white" }}>
             Clinical
           </button>
+        </div>
+      )}
+
+      {/* Approved-letter edit warning banner */}
+      {approvedStatus === "Sent to Patient" && (
+        <div className="flex items-center gap-3 px-5 py-2.5 flex-shrink-0"
+          style={{ backgroundColor: "#FEF2F2", borderBottom: "1px solid #FECACA" }}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="#BE123C" strokeWidth={1.75}
+            strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0">
+            <circle cx="8" cy="8" r="7"/><path d="M8 5v3M8 11h.01"/>
+          </svg>
+          <p className="text-xs font-semibold flex-1" style={{ color: "#BE123C" }}>
+            This letter was already sent to the patient. Changes will not affect the sent email — re-export the PDF after editing if needed.
+          </p>
+        </div>
+      )}
+      {approvedStatus === "Ready for Patient" && (
+        <div className="flex items-center gap-3 px-5 py-2.5 flex-shrink-0"
+          style={{ backgroundColor: "#FFFBEB", borderBottom: "1px solid #FDE68A" }}>
+          <svg viewBox="0 0 16 16" fill="none" stroke="#D97706" strokeWidth={1.75}
+            strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0">
+            <circle cx="8" cy="8" r="7"/><path d="M8 5v3M8 11h.01"/>
+          </svg>
+          <p className="text-xs font-semibold flex-1" style={{ color: "#92400E" }}>
+            This letter was already approved. Please re-preview and re-export the PDF after making changes.
+          </p>
         </div>
       )}
 

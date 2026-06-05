@@ -663,6 +663,7 @@ export default function ReviewPage() {
     localStorage.setItem("letter_current_id",          letter.id);
     localStorage.setItem("letter_current_supabase_id", letter.id);
     localStorage.setItem("letter_return_to", "review");
+    localStorage.setItem("letter_status",              letter.status);
     if (exportMode) localStorage.setItem("letter_export_mode", "1");
     else            localStorage.removeItem("letter_export_mode");
     markAsPreviewed(letter.id);

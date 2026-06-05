@@ -527,6 +527,16 @@ export default function AnatReviewLetterPage() {
                         Previous — Read-only
                       </span>
                     )}
+                    {!isCopied && (
+                      <button type="button"
+                        onClick={() => setPlanSteps(prev => prev.filter(s => s.id !== step.id))}
+                        className="ml-auto text-xs transition-colors duration-150"
+                        style={{ color: "#CBD5E1", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                        Remove
+                      </button>
+                    )}
                   </div>
                   {step.textEN.trim() && (
                     <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #F1F5F9" }}>

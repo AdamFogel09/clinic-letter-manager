@@ -235,6 +235,7 @@ export default function AllLettersPage() {
     localStorage.setItem("letter_current_id",          letter.id);
     localStorage.setItem("letter_current_supabase_id", letter.id);
     localStorage.setItem("letter_return_to", "all-letters");
+    localStorage.setItem("letter_status",              letter.status);
     localStorage.removeItem("letter_export_mode");
     router.push("/workspace/letter-preview");
   };

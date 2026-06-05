@@ -283,6 +283,8 @@ export default function LetterPreviewPage() {
   const [exportDone, setExportDone] = useState(false);
   const [pdfUploadStatus, setPdfUploadStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [pdfUploadError, setPdfUploadError] = useState("");
+  const [letterStatus, setLetterStatus] = useState("");
+  const [editWarning, setEditWarning] = useState(false);
 
   useEffect(() => {
     const rt = localStorage.getItem("letter_return_to");
@@ -293,7 +295,26 @@ export default function LetterPreviewPage() {
       setExportMode(true);
       localStorage.removeItem("letter_export_mode"); // consume the flag
     }
+    const ls = localStorage.getItem("letter_status");
+    if (ls) setLetterStatus(ls);
   }, []);
+
+  const handleEditLetter = () => {
+    if (letterStatus === "Sent to Patient") { setEditWarning(true); return; }
+    navigateToEditor();
+  };
+
+  const navigateToEditor = () => {
+    const supabaseId = localStorage.getItem("letter_current_supabase_id");
+    if (supabaseId) {
+      sessionStorage.setItem("load_from_supabase", "1");
+      sessionStorage.setItem("letter_supabase_id", supabaseId);
+      if (letterStatus === "Ready for Patient" || letterStatus === "Sent to Patient") {
+        sessionStorage.setItem("edit_from_approved_status", letterStatus);
+      }
+    }
+    router.push("/workspace/letter-editor");
+  };
 
   const handleExportPdf = async () => {
     if (exporting) return;
@@ -455,6 +476,57 @@ export default function LetterPreviewPage() {
 
   return (
     <>
+      {/* ── "Sent to Patient" edit warning dialog ── */}
+      {editWarning && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          backgroundColor: "rgba(0,0,0,0.45)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 24,
+        }}>
+          <div style={{
+            backgroundColor: "#fff", borderRadius: 16, padding: 28, maxWidth: 420, width: "100%",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: "50%", backgroundColor: "#FEE2E2",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="#BE123C" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+                  <circle cx="8" cy="8" r="7"/><path d="M8 5v3M8 11h.01"/>
+                </svg>
+              </div>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", margin: 0 }}>
+                Letter already sent to patient
+              </h3>
+            </div>
+            <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 20 }}>
+              This letter has already been sent to the patient. Editing it will <strong>not</strong> change the email that was already sent. You can still make corrections for your records — just re-export the PDF before sending again.
+            </p>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setEditWarning(false)}
+                style={{
+                  fontSize: 13, fontWeight: 600, borderRadius: 10, padding: "8px 18px",
+                  backgroundColor: "white", color: "#64748B",
+                  border: "1px solid #E2E8F0", cursor: "pointer",
+                }}>
+                Cancel
+              </button>
+              <button
+                onClick={() => { setEditWarning(false); navigateToEditor(); }}
+                style={{
+                  fontSize: 13, fontWeight: 600, borderRadius: 10, padding: "8px 18px",
+                  backgroundColor: "#BE123C", color: "#fff",
+                  border: "1px solid #BE123C", cursor: "pointer",
+                }}>
+                Edit Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <style>{`
         @media print {
           body { margin: 0 !important; background: white !important; }
@@ -523,6 +595,15 @@ export default function LetterPreviewPage() {
                   <span style={{ fontSize: 11, color: "#94A3B8" }}>{exportProgress}</span>
                 )}
                 <button
+                  onClick={handleEditLetter}
+                  style={{
+                    fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px",
+                    backgroundColor: "white", color: "#64748B",
+                    border: "1px solid #E2E8F0", cursor: "pointer", transition: "all 0.15s",
+                  }}>
+                  Edit Letter
+                </button>
+                <button
                   onClick={handleExportPdf}
                   disabled={exporting}
                   style={{
@@ -557,6 +638,15 @@ export default function LetterPreviewPage() {
           ) : (
             /* ── Normal preview mode ── */
             <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={handleEditLetter}
+                style={{
+                  fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px",
+                  backgroundColor: "white", color: "#64748B",
+                  border: "1px solid #E2E8F0", cursor: "pointer", transition: "all 0.15s",
+                }}>
+                Edit Letter
+              </button>
               {returnTo !== "review" && (
                 <button
                   onClick={handleSendToAnat}
