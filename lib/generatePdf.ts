@@ -108,37 +108,87 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
         // html2canvas); instead we pixel-manipulate the cloned image so dark
         // strokes become #1E106E while white background pixels stay white.
         onclone: (clonedDoc: Document) => {
+          // ── Lungistitute logo: pixel-colorize dark strokes to brand purple ──
           try {
             const clonedImg = clonedDoc.querySelector<HTMLImageElement>(".lungistitute-wrap img");
-            if (!clonedImg) return;
-            // Read pixel data from the main-document image (guaranteed loaded)
-            const srcImg = document.querySelector<HTMLImageElement>(".lungistitute-wrap img");
-            if (!srcImg?.complete || !srcImg.naturalWidth) return;
-
-            const offscreen = document.createElement("canvas");
-            offscreen.width  = srcImg.naturalWidth;
-            offscreen.height = srcImg.naturalHeight;
-            const ctx = offscreen.getContext("2d");
-            if (!ctx) return;
-            ctx.drawImage(srcImg, 0, 0);
-
-            const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
-            const pixels = imageData.data;
-            // Map dark pixels (logo strokes) → brand purple #1E106E (30, 16, 110)
-            // White pixels (background) stay white
-            for (let px = 0; px < pixels.length; px += 4) {
-              if ((pixels[px] + pixels[px + 1] + pixels[px + 2]) / 3 < 128) {
-                pixels[px]     = 30;
-                pixels[px + 1] = 16;
-                pixels[px + 2] = 110;
+            if (clonedImg) {
+              const srcImg = document.querySelector<HTMLImageElement>(".lungistitute-wrap img");
+              if (srcImg?.complete && srcImg.naturalWidth) {
+                const offscreen = document.createElement("canvas");
+                offscreen.width  = srcImg.naturalWidth;
+                offscreen.height = srcImg.naturalHeight;
+                const ctx = offscreen.getContext("2d");
+                if (ctx) {
+                  ctx.drawImage(srcImg, 0, 0);
+                  const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
+                  const pixels = imageData.data;
+                  for (let px = 0; px < pixels.length; px += 4) {
+                    if ((pixels[px] + pixels[px + 1] + pixels[px + 2]) / 3 < 128) {
+                      pixels[px]     = 30;
+                      pixels[px + 1] = 16;
+                      pixels[px + 2] = 110;
+                    }
+                  }
+                  ctx.putImageData(imageData, 0, 0);
+                  clonedImg.src = offscreen.toDataURL("image/png");
+                }
               }
             }
-            ctx.putImageData(imageData, 0, 0);
-            clonedImg.src = offscreen.toDataURL("image/png");
           } catch {
-            // Fallback: CSS override already ensures logo renders as black-on-white
-            // rather than a dark block, so the PDF is still legible.
+            // fallback: logo renders as black-on-white
           }
+
+          // ── Section header vertical centering ──────────────────────────────
+          // html2canvas flex alignment is unreliable regardless of align-items value.
+          // Replace flex containers with display:block + line-height centering,
+          // which html2canvas handles correctly and guarantees text is centered.
+          // This only affects the clone used for capture — the live preview is unchanged.
+
+          // Lavender heOnly bars (אבחנה/סיכום/תכנית/נקודות חשובות), fixed 28px height
+          Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar-he")).forEach(bar => {
+            bar.style.display    = "block";
+            bar.style.minHeight  = "0";
+            bar.style.height     = "28px";
+            bar.style.lineHeight = "28px";
+            bar.style.textAlign  = "center";
+            bar.style.padding    = "0 8px";
+            bar.style.boxSizing  = "border-box";
+            Array.from(bar.querySelectorAll<HTMLElement>("h3, span")).forEach(el => {
+              el.style.display    = "inline";
+              el.style.lineHeight = "28px";
+              el.style.margin     = "0";
+              el.style.padding    = "0";
+            });
+          });
+
+          // Grey section bars
+          Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar")).forEach(bar => {
+            const h3   = bar.querySelector("h3");
+            const span = bar.querySelector("span");
+            if (h3 && span) {
+              // Space-between bar (e.g. Pictures/תמונות): keep flex for horizontal layout;
+              // symmetric 5px padding already centers vertically, just clear any offset.
+              bar.style.alignItems    = "flex-start";
+              bar.style.paddingTop    = "5px";
+              bar.style.paddingBottom = "5px";
+              (h3 as HTMLElement).style.margin  = "0";
+              (h3 as HTMLElement).style.padding = "0";
+              (span as HTMLElement).style.margin  = "0";
+              (span as HTMLElement).style.padding = "0";
+            } else {
+              // Single-title centered bar: block + symmetric padding
+              bar.style.display   = "block";
+              bar.style.minHeight = "0";
+              bar.style.padding   = "5px 10px";
+              bar.style.textAlign = "center";
+              bar.style.boxSizing = "border-box";
+              Array.from(bar.querySelectorAll<HTMLElement>("h3, span")).forEach(el => {
+                el.style.display = "inline";
+                el.style.margin  = "0";
+                el.style.padding = "0";
+              });
+            }
+          });
         },
       });
 
