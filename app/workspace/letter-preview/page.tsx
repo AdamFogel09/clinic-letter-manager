@@ -810,14 +810,11 @@ export default function LetterPreviewPage() {
                 {/* Colorize the black logo to brand purple using screen blend mode:
                     black pixels × screen × #1E106E bg = #1E106E; white pixels = white */}
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
-                  {/* lungistitute-wrap: class is targeted by generatePdf.ts override CSS
-                      so the same filter works in both browser preview and html2canvas export */}
-                  <div className="lungistitute-wrap" style={{ backgroundColor: "transparent" }}>
+                  {/* lungistitute-wrap class is targeted by generatePdf.ts to fix rendering
+                      in html2canvas, which does not support mix-blend-mode:screen */}
+                  <div className="lungistitute-wrap" style={{ backgroundColor: "#1E106E", isolation: "isolate" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="/lungistitute.png" alt="מרפאת ריאות" style={{
-                      maxHeight: 52, objectFit: "contain", display: "block",
-                      filter: "brightness(0) invert(1) sepia(1) saturate(5000%) hue-rotate(190deg) brightness(27%)",
-                    }} />
+                    <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block", mixBlendMode: "screen" }} />
                   </div>
                 </div>
                 <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />

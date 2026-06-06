@@ -42,16 +42,15 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     }
     .preview-wrapper { background: white !important; gap: 0 !important; }
 
-    /* Fix lungistitute logo: html2canvas doesn't support mix-blend-mode.
-       Replace blend-mode colorisation with a CSS filter that produces the same
-       brand-purple (#1E106E) result and IS supported by html2canvas. */
+    /* Fix lungistitute logo: html2canvas doesn't support mix-blend-mode:screen.
+       Show the image without blend mode over a white background so it renders
+       cleanly in the PDF instead of as a dark block. */
     .lungistitute-wrap {
-      background-color: transparent !important;
+      background-color: white !important;
       isolation: auto !important;
     }
     .lungistitute-wrap img {
       mix-blend-mode: normal !important;
-      filter: brightness(0) invert(1) sepia(1) saturate(5000%) hue-rotate(190deg) brightness(27%) !important;
     }
   `;
   document.head.appendChild(overrideStyle);
