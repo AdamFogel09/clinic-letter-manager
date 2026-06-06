@@ -193,10 +193,10 @@ export default function DashboardPage() {
               </p>
               <a
                 href="/api/gmail/oauth/start"
-                className="ml-auto text-xs flex-shrink-0"
-                style={{ color: "#94A3B8" }}
+                className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 transition-all"
+                style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
               >
-                Reconnect
+                Reconnect Gmail
               </a>
             </>
           ) : (

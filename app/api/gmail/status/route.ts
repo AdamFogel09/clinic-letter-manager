@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isGmailConnected } from "@/lib/gmail";
+import { getAuthenticatedClient } from "@/lib/gmail";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
@@ -9,5 +9,15 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  return NextResponse.json({ connected: isGmailConnected() });
+  const client = getAuthenticatedClient();
+  if (!client) {
+    return NextResponse.json({ connected: false });
+  }
+
+  try {
+    await client.getAccessToken();
+    return NextResponse.json({ connected: true });
+  } catch {
+    return NextResponse.json({ connected: false });
+  }
 }

@@ -185,11 +185,20 @@ export async function POST(req: NextRequest) {
       userId: "me",
       requestBody: { raw: rawMessage },
     });
-  } catch (sendErr) {
+  } catch (sendErr: unknown) {
     console.error("[send-patient-email] Gmail send error:", sendErr);
+    const isAuthError =
+      sendErr instanceof Error &&
+      (sendErr.message.includes("invalid_grant") ||
+        sendErr.message.includes("Invalid Credentials") ||
+        sendErr.message.includes("Token has been expired"));
     return NextResponse.json(
-      { error: "Failed to send email via Gmail. Please try again." },
-      { status: 502 }
+      {
+        error: isAuthError
+          ? "Gmail connection has expired. Please click 'Reconnect Gmail' on the Dashboard."
+          : "Failed to send email via Gmail. Please try again.",
+      },
+      { status: isAuthError ? 401 : 502 }
     );
   }
 
