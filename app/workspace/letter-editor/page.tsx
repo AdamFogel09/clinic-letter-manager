@@ -7,6 +7,7 @@ import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
 import {
   saveLetter as saveLetterToSupabase, updateLetterStatus, getLetterById, supabaseLetterToStoredLetter,
+  updateLetterFileSizes,
   type SummarySection, type DiagnosisItem, type PlanStep,
   sectionsToSumEN, sectionsToSumHE,
   diagItemsToEN, diagItemsToHE,
@@ -1070,6 +1071,18 @@ export default function LetterEditorPage() {
       setDraftSaved(true);
       setHasUnsavedChanges(false);
       setTimeout(() => setDraftSaved(false), 2500);
+
+      // Fire-and-forget: update images_total_size_bytes based on current pictures
+      if (pictures.length > 0) {
+        const imgBytes = pictures.reduce((total, pic) => {
+          const b64 = pic.split(",")[1] ?? "";
+          return total + Math.round((b64.length * 3) / 4);
+        }, 0);
+        console.log(`[size] Images total size calculated: ${Math.round(imgBytes / 1024)} KB`);
+        updateLetterFileSizes(supabase, saved.id, { imagesSizeBytes: imgBytes })
+          .catch((e) => console.warn("[editor] size update failed:", e));
+      }
+
       return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

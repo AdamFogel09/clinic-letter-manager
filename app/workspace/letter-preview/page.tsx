@@ -7,7 +7,7 @@ import LetterHeader from "@/components/letter/LetterHeader";
 import LetterFooter from "@/components/letter/LetterFooter";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, getLetterById, cleanupOldLetterFiles } from "@/lib/supabase/letters";
+import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, updateLetterFileSizes, getLetterById, cleanupOldLetterFiles } from "@/lib/supabase/letters";
 import { exportLetterPdfBlob } from "@/lib/generatePdf";
 import { triggerDownload } from "@/lib/generateDocx";
 
@@ -186,20 +186,24 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
   return (
     <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
       {heOnly ? (
-        // Hebrew first-page sections (אבחנה/סיכום/תכנית): lavender bar — unchanged
+        // Hebrew first-page sections (אבחנה/סיכום/תכנית): lavender bar
+        // Uses flexbox centering so html2canvas renders title vertically centred reliably
         <div style={{
           width: "100%",
           backgroundColor: "#D8DEF6",
           border: "1px solid #000000",
-          textAlign: "center",
-          padding: "5px 0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: 28,
+          padding: "4px 8px",
           marginBottom: 8,
           boxSizing: "border-box",
         }}>
           <h3 style={{
             fontSize: 13, fontWeight: 700,
             color: "#1E106E",
-            margin: 0,
+            margin: 0, padding: 0, lineHeight: 1,
             fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
             letterSpacing: "0.04em",
           }}>
@@ -423,6 +427,9 @@ export default function LetterPreviewPage() {
         patientName, date, setExportProgress, patientId, location
       );
 
+      const pdfSizeBytes = blob.size;
+      console.log(`[size] PDF size calculated: ${Math.round(pdfSizeBytes / 1024)} KB`);
+
       setExportProgress("Saving PDF…");
       triggerDownload(blob, filename);
       setExportDone(true);
@@ -449,6 +456,20 @@ export default function LetterPreviewPage() {
 
           await updateLetterFileUrls(supabase, letterId, { finalPdfUrl: storagePath });
           setPdfUploadStatus("done");
+
+          // Estimate images total size from the pictures in the letter data
+          const pictures = (d?.pictures as string[]) || [];
+          const imagesTotalSizeBytes = pictures.reduce((total, pic) => {
+            const b64 = pic.split(",")[1] ?? "";
+            return total + Math.round((b64.length * 3) / 4);
+          }, 0);
+          console.log(`[size] Images total size calculated: ${Math.round(imagesTotalSizeBytes / 1024)} KB`);
+
+          // Fire-and-forget size update
+          updateLetterFileSizes(supabase, letterId, {
+            finalPdfSizeBytes: pdfSizeBytes,
+            imagesSizeBytes:   imagesTotalSizeBytes,
+          }).catch((e) => console.warn("[preview] size update error:", e));
 
           // Fire-and-forget: delete old PDF/DOCX files for this patient's other letters
           getLetterById(supabase, letterId).then((letter) => {
@@ -789,9 +810,14 @@ export default function LetterPreviewPage() {
                 {/* Colorize the black logo to brand purple using screen blend mode:
                     black pixels × screen × #1E106E bg = #1E106E; white pixels = white */}
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
-                  <div style={{ backgroundColor: "#1E106E", isolation: "isolate" }}>
+                  {/* lungistitute-wrap: class is targeted by generatePdf.ts override CSS
+                      so the same filter works in both browser preview and html2canvas export */}
+                  <div className="lungistitute-wrap" style={{ backgroundColor: "transparent" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block", mixBlendMode: "screen" }} />
+                    <img src="/lungistitute.png" alt="מרפאת ריאות" style={{
+                      maxHeight: 52, objectFit: "contain", display: "block",
+                      filter: "brightness(0) invert(1) sepia(1) saturate(5000%) hue-rotate(190deg) brightness(27%)",
+                    }} />
                   </div>
                 </div>
                 <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
@@ -1163,20 +1189,23 @@ export default function LetterPreviewPage() {
 
             {/* Important Notes — full width */}
             <div>
-              {/* Heading bar — grey bar matching all other English section headers */}
+              {/* Heading bar — flexbox-centred so html2canvas renders it reliably */}
               <div style={{
                 width: "100%",
                 backgroundColor: "#E2E2E2",
                 border: "1px solid #AAAAAA",
-                textAlign: "center",
-                padding: "5px 0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 28,
+                padding: "4px 8px",
                 marginBottom: 10,
                 boxSizing: "border-box",
               }}>
                 <h3 style={{
                   fontSize: 13, fontWeight: 700,
                   color: "#1A2B4A",
-                  margin: 0,
+                  margin: 0, padding: 0, lineHeight: 1,
                   fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
                   letterSpacing: "0.04em",
                 }}>

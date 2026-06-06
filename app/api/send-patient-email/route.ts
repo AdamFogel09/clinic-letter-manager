@@ -126,6 +126,8 @@ export async function POST(req: NextRequest) {
   }
 
   const pdfBuffer    = Buffer.from(await fileData.arrayBuffer());
+  const pdfSizeBytes = pdfBuffer.length;
+  console.log(`[size] PDF size calculated: ${Math.round(pdfSizeBytes / 1024)} KB`);
   const pdfBase64    = pdfBuffer.toString("base64");
   const pdfFilename  = buildPdfFilename(
     letter.patients?.patient_id_number || "",
@@ -206,6 +208,21 @@ export async function POST(req: NextRequest) {
   await updateLetterStatus(supabase, letterId, "Sent to Patient", {
     sentToPatientAt: new Date().toISOString(),
   });
+
+  // ── Update PDF size if not already tracked ────────────────────────────────────
+  const { data: sizeRow } = await supabase
+    .from("letters")
+    .select("final_pdf_size_bytes, images_total_size_bytes")
+    .eq("id", letterId)
+    .single();
+  if (!sizeRow?.final_pdf_size_bytes) {
+    const imgBytes = (sizeRow as { images_total_size_bytes?: number } | null)?.images_total_size_bytes || 0;
+    await supabase.from("letters").update({
+      final_pdf_size_bytes:     pdfSizeBytes,
+      total_storage_size_bytes: pdfSizeBytes + imgBytes,
+    }).eq("id", letterId);
+    console.log(`[size] Storage size fields updated`);
+  }
 
   console.log(`[send-patient-email] letter sent | id: ${letterId}`);
 

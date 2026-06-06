@@ -25,6 +25,10 @@ export interface StoredLetter {
   // Supabase Storage paths within the "clinic-letters" bucket
   finalPdfPath?: string;
   editableDocxPath?: string;
+  // File sizes in bytes (null until the relevant action has been performed)
+  finalPdfSizeBytes?:     number | null;
+  imagesTotalSizeBytes?:  number | null;
+  totalStorageSizeBytes?: number | null;
 }
 
 const STORAGE_KEY = "clinic_letters_v1";

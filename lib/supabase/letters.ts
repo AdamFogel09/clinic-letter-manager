@@ -93,6 +93,11 @@ export interface SupabaseLetter {
   sent_to_patient_at: string | null;
   editable_docx_url: string | null;
   final_pdf_url: string | null;
+  // File size tracking (bytes). Null until the relevant action has been performed.
+  final_pdf_size_bytes:      number | null;
+  editable_docx_size_bytes:  number | null;
+  images_total_size_bytes:   number | null;
+  total_storage_size_bytes:  number | null;
   summary_sections:  SummarySection[]   | null;
   diagnosis_items:   DiagnosisItem[]    | null;
   plan_steps:        PlanStep[]         | null;
@@ -154,6 +159,9 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
     editableDocxPath:  letter.editable_docx_url?.includes("/")
       ? letter.editable_docx_url
       : undefined,
+    finalPdfSizeBytes:     letter.final_pdf_size_bytes     ?? null,
+    imagesTotalSizeBytes:  letter.images_total_size_bytes  ?? null,
+    totalStorageSizeBytes: letter.total_storage_size_bytes ?? null,
     sentToEmail: undefined,
     data: {
       // Patient fields (from joined patient record)
@@ -488,6 +496,49 @@ export async function updateLetterHebrew(
     .update(payload)
     .eq("id", id);
   if (error) console.error("Supabase Hebrew update error:", error);
+}
+
+/**
+ * Update file size fields on a letters row.
+ * Call after PDF export, image upload, or email send.
+ * Only the fields you provide are written — undefined keys are skipped.
+ * total_storage_size_bytes is always recomputed from the other three.
+ */
+export async function updateLetterFileSizes(
+  supabase: SupabaseClient,
+  letterId: string,
+  sizes: {
+    finalPdfSizeBytes?:     number;
+    imagesSizeBytes?:       number;
+    editableDocxSizeBytes?: number;
+  }
+): Promise<void> {
+  // Fetch the current row so we can compute a correct total
+  const { data: existing } = await supabase
+    .from("letters")
+    .select("final_pdf_size_bytes, images_total_size_bytes, editable_docx_size_bytes")
+    .eq("id", letterId)
+    .single();
+
+  const pdfBytes  = sizes.finalPdfSizeBytes     ?? (existing?.final_pdf_size_bytes      ?? 0);
+  const imgBytes  = sizes.imagesSizeBytes        ?? (existing?.images_total_size_bytes   ?? 0);
+  const docxBytes = sizes.editableDocxSizeBytes  ?? (existing?.editable_docx_size_bytes  ?? 0);
+
+  const payload: Record<string, number> = {
+    total_storage_size_bytes: (pdfBytes || 0) + (imgBytes || 0) + (docxBytes || 0),
+  };
+  if (sizes.finalPdfSizeBytes     !== undefined) payload.final_pdf_size_bytes     = sizes.finalPdfSizeBytes;
+  if (sizes.imagesSizeBytes       !== undefined) payload.images_total_size_bytes  = sizes.imagesSizeBytes;
+  if (sizes.editableDocxSizeBytes !== undefined) payload.editable_docx_size_bytes = sizes.editableDocxSizeBytes;
+
+  const { error } = await supabase.from("letters").update(payload).eq("id", letterId);
+  if (error) {
+    console.error("[updateLetterFileSizes]", error.message);
+  } else {
+    console.log(
+      `[size] Updated letter ${letterId.slice(0, 8)}: PDF ${Math.round((pdfBytes||0)/1024)}KB · Images ${Math.round((imgBytes||0)/1024)}KB · Total ${Math.round(payload.total_storage_size_bytes/1024)}KB`
+    );
+  }
 }
 
 /**

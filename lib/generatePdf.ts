@@ -12,10 +12,47 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
   const pages = Array.from(document.querySelectorAll<HTMLElement>(".a4-page"));
   if (pages.length === 0) throw new Error("No letter pages found to export.");
 
+  // Wait for fonts before capturing so text renders at correct weight/family
+  if (document.fonts?.ready) await document.fonts.ready;
+
+  // Wait for all images inside the letter pages to finish loading
+  const allImages = Array.from(document.querySelectorAll<HTMLImageElement>(".a4-page img"));
+  const unloaded  = allImages.filter((img) => !img.complete || img.naturalWidth === 0);
+  if (unloaded.length > 0) {
+    onProgress?.("Waiting for images…");
+    await Promise.all(
+      unloaded.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            img.onload  = () => resolve();
+            img.onerror = () => resolve(); // don't block on broken images
+          })
+      )
+    );
+  }
+
   const overrideStyle = document.createElement("style");
   overrideStyle.textContent = `
-    .a4-page          { box-shadow: none !important; }
-    .preview-wrapper  { background: white !important; gap: 0 !important; }
+    /* Force exact A4 width so layout doesn't depend on browser window size */
+    .a4-page {
+      width: 820px !important;
+      max-width: 820px !important;
+      min-width: 820px !important;
+      box-shadow: none !important;
+    }
+    .preview-wrapper { background: white !important; gap: 0 !important; }
+
+    /* Fix lungistitute logo: html2canvas doesn't support mix-blend-mode.
+       Replace blend-mode colorisation with a CSS filter that produces the same
+       brand-purple (#1E106E) result and IS supported by html2canvas. */
+    .lungistitute-wrap {
+      background-color: transparent !important;
+      isolation: auto !important;
+    }
+    .lungistitute-wrap img {
+      mix-blend-mode: normal !important;
+      filter: brightness(0) invert(1) sepia(1) saturate(5000%) hue-rotate(190deg) brightness(27%) !important;
+    }
   `;
   document.head.appendChild(overrideStyle);
 
@@ -32,7 +69,10 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
         allowTaint: true,
         logging: false,
         backgroundColor: "#ffffff",
-        imageTimeout: 8000,
+        imageTimeout: 10000,
+        // Tell html2canvas to treat the viewport as 820px so responsive
+        // breakpoints don't fire even on narrow browser windows
+        windowWidth: 820,
       });
 
       const pageH_mm = (canvas.height / canvas.width) * PDF_WIDTH_MM;
@@ -98,7 +138,7 @@ export async function exportLetterPdf(
 
 /**
  * Same as exportLetterPdf but returns the PDF as a Blob instead of triggering a download.
- * Used when the PDF needs to be uploaded to Supabase Storage (e.g. for the SMS signed-URL flow).
+ * Used when the PDF needs to be uploaded to Supabase Storage.
  */
 export async function exportLetterPdfBlob(
   patientName: string,

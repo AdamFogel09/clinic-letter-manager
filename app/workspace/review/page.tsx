@@ -24,6 +24,12 @@ import { finalPdfFilename } from "@/lib/generateDocx";
 
 // ─── Storage helpers ─────────────────────────────────────────────────────────
 
+function formatBytes(b: number | null | undefined): string | null {
+  if (!b) return null;
+  if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.round(b / 1024)} KB`;
+}
+
 const STORAGE_BUCKET = "clinic-letters";
 
 /** Sanitise a string for use as a Storage path segment. */
@@ -362,6 +368,25 @@ function ReadyCard({
           </div>
         )}
 
+        {/* Storage sizes */}
+        {(letter.finalPdfSizeBytes || letter.imagesTotalSizeBytes || letter.totalStorageSizeBytes) && (
+          <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #F1F5F9" }}>
+            <p className="text-xs" style={{ color: "#94A3B8" }}>
+              Storage:{" "}
+              {formatBytes(letter.finalPdfSizeBytes) && (
+                <span>PDF {formatBytes(letter.finalPdfSizeBytes)}</span>
+              )}
+              {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span> · </span>}
+              {formatBytes(letter.imagesTotalSizeBytes) && (
+                <span>Images {formatBytes(letter.imagesTotalSizeBytes)}</span>
+              )}
+              {formatBytes(letter.totalStorageSizeBytes) && (
+                <span style={{ fontWeight: 600 }}> · Total {formatBytes(letter.totalStorageSizeBytes)}</span>
+              )}
+            </p>
+          </div>
+        )}
+
         {/* Send PDF to patient */}
         <div className="flex items-center gap-3 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: "1px dashed #F1F5F9" }}>
           <div className="flex-1 min-w-0">
@@ -472,6 +497,25 @@ function SentCard({ letter }: { letter: StoredLetter }) {
             Download Saved PDF
           </button>
           {downloadError && <p className="text-xs w-full" style={{ color: "#BE123C" }}>{downloadError}</p>}
+        </div>
+      )}
+
+      {/* Storage sizes */}
+      {(letter.finalPdfSizeBytes || letter.imagesTotalSizeBytes || letter.totalStorageSizeBytes) && (
+        <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #F1F5F9" }}>
+          <p className="text-xs" style={{ color: "#94A3B8" }}>
+            Storage:{" "}
+            {formatBytes(letter.finalPdfSizeBytes) && (
+              <span>PDF {formatBytes(letter.finalPdfSizeBytes)}</span>
+            )}
+            {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span> · </span>}
+            {formatBytes(letter.imagesTotalSizeBytes) && (
+              <span>Images {formatBytes(letter.imagesTotalSizeBytes)}</span>
+            )}
+            {formatBytes(letter.totalStorageSizeBytes) && (
+              <span style={{ fontWeight: 600 }}> · Total {formatBytes(letter.totalStorageSizeBytes)}</span>
+            )}
+          </p>
         </div>
       )}
     </div>
