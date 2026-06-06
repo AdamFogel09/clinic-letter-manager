@@ -6,7 +6,7 @@ import StatusCard from "@/components/dashboard/StatusCard";
 import { getLetters } from "@/lib/letterStore";
 
 export default function DashboardPage() {
-  const [gmailConnected, setGmailConnected] = useState<boolean | null>(null);
+  const [gmailConnected, setGmailConnected] = useState<boolean>(false);
 
   useEffect(() => {
     fetch("/api/gmail/status")
@@ -184,9 +184,7 @@ export default function DashboardPage() {
             <rect x="2" y="4" width="16" height="12" rx="2"/>
             <path d="M2 6l8 5 8-5"/>
           </svg>
-          {gmailConnected === null ? (
-            <p className="text-xs" style={{ color: "#CBD5E1" }}>Checking Gmail…</p>
-          ) : gmailConnected ? (
+          {gmailConnected ? (
             <>
               <p className="text-xs font-semibold" style={{ color: "#16A34A" }}>
                 Gmail connected — PDF sending is active
