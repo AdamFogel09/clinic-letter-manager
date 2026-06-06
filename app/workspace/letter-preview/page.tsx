@@ -458,13 +458,15 @@ export default function LetterPreviewPage() {
           await updateLetterFileUrls(supabase, letterId, { finalPdfUrl: storagePath });
           setPdfUploadStatus("done");
 
-          // Estimate images total size from the pictures in the letter data
+          // Images are stored as compressed JPEG base64 in the DB pictures[] column
+          // (max 1200px, JPEG 0.70 quality). Exact byte count strips base64 padding.
           const pictures = (d?.pictures as string[]) || [];
           const imagesTotalSizeBytes = pictures.reduce((total, pic) => {
             const b64 = pic.split(",")[1] ?? "";
-            return total + Math.round((b64.length * 3) / 4);
+            const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+            return total + Math.floor(b64.length * 3 / 4) - pad;
           }, 0);
-          console.log(`[size] Images total size calculated: ${Math.round(imagesTotalSizeBytes / 1024)} KB`);
+          console.log(`[size] PDF blob: ${Math.round(pdfSizeBytes / 1024)} KB · Images DB: ${pictures.length} image(s) = ${Math.round(imagesTotalSizeBytes / 1024)} KB`);
 
           // Fire-and-forget size update
           updateLetterFileSizes(supabase, letterId, {

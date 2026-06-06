@@ -371,18 +371,29 @@ function ReadyCard({
         {/* Storage sizes */}
         {(letter.finalPdfSizeBytes || letter.imagesTotalSizeBytes || letter.totalStorageSizeBytes) && (
           <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #F1F5F9" }}>
-            <p className="text-xs" style={{ color: "#94A3B8" }}>
-              Storage:{" "}
+            <p className="text-xs" style={{ color: "#94A3B8", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+              <span>Storage:</span>
               {formatBytes(letter.finalPdfSizeBytes) && (
-                <span>PDF {formatBytes(letter.finalPdfSizeBytes)}</span>
+                <span title="Exported PDF file saved in Supabase Storage. Includes embedded images, fonts, and full page layout — so it is larger than the image data alone.">
+                  PDF {formatBytes(letter.finalPdfSizeBytes)}
+                </span>
               )}
-              {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span> · </span>}
+              {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span>·</span>}
               {formatBytes(letter.imagesTotalSizeBytes) && (
-                <span>Images {formatBytes(letter.imagesTotalSizeBytes)}</span>
+                <span title="Total size of compressed JPEG image data stored in the database (max 1200 px, 70% quality). These images are also embedded inside the exported PDF.">
+                  Images {formatBytes(letter.imagesTotalSizeBytes)}
+                </span>
               )}
               {formatBytes(letter.totalStorageSizeBytes) && (
-                <span style={{ fontWeight: 600 }}> · Total {formatBytes(letter.totalStorageSizeBytes)}</span>
+                <span style={{ fontWeight: 600 }} title="PDF file in Supabase Storage + image data in database.">
+                  · Total {formatBytes(letter.totalStorageSizeBytes)}
+                </span>
               )}
+              <span
+                title="PDF = exported PDF file in Supabase Storage (includes images, fonts, layout). Images = compressed JPEG data stored in database (max 1200 px, JPEG 70%). Total = PDF Storage + Image DB data."
+                style={{ cursor: "default", fontSize: 11, color: "#CBD5E1", userSelect: "none" }}>
+                ⓘ
+              </span>
             </p>
           </div>
         )}
@@ -503,18 +514,29 @@ function SentCard({ letter }: { letter: StoredLetter }) {
       {/* Storage sizes */}
       {(letter.finalPdfSizeBytes || letter.imagesTotalSizeBytes || letter.totalStorageSizeBytes) && (
         <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #F1F5F9" }}>
-          <p className="text-xs" style={{ color: "#94A3B8" }}>
-            Storage:{" "}
+          <p className="text-xs" style={{ color: "#94A3B8", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+            <span>Storage:</span>
             {formatBytes(letter.finalPdfSizeBytes) && (
-              <span>PDF {formatBytes(letter.finalPdfSizeBytes)}</span>
+              <span title="Exported PDF file saved in Supabase Storage. Includes embedded images, fonts, and full page layout — so it is larger than the image data alone.">
+                PDF {formatBytes(letter.finalPdfSizeBytes)}
+              </span>
             )}
-            {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span> · </span>}
+            {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span>·</span>}
             {formatBytes(letter.imagesTotalSizeBytes) && (
-              <span>Images {formatBytes(letter.imagesTotalSizeBytes)}</span>
+              <span title="Total size of compressed JPEG image data stored in the database (max 1200 px, 70% quality). These images are also embedded inside the exported PDF.">
+                Images {formatBytes(letter.imagesTotalSizeBytes)}
+              </span>
             )}
             {formatBytes(letter.totalStorageSizeBytes) && (
-              <span style={{ fontWeight: 600 }}> · Total {formatBytes(letter.totalStorageSizeBytes)}</span>
+              <span style={{ fontWeight: 600 }} title="PDF file in Supabase Storage + image data in database.">
+                · Total {formatBytes(letter.totalStorageSizeBytes)}
+              </span>
             )}
+            <span
+              title="PDF = exported PDF file in Supabase Storage (includes images, fonts, layout). Images = compressed JPEG data stored in database (max 1200 px, JPEG 70%). Total = PDF Storage + Image DB data."
+              style={{ cursor: "default", fontSize: 11, color: "#CBD5E1", userSelect: "none" }}>
+              ⓘ
+            </span>
           </p>
         </div>
       )}

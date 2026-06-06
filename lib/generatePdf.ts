@@ -154,8 +154,12 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
         pdf.addPage([PDF_WIDTH_MM, pageH_mm]);
       }
 
+      // JPEG 0.75 balances print clarity with file size.
+      // The full-page screenshot at scale:2 already has high pixel density,
+      // so 0.75 quality is indistinguishable from 0.95 at normal viewing distance
+      // while producing PDF pages roughly 40-50% smaller.
       pdf.addImage(
-        canvas.toDataURL("image/jpeg", 0.95),
+        canvas.toDataURL("image/jpeg", 0.75),
         "JPEG",
         0, 0,
         PDF_WIDTH_MM,

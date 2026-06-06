@@ -1072,13 +1072,16 @@ export default function LetterEditorPage() {
       setHasUnsavedChanges(false);
       setTimeout(() => setDraftSaved(false), 2500);
 
-      // Fire-and-forget: update images_total_size_bytes based on current pictures
+      // Fire-and-forget: update images_total_size_bytes based on current pictures.
+      // Images are stored as compressed JPEG base64 in the DB pictures[] column
+      // (max 1200px, JPEG 0.70). The exact byte count strips base64 padding chars.
       if (pictures.length > 0) {
         const imgBytes = pictures.reduce((total, pic) => {
           const b64 = pic.split(",")[1] ?? "";
-          return total + Math.round((b64.length * 3) / 4);
+          const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+          return total + Math.floor(b64.length * 3 / 4) - pad;
         }, 0);
-        console.log(`[size] Images total size calculated: ${Math.round(imgBytes / 1024)} KB`);
+        console.log(`[size] Images DB size: ${pictures.length} image(s) = ${Math.round(imgBytes / 1024)} KB (compressed JPEG in pictures column)`);
         updateLetterFileSizes(supabase, saved.id, { imagesSizeBytes: imgBytes })
           .catch((e) => console.warn("[editor] size update failed:", e));
       }
