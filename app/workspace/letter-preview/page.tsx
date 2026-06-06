@@ -187,8 +187,9 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
     <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
       {heOnly ? (
         // Hebrew first-page sections (אבחנה/סיכום/תכנית): lavender bar
-        // Uses flexbox centering so html2canvas renders title vertically centred reliably
-        <div style={{
+        // 7px symmetric padding ensures visual centering even when html2canvas
+        // flex align-items:center bug causes items to render at bottom
+        <div className="section-bar-he" style={{
           width: "100%",
           backgroundColor: "#D8DEF6",
           border: "1px solid #000000",
@@ -196,7 +197,7 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
           alignItems: "center",
           justifyContent: "center",
           minHeight: 28,
-          padding: "4px 8px",
+          padding: "7px 8px",
           marginBottom: 8,
           boxSizing: "border-box",
         }}>
@@ -232,7 +233,7 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
         </div>
       ) : (
         // All other sections: light grey full-width bar
-        <div style={{
+        <div className="section-bar" style={{
           width: "100%",
           backgroundColor: "#E2E2E2",
           border: "1px solid #AAAAAA",
@@ -275,7 +276,7 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
 function LV({ label, value, boldValue }: { label: string; value: string; boldValue?: boolean }) {
   if (!value) return null;
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+    <div className="pdf-lv" style={{ display: "flex", gap: 8, marginBottom: 4 }}>
       <span style={{ fontSize: 13, color: "#000000", fontWeight: 700, minWidth: 120, flexShrink: 0 }}>{label}</span>
       <span style={{ fontSize: 13, color: "#1A2B4A", fontWeight: boldValue ? 700 : 400 }}>{value}</span>
     </div>
@@ -818,7 +819,7 @@ export default function LetterPreviewPage() {
                   </div>
                 </div>
                 <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
-                <div style={{ display: "flex", gap: 32 }}>
+                <div className="pdf-patient-cols" style={{ display: "flex", gap: 32 }}>
                   <div style={{ flex: 1 }}>
                     <LV label="Name"          value={d.name} />
                     <LV label="ID"            value={d.patId} />
@@ -1186,8 +1187,8 @@ export default function LetterPreviewPage() {
 
             {/* Important Notes — full width */}
             <div>
-              {/* Heading bar — flexbox-centred so html2canvas renders it reliably */}
-              <div style={{
+              {/* Heading bar — 7px symmetric padding ensures centering in html2canvas */}
+              <div className="section-bar-he" style={{
                 width: "100%",
                 backgroundColor: "#E2E2E2",
                 border: "1px solid #AAAAAA",
@@ -1195,7 +1196,7 @@ export default function LetterPreviewPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 minHeight: 28,
-                padding: "4px 8px",
+                padding: "7px 8px",
                 marginBottom: 10,
                 boxSizing: "border-box",
               }}>

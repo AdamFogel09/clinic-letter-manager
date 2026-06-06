@@ -42,15 +42,46 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     }
     .preview-wrapper { background: white !important; gap: 0 !important; }
 
-    /* Fix lungistitute logo: html2canvas doesn't support mix-blend-mode:screen.
-       Show the image without blend mode over a white background so it renders
-       cleanly in the PDF instead of as a dark block. */
+    /* Lungistitute logo: mix-blend-mode:screen is unsupported in html2canvas.
+       onclone callback pixel-colorizes the image to brand purple; here we just
+       ensure the container has no dark background that bleeds into the capture. */
     .lungistitute-wrap {
       background-color: white !important;
       isolation: auto !important;
     }
     .lungistitute-wrap img {
       mix-blend-mode: normal !important;
+    }
+
+    /* Section header vertical centering fix.
+       html2canvas 1.4.x has a bug where align-items:center renders flex children
+       at the BOTTOM of the container instead of the middle. Override to flex-start;
+       visual centering is provided by the symmetric 7px top/bottom padding set
+       directly on .section-bar-he elements in the HTML. */
+    .section-bar-he,
+    .section-bar {
+      align-items: flex-start !important;
+    }
+    .section-bar-he h3,
+    .section-bar h3,
+    .section-bar > span {
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    /* Patient details layout: replace CSS gap with explicit margin so the
+       column spacing and label-value spacing render reliably in html2canvas. */
+    .pdf-patient-cols {
+      gap: 0 !important;
+    }
+    .pdf-patient-cols > div:first-child {
+      margin-right: 32px !important;
+    }
+    .pdf-lv {
+      gap: 0 !important;
+    }
+    .pdf-lv > span:first-child {
+      margin-right: 8px !important;
     }
   `;
   document.head.appendChild(overrideStyle);
@@ -72,6 +103,43 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
         // Tell html2canvas to treat the viewport as 820px so responsive
         // breakpoints don't fire even on narrow browser windows
         windowWidth: 820,
+        // Colorize the lungistitute logo to brand purple before html2canvas
+        // captures it. The preview uses mix-blend-mode:screen (unsupported by
+        // html2canvas); instead we pixel-manipulate the cloned image so dark
+        // strokes become #1E106E while white background pixels stay white.
+        onclone: (clonedDoc: Document) => {
+          try {
+            const clonedImg = clonedDoc.querySelector<HTMLImageElement>(".lungistitute-wrap img");
+            if (!clonedImg) return;
+            // Read pixel data from the main-document image (guaranteed loaded)
+            const srcImg = document.querySelector<HTMLImageElement>(".lungistitute-wrap img");
+            if (!srcImg?.complete || !srcImg.naturalWidth) return;
+
+            const offscreen = document.createElement("canvas");
+            offscreen.width  = srcImg.naturalWidth;
+            offscreen.height = srcImg.naturalHeight;
+            const ctx = offscreen.getContext("2d");
+            if (!ctx) return;
+            ctx.drawImage(srcImg, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
+            const pixels = imageData.data;
+            // Map dark pixels (logo strokes) → brand purple #1E106E (30, 16, 110)
+            // White pixels (background) stay white
+            for (let px = 0; px < pixels.length; px += 4) {
+              if ((pixels[px] + pixels[px + 1] + pixels[px + 2]) / 3 < 128) {
+                pixels[px]     = 30;
+                pixels[px + 1] = 16;
+                pixels[px + 2] = 110;
+              }
+            }
+            ctx.putImageData(imageData, 0, 0);
+            clonedImg.src = offscreen.toDataURL("image/png");
+          } catch {
+            // Fallback: CSS override already ensures logo renders as black-on-white
+            // rather than a dark block, so the PDF is still legible.
+          }
+        },
       });
 
       const pageH_mm = (canvas.height / canvas.width) * PDF_WIDTH_MM;
