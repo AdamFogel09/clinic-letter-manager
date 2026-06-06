@@ -925,7 +925,7 @@ export default function LetterPreviewPage() {
 
             {examRows.length > 0 && (
               <DocSection title="Examination">
-                <div style={{ display: "grid", gridTemplateColumns: "max-content 1fr max-content 1fr", columnGap: 12, rowGap: 5 }}>
+                <div className="pdf-exam-grid" style={{ display: "grid", gridTemplateColumns: "max-content 1fr max-content 1fr", columnGap: 12, rowGap: 5 }}>
                   {examRows.map(([label, value]) => (
                     <div key={label} style={{ display: "contents" }}>
                       <span style={{ fontSize: 13, color: "#475569", fontWeight: 600 }}>{label}</span>

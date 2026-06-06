@@ -56,8 +56,7 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     /* Section header vertical centering fix.
        html2canvas 1.4.x has a bug where align-items:center renders flex children
        at the BOTTOM of the container instead of the middle. Override to flex-start;
-       visual centering is provided by the symmetric 7px top/bottom padding set
-       directly on .section-bar-he elements in the HTML. */
+       onclone then replaces flex with display:block + line-height centering. */
     .section-bar-he,
     .section-bar {
       align-items: flex-start !important;
@@ -67,6 +66,16 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     .section-bar > span {
       margin: 0 !important;
       padding: 0 !important;
+    }
+
+    /* Letter header: flex column + align-items:center may render the logo at the
+       right edge. Convert to block + text-align so the logo is reliably centred. */
+    .letter-header-wrap {
+      display: block !important;
+      text-align: center !important;
+    }
+    .letter-header-wrap > img {
+      display: inline-block !important;
     }
 
     /* Patient details layout: replace CSS gap with explicit margin so the
@@ -144,7 +153,10 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
           // which html2canvas handles correctly and guarantees text is centered.
           // This only affects the clone used for capture — the live preview is unchanged.
 
-          // Lavender heOnly bars (אבחנה/סיכום/תכנית/נקודות חשובות), fixed 28px height
+          // Lavender/grey bars (אבחנה/סיכום/תכנית/נקודות חשובות), fixed 28px height.
+          // Use display:block on bar + line-height trick for vertical centering.
+          // Use display:block on children (not inline) so html2canvas text-align
+          // applies reliably — inline on h3 is ignored by html2canvas's layout engine.
           Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar-he")).forEach(bar => {
             bar.style.display    = "block";
             bar.style.minHeight  = "0";
@@ -153,11 +165,14 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
             bar.style.textAlign  = "center";
             bar.style.padding    = "0 8px";
             bar.style.boxSizing  = "border-box";
+            bar.style.overflow   = "hidden";
             Array.from(bar.querySelectorAll<HTMLElement>("h3, span")).forEach(el => {
-              el.style.display    = "inline";
+              el.style.display    = "block";
               el.style.lineHeight = "28px";
+              el.style.textAlign  = "center";
               el.style.margin     = "0";
               el.style.padding    = "0";
+              el.style.width      = "100%";
             });
           });
 
@@ -176,19 +191,41 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
               (span as HTMLElement).style.margin  = "0";
               (span as HTMLElement).style.padding = "0";
             } else {
-              // Single-title centered bar: block + symmetric padding
-              bar.style.display   = "block";
-              bar.style.minHeight = "0";
-              bar.style.padding   = "5px 10px";
-              bar.style.textAlign = "center";
-              bar.style.boxSizing = "border-box";
+              // Single-title centred bar: block + symmetric padding.
+              // Children use display:block + text-align:center directly — more reliable
+              // in html2canvas than relying on display:inline + parent text-align.
+              bar.style.display    = "block";
+              bar.style.minHeight  = "0";
+              bar.style.padding    = "5px 10px";
+              bar.style.textAlign  = "center";
+              bar.style.boxSizing  = "border-box";
+              bar.style.overflow   = "hidden";
               Array.from(bar.querySelectorAll<HTMLElement>("h3, span")).forEach(el => {
-                el.style.display = "inline";
-                el.style.margin  = "0";
-                el.style.padding = "0";
+                el.style.display   = "block";
+                el.style.textAlign = "center";
+                el.style.margin    = "0";
+                el.style.padding   = "0";
+                el.style.width     = "100%";
               });
             }
           });
+
+          // ── Examination grid: fix display:contents wrappers ─────────────────
+          // html2canvas may not support display:contents on the wrapper divs,
+          // causing them to be treated as display:block grid items (breaking the
+          // 4-column layout). Unwrap them so the label/value spans are direct
+          // children of the grid container.
+          const examGrid = clonedDoc.querySelector<HTMLElement>(".pdf-exam-grid");
+          if (examGrid) {
+            Array.from(examGrid.querySelectorAll<HTMLElement>("div")).forEach(div => {
+              if (div.style.display === "contents") {
+                while (div.firstChild) {
+                  div.parentNode!.insertBefore(div.firstChild, div);
+                }
+                div.parentNode!.removeChild(div);
+              }
+            });
+          }
         },
       });
 
