@@ -6,15 +6,6 @@ import StatusCard from "@/components/dashboard/StatusCard";
 import { getLetters } from "@/lib/letterStore";
 
 export default function DashboardPage() {
-  const [gmailConnected, setGmailConnected] = useState<boolean>(false);
-
-  useEffect(() => {
-    fetch("/api/gmail/status")
-      .then((r) => r.json())
-      .then((d) => setGmailConnected(d.connected))
-      .catch(() => setGmailConnected(false));
-  }, []);
-
   const [counts, setCounts] = useState({
     draft: 0,
     readyForReview: 0,
@@ -167,50 +158,26 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Gmail connection status */}
+      {/* Gmail connection */}
       <div className="px-4 sm:px-8 mb-3">
-        <div
-          className="flex items-center gap-3 px-4 py-3 rounded-xl flex-wrap"
-          style={{
-            border: `1px solid ${gmailConnected ? "#D1FAE5" : "#E2E8F0"}`,
-            backgroundColor: gmailConnected ? "#F0FDF4" : "#FAFBFC",
-          }}
-        >
-          <svg
-            viewBox="0 0 20 20" fill="none" stroke={gmailConnected ? "#16A34A" : "#94A3B8"}
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl flex-wrap"
+          style={{ border: "1px solid #E2E8F0", backgroundColor: "#FAFBFC" }}>
+          <svg viewBox="0 0 20 20" fill="none" stroke="#94A3B8"
             strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round"
-            className="w-4 h-4 flex-shrink-0"
-          >
+            className="w-4 h-4 flex-shrink-0">
             <rect x="2" y="4" width="16" height="12" rx="2"/>
             <path d="M2 6l8 5 8-5"/>
           </svg>
-          {gmailConnected ? (
-            <>
-              <p className="text-xs font-semibold" style={{ color: "#16A34A" }}>
-                Gmail connected — PDF sending is active
-              </p>
-              <a
-                href="/api/gmail/oauth/start"
-                className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 transition-all"
-                style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
-              >
-                Reconnect Gmail
-              </a>
-            </>
-          ) : (
-            <>
-              <p className="text-xs" style={{ color: "#64748B" }}>
-                Gmail not connected — PDF emails cannot be sent
-              </p>
-              <a
-                href="/api/gmail/oauth/start"
-                className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 transition-all"
-                style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
-              >
-                Connect Gmail
-              </a>
-            </>
-          )}
+          <p className="text-xs" style={{ color: "#64748B" }}>
+            Gmail: <span className="font-semibold">lungdrsumit@gmail.com</span>
+          </p>
+          <a
+            href="/api/gmail/oauth/start"
+            className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0"
+            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
+          >
+            Connect / Reconnect Gmail
+          </a>
         </div>
       </div>
 

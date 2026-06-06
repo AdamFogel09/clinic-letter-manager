@@ -19,6 +19,9 @@ export function saveRefreshToken(refreshToken: string): void {
 }
 
 export function loadRefreshToken(): string | null {
+  // Prefer env var (works on Vercel / any deployment)
+  if (process.env.GMAIL_REFRESH_TOKEN) return process.env.GMAIL_REFRESH_TOKEN;
+  // Fall back to local file for dev
   try {
     if (!fs.existsSync(TOKEN_FILE)) return null;
     const raw = JSON.parse(fs.readFileSync(TOKEN_FILE, "utf-8"));
