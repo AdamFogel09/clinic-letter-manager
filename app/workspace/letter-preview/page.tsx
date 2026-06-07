@@ -347,7 +347,7 @@ function A4Page({ children }: { children: React.ReactNode }) {
     <div className="a4-page" style={{
       width: "100%",
       maxWidth: 820,
-      minHeight: 1123,
+      minHeight: 1160,
       backgroundColor: "white",
       fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
       boxShadow: "0 4px 6px -1px rgb(0 0 0/0.07), 0 20px 40px rgb(26 43 74/0.10)",
