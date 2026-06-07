@@ -19,17 +19,23 @@ function buildPdfFilename(patientId: string, fullName: string, location: string,
   return `${id}_${surname}_${loc}_${safeDate(date)}.pdf`;
 }
 
-/** Build a base64url-encoded RFC2822 message with a PDF and logo attachment. */
+/** Build a base64url-encoded RFC2822 message with a PDF and logo attachment.
+ *  Body is HTML so Hebrew RTL renders correctly in all email clients.
+ *  Both the HTML body and attachments use base64 transfer encoding (UTF-8 safe). */
 function buildRawEmail(params: {
   from: string;
   to: string;
   subject: string;
-  body: string;
+  bodyHtml: string;
   pdfBase64: string;
   pdfFilename: string;
   logoBase64: string;
 }): string {
   const boundary = `clinic_boundary_${Date.now()}`;
+  // Wrap base64 at 76 chars per line — required by RFC 2045
+  const wrap76 = (b64: string) => b64.replace(/(.{76})/g, "$1\r\n").trimEnd();
+  const htmlBase64 = wrap76(Buffer.from(params.bodyHtml, "utf-8").toString("base64"));
+
   const mime = [
     `MIME-Version: 1.0`,
     `From: ${params.from}`,
@@ -38,10 +44,10 @@ function buildRawEmail(params: {
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     ``,
     `--${boundary}`,
-    `Content-Type: text/plain; charset=UTF-8`,
-    `Content-Transfer-Encoding: 7bit`,
+    `Content-Type: text/html; charset=UTF-8`,
+    `Content-Transfer-Encoding: base64`,
     ``,
-    params.body,
+    htmlBase64,
     ``,
     `--${boundary}`,
     `Content-Type: application/pdf`,
@@ -157,26 +163,27 @@ export async function POST(req: NextRequest) {
 
   const gmail = google.gmail({ version: "v1", auth: authClient });
 
-  const emailBody = [
-    "Dear Patient,",
-    "",
-    "Please find attached your clinic letter from Dr. Sumit Chatterji.",
-    "",
-    "A copy of the clinic logo is also attached for your reference.",
-    "",
-    "If you have any questions regarding the contents of the letter, please contact the clinic directly.",
-    "",
-    "Kind regards,",
-    "",
-    "Dr. Sumit Chatterji",
-    "Specialist in Respiratory Medicine",
-  ].join("\n");
+  const emailBodyHtml = `<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="direction:rtl;text-align:right;font-family:Arial,'Helvetica Neue',sans-serif;font-size:16px;line-height:1.9;color:#222222;max-width:600px;margin:0 auto;padding:32px 24px;background-color:#ffffff;">
+  <p style="margin:0 0 18px;">לכבוד המטופל,</p>
+  <p style="margin:0 0 18px;">בבקשה מצאו את מכתב הקליניקה שלכם מצורף.</p>
+  <p style="margin:0 0 18px;">אנא קראו אותו בעיון ושלחו עותק אל רופא המשפחה שלכם.</p>
+  <p style="margin:0 0 18px;">לכל שאלה לגבי תוכן המכתב, צרו עמנו קשר.</p>
+  <p style="margin:0 0 18px;">בברכה,</p>
+  <p style="margin:0;">ד&quot;ר סומיט צ&#39;טרג&#39;י</p>
+</body>
+</html>`;
 
   const rawMessage = buildRawEmail({
     from:        process.env.GMAIL_SENDER_EMAIL!,
     to:          patientEmail,
     subject:     "Clinic Letter from Dr. Sumit Chatterji",
-    body:        emailBody,
+    bodyHtml:    emailBodyHtml,
     pdfBase64,
     pdfFilename,
     logoBase64,

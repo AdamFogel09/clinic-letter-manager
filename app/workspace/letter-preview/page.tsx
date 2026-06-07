@@ -373,6 +373,7 @@ export default function LetterPreviewPage() {
   const [exportMode, setExportMode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
+  const [exportError, setExportError] = useState("");
   const [exportDone, setExportDone] = useState(false);
   const [pdfUploadStatus, setPdfUploadStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [pdfUploadError, setPdfUploadError] = useState("");
@@ -413,6 +414,7 @@ export default function LetterPreviewPage() {
     if (exporting) return;
     setExporting(true);
     setExportDone(false);
+    setExportError("");
     setPdfUploadStatus("idle");
     setPdfUploadError("");
     try {
@@ -489,7 +491,10 @@ export default function LetterPreviewPage() {
         }
       }
     } catch (err) {
-      setExportProgress(`Export failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.error("[exportPdf] failed:", err);
+      setExportError(`PDF export failed: ${msg}. Please try again.`);
+      setExportProgress("");
     } finally {
       setExporting(false);
     }
@@ -733,6 +738,14 @@ export default function LetterPreviewPage() {
                 )}
                 {exporting && exportProgress && (
                   <span style={{ fontSize: 11, color: "#94A3B8" }}>{exportProgress}</span>
+                )}
+                {!exporting && exportError && (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#BE123C", display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 280 }}>
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, flexShrink: 0 }}>
+                      <circle cx="8" cy="8" r="7"/><path d="M8 5v3M8 11h.01"/>
+                    </svg>
+                    {exportError}
+                  </span>
                 )}
                 <button type="button"
                   onClick={handleEditLetter}

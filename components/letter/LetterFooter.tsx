@@ -1,6 +1,6 @@
 export default function LetterFooter() {
   return (
-    <div style={{
+    <div className="letter-footer-bar" style={{
       borderTop: "1px solid #1A2B4A",
       padding: "10px 40px 14px",
       display: "flex",

@@ -13,6 +13,7 @@ import {
   diagItemsToEN, diagItemsToHE,
   planStepsToENArr, planStepsToHEArr,
 } from "@/lib/supabase/letters";
+import { updatePatientIdNumber } from "@/lib/supabase/patients";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1067,6 +1068,17 @@ export default function LetterEditorPage() {
       supabaseLetterIdRef.current = saved.id;
       sessionStorage.setItem("letter_supabase_id", saved.id);
       localStorage.setItem("letter_current_supabase_id", saved.id);
+
+      // Persist patient ID number to the patients table so it survives Supabase reloads.
+      // This runs as part of the save — not fire-and-forget — so it's ready before preview.
+      if (patId && supabasePatientIdRef.current) {
+        try {
+          await updatePatientIdNumber(supabase, supabasePatientIdRef.current, patId);
+        } catch (e) {
+          console.warn("[saveDraft] patient ID update skipped:", e);
+        }
+      }
+
       if (approvedStatus) setApprovedStatus("");
       setDraftSaved(true);
       setHasUnsavedChanges(false);

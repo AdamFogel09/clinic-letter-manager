@@ -79,6 +79,22 @@ export async function getAllPatients(
 }
 
 // Server-side filtered search — uses Supabase ilike on name + ID columns.
+/** Update patient_id_number (national/passport ID) from the letter editor. */
+export async function updatePatientIdNumber(
+  supabase: SupabaseClient,
+  patientUuid: string,
+  patientIdNumber: string,
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase
+    .from("patients")
+    .update({ patient_id_number: patientIdNumber })
+    .eq("id", patientUuid)
+    .eq("created_by", user.id);
+  if (error) console.error("[updatePatientIdNumber]", error.message);
+}
+
 export async function searchPatients(
   supabase: SupabaseClient,
   query: string
