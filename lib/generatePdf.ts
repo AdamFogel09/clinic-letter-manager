@@ -1,10 +1,17 @@
 // Client-side PDF generation from the rendered letter preview.
-// Captures each .a4-page element with html2canvas, slices into fixed A4 pages,
-// and composites the footer on every intermediate slice so the footer appears
-// at the bottom of every PDF page regardless of content length.
+//
+// Architecture: capture each .a4-page at full height, then decompose the canvas
+// into three strips — header, content, footer — and re-compose them on every
+// PDF page so that:
+//   • Header is always at the top of every page
+//   • Footer is always at the bottom of every page
+//   • Content fills the space between them (sliced if it overflows one page)
+//
+// This replaces the previous "slice the full canvas" approach, which put the
+// footer in the wrong position on the last slice.
 
-const PDF_WIDTH_MM  = 210; // A4 width in mm
-const PDF_HEIGHT_MM = 297; // A4 height in mm (fixed for every page)
+const PDF_WIDTH_MM  = 210; // A4 width
+const PDF_HEIGHT_MM = 297; // A4 height — fixed for every page
 
 async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<unknown> {
   const html2canvas = (await import("html2canvas")).default;
@@ -13,40 +20,32 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
   const pages = Array.from(document.querySelectorAll<HTMLElement>(".a4-page"));
   if (pages.length === 0) throw new Error("No letter pages found to export.");
 
-  // Wait for fonts before capturing so text renders at correct weight/family
   if (document.fonts?.ready) await document.fonts.ready;
 
-  // Wait for all images inside the letter pages to finish loading.
-  // Track failures so we can warn the caller without blocking the export.
+  // Wait for images to finish loading
   const allImages = Array.from(document.querySelectorAll<HTMLImageElement>(".a4-page img"));
   const unloaded  = allImages.filter((img) => !img.complete || img.naturalWidth === 0);
   if (unloaded.length > 0) {
     onProgress?.("Waiting for images…");
-    let imageFailCount = 0;
+    let failCount = 0;
     await Promise.all(
-      unloaded.map(
-        (img) =>
-          new Promise<void>((resolve) => {
-            img.onload  = () => resolve();
-            img.onerror = () => { imageFailCount++; resolve(); };
-            // Safari: force re-fetch on external (non-data) images if stuck
-            if (img.src && !img.src.startsWith("data:") && !img.complete) {
-              const saved = img.src;
-              img.src = "";
-              img.src = saved;
-            }
-          })
-      )
+      unloaded.map((img) =>
+        new Promise<void>((resolve) => {
+          img.onload  = () => resolve();
+          img.onerror = () => { failCount++; resolve(); };
+          // Safari: re-trigger load on external images that are stuck
+          if (img.src && !img.src.startsWith("data:") && !img.complete) {
+            const s = img.src; img.src = ""; img.src = s;
+          }
+        }),
+      ),
     );
-    if (imageFailCount > 0) {
-      console.warn(`[generatePdf] ${imageFailCount} image(s) failed to load — continuing without them.`);
-    }
+    if (failCount > 0) console.warn(`[generatePdf] ${failCount} image(s) failed to load.`);
   }
 
-  // ── Override styles (applied during capture only) ────────────────────────────
+  // ── Override styles (applied to live doc, cloned into html2canvas) ───────────
   const overrideStyle = document.createElement("style");
   overrideStyle.textContent = `
-    /* Force exact A4 width so layout doesn't depend on browser window size */
     .a4-page {
       width: 820px !important;
       max-width: 820px !important;
@@ -55,60 +54,24 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     }
     .preview-wrapper { background: white !important; gap: 0 !important; }
 
-    /* Lungistitute logo: mix-blend-mode:screen is unsupported in html2canvas.
-       onclone callback pixel-colorizes the image to brand purple; here we just
-       ensure the container has no dark background that bleeds into the capture. */
-    .lungistitute-wrap {
-      background-color: white !important;
-      isolation: auto !important;
-    }
-    .lungistitute-wrap img {
-      mix-blend-mode: normal !important;
-    }
+    /* Lungistitute: mix-blend-mode:screen unsupported in html2canvas;
+       onclone pixel-colorizes the logo instead */
+    .lungistitute-wrap { background-color: white !important; isolation: auto !important; }
+    .lungistitute-wrap img { mix-blend-mode: normal !important; }
 
-    /* Section header vertical centering fix.
-       html2canvas 1.4.x has a bug where align-items:center renders flex children
-       at the BOTTOM of the container instead of the middle. Override to flex-start;
-       onclone then replaces flex with display:block + line-height centering. */
-    .section-bar-he,
-    .section-bar {
-      align-items: flex-start !important;
-    }
-    .section-bar-he h3,
-    .section-bar h3,
-    .section-bar > span {
-      margin: 0 !important;
-      padding: 0 !important;
-    }
+    /* Header: block + text-align so the logo is reliably centred */
+    .letter-header-wrap { display: block !important; text-align: center !important; }
+    .letter-header-wrap > img { display: inline-block !important; }
 
-    /* Letter header: flex column + align-items:center may render the logo at the
-       right edge. Convert to block + text-align so the logo is reliably centred. */
-    .letter-header-wrap {
-      display: block !important;
-      text-align: center !important;
-    }
-    .letter-header-wrap > img {
-      display: inline-block !important;
-    }
-
-    /* Patient details layout: replace CSS gap with explicit margin so the
-       column spacing and label-value spacing render reliably in html2canvas. */
-    .pdf-patient-cols {
-      gap: 0 !important;
-    }
-    .pdf-patient-cols > div:first-child {
-      margin-right: 32px !important;
-    }
-    .pdf-lv {
-      gap: 0 !important;
-    }
-    .pdf-lv > span:first-child {
-      margin-right: 8px !important;
-    }
+    /* Patient details: replace CSS gap with margin so html2canvas renders it */
+    .pdf-patient-cols { gap: 0 !important; }
+    .pdf-patient-cols > div:first-child { margin-right: 32px !important; }
+    .pdf-lv { gap: 0 !important; }
+    .pdf-lv > span:first-child { margin-right: 8px !important; }
   `;
   document.head.appendChild(overrideStyle);
 
-  // Shared html2canvas options (reused for both footer and page captures)
+  // ── Shared html2canvas config ─────────────────────────────────────────────────
   const sharedOptions = {
     scale:           2,
     useCORS:         true,
@@ -119,96 +82,116 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     windowWidth:     820,
   };
 
-  // onclone applied to every full-page capture
+  // ── onclone: applied to the CLONED document before rendering ─────────────────
   const pageOnClone = (clonedDoc: Document) => {
-    // ── Lungistitute logo: pixel-colorize dark strokes to brand purple ──
+    // ── Lungistitute logo: pixel-colorize dark strokes to brand purple ──────
     try {
       const clonedImg = clonedDoc.querySelector<HTMLImageElement>(".lungistitute-wrap img");
       if (clonedImg) {
         const srcImg = document.querySelector<HTMLImageElement>(".lungistitute-wrap img");
         if (srcImg?.complete && srcImg.naturalWidth) {
-          const offscreen = document.createElement("canvas");
-          offscreen.width  = srcImg.naturalWidth;
-          offscreen.height = srcImg.naturalHeight;
-          const ctx = offscreen.getContext("2d");
+          const off = document.createElement("canvas");
+          off.width  = srcImg.naturalWidth;
+          off.height = srcImg.naturalHeight;
+          const ctx  = off.getContext("2d");
           if (ctx) {
             ctx.drawImage(srcImg, 0, 0);
-            const imageData = ctx.getImageData(0, 0, offscreen.width, offscreen.height);
-            const pixels = imageData.data;
-            for (let px = 0; px < pixels.length; px += 4) {
-              if ((pixels[px] + pixels[px + 1] + pixels[px + 2]) / 3 < 128) {
-                pixels[px]     = 30;
-                pixels[px + 1] = 16;
-                pixels[px + 2] = 110;
+            const id  = ctx.getImageData(0, 0, off.width, off.height);
+            const px  = id.data;
+            for (let p = 0; p < px.length; p += 4) {
+              if ((px[p] + px[p + 1] + px[p + 2]) / 3 < 128) {
+                px[p] = 30; px[p + 1] = 16; px[p + 2] = 110;
               }
             }
-            ctx.putImageData(imageData, 0, 0);
-            clonedImg.src = offscreen.toDataURL("image/png");
+            ctx.putImageData(id, 0, 0);
+            clonedImg.src = off.toDataURL("image/png");
           }
         }
       }
-    } catch {
-      // fallback: logo renders as black-on-white
-    }
+    } catch { /* logo renders as black — acceptable fallback */ }
 
-    // ── Section header vertical centering ──────────────────────────────
-    // Lavender/grey bars (אבחנה/סיכום/תכנית/נקודות חשובות), fixed 28px height.
-    Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar-he")).forEach(bar => {
-      bar.style.display    = "block";
-      bar.style.minHeight  = "0";
-      bar.style.height     = "28px";
-      bar.style.lineHeight = "28px";
-      bar.style.textAlign  = "center";
-      bar.style.padding    = "0 8px";
-      bar.style.boxSizing  = "border-box";
-      bar.style.overflow   = "hidden";
-      Array.from(bar.querySelectorAll<HTMLElement>("h3, span")).forEach(el => {
-        el.style.display    = "block";
-        el.style.lineHeight = "28px";
-        el.style.textAlign  = "center";
-        el.style.margin     = "0";
-        el.style.padding    = "0";
-        el.style.width      = "100%";
-      });
-    });
+    // ── Section-header vertical centering ─────────────────────────────────
+    //
+    // html2canvas has a known bug: flex align-items:center places children at
+    // the BOTTOM of the container. The fix is to inject a stylesheet with
+    // !important into the clone — this reliably overrides the original inline
+    // display:flex because !important in any author stylesheet beats inline styles.
+    //
+    // Strategy:
+    //  • Lavender bars (.section-bar-he): block + symmetric padding (7px)
+    //  • Grey bars, single language (.pdf-bar-mono): block + symmetric padding (5px)
+    //  • Grey bars, bilingual (.pdf-bar-bilingual): flex-row + align-start + padding
+    //    (English left, Hebrew right — keep the space-between layout, just fix centering)
 
-    // Grey section bars
+    // Tag bars before injecting CSS so the selectors work
     Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar")).forEach(bar => {
-      const h3   = bar.querySelector("h3");
-      const span = bar.querySelector("span");
-      if (h3 && span) {
-        bar.style.alignItems    = "flex-start";
-        bar.style.paddingTop    = "5px";
-        bar.style.paddingBottom = "5px";
-        (h3 as HTMLElement).style.margin  = "0";
-        (h3 as HTMLElement).style.padding = "0";
-        (span as HTMLElement).style.margin  = "0";
-        (span as HTMLElement).style.padding = "0";
-      } else {
-        bar.style.display    = "block";
-        bar.style.minHeight  = "0";
-        bar.style.padding    = "5px 10px";
-        bar.style.textAlign  = "center";
-        bar.style.boxSizing  = "border-box";
-        bar.style.overflow   = "hidden";
-        Array.from(bar.querySelectorAll<HTMLElement>("h3, span")).forEach(el => {
-          el.style.display   = "block";
-          el.style.textAlign = "center";
-          el.style.margin    = "0";
-          el.style.padding   = "0";
-          el.style.width     = "100%";
-        });
-      }
+      const hasTitle = !!bar.querySelector(":scope > h3");
+      const hasHe    = !!bar.querySelector(":scope > span");
+      bar.classList.add(hasTitle && hasHe ? "pdf-bar-bilingual" : "pdf-bar-mono");
     });
 
-    // ── Examination grid: fix display:contents wrappers ─────────────────
+    const fix = clonedDoc.createElement("style");
+    fix.textContent = `
+      /* Lavender bars: block + symmetric padding */
+      .section-bar-he {
+        display: block !important;
+        padding: 7px 8px !important;
+        min-height: 0 !important;
+        text-align: center !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
+      }
+      .section-bar-he > h3 {
+        display: block !important;
+        line-height: 1.3 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        text-align: center !important;
+      }
+
+      /* Grey bars — single language */
+      .section-bar.pdf-bar-mono {
+        display: block !important;
+        padding: 5px 10px !important;
+        min-height: 0 !important;
+        text-align: center !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
+      }
+      .section-bar.pdf-bar-mono > h3,
+      .section-bar.pdf-bar-mono > span {
+        display: block !important;
+        line-height: 1.3 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        text-align: center !important;
+      }
+
+      /* Grey bars — bilingual (English left, Hebrew right) */
+      .section-bar.pdf-bar-bilingual {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: flex-start !important;
+        padding: 5px 10px !important;
+        min-height: 0 !important;
+        box-sizing: border-box !important;
+      }
+      .section-bar.pdf-bar-bilingual > h3,
+      .section-bar.pdf-bar-bilingual > span {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.3 !important;
+      }
+    `;
+    clonedDoc.head.appendChild(fix);
+
+    // ── Examination grid: flatten display:contents wrappers ────────────────
     const examGrid = clonedDoc.querySelector<HTMLElement>(".pdf-exam-grid");
     if (examGrid) {
       Array.from(examGrid.querySelectorAll<HTMLElement>("div")).forEach(div => {
         if (div.style.display === "contents") {
-          while (div.firstChild) {
-            div.parentNode!.insertBefore(div.firstChild, div);
-          }
+          while (div.firstChild) div.parentNode!.insertBefore(div.firstChild, div);
           div.parentNode!.removeChild(div);
         }
       });
@@ -219,113 +202,107 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
   let firstPdfPage = true;
 
   try {
-    // ── Capture footer once for compositing onto intermediate slices ──────────
-    // When page content overflows A4 height, we slice the canvas and add the
-    // footer image at the bottom of every intermediate slice so the footer
-    // appears on every printed page.
-    let footerCanvas: HTMLCanvasElement | null = null;
-    try {
-      const footerEl = pages[0]?.querySelector<HTMLElement>(".letter-footer-bar");
-      if (footerEl) {
-        footerCanvas = await html2canvas(footerEl, { ...sharedOptions });
-      }
-    } catch {
-      // Footer capture failed — intermediate slices will have no footer (graceful degradation)
-    }
-
-    // ── Main loop: one A4Page element → one or more PDF pages ─────────────────
     for (let i = 0; i < pages.length; i++) {
       onProgress?.(`Rendering page ${i + 1} of ${pages.length}…`);
 
-      const fullCanvas = await html2canvas(pages[i], {
-        ...sharedOptions,
-        onclone: pageOnClone,
-      });
+      const pageEl = pages[i];
 
-      // A4 height in canvas pixels: proportional to the captured width
-      const a4HeightPx = Math.round((PDF_HEIGHT_MM / PDF_WIDTH_MM) * fullCanvas.width);
+      // ── Measure header/footer heights in DOM pixels BEFORE capture ────────
+      // getBoundingClientRect reflects the actual rendered layout including
+      // any styles injected by overrideStyle above.
+      const pageRect    = pageEl.getBoundingClientRect();
+      const headerEl    = pageEl.querySelector<HTMLElement>(".letter-header-wrap");
+      const footerEl    = pageEl.querySelector<HTMLElement>(".letter-footer-bar");
+      const headerDomH  = headerEl ? headerEl.getBoundingClientRect().height : 0;
+      const footerDomH  = footerEl ? footerEl.getBoundingClientRect().height : 0;
+      const pageDomH    = Math.max(pageRect.height, 1);
 
-      // Number of A4 slices needed (content may exceed one A4 page)
-      const numSlices = Math.max(1, Math.ceil(fullCanvas.height / a4HeightPx));
+      // ── Capture the full page ─────────────────────────────────────────────
+      const fullCanvas = await html2canvas(pageEl, { ...sharedOptions, onclone: pageOnClone });
 
-      for (let s = 0; s < numSlices; s++) {
-        // Build a canvas exactly A4-sized for this slice
+      // ── Convert DOM measurements → canvas pixels ──────────────────────────
+      // domToCanvas accounts for any difference between the DOM render size and
+      // the html2canvas render size (scale, windowWidth, etc.).
+      const domToCanvas = fullCanvas.height / pageDomH;
+      const headerH     = Math.round(headerDomH * domToCanvas);
+      const footerH     = Math.round(footerDomH * domToCanvas);
+
+      // Guard: never let header+footer consume more than 80% of the canvas
+      const safeHeaderH = Math.min(headerH, Math.floor(fullCanvas.height * 0.5));
+      const safeFooterH = Math.min(footerH, Math.floor(fullCanvas.height * 0.3));
+
+      // ── Content strip: the area between header and footer ─────────────────
+      const contentStartY  = safeHeaderH;
+      const contentEndY    = fullCanvas.height - safeFooterH;
+      const totalContentH  = Math.max(0, contentEndY - contentStartY);
+
+      // ── Fixed A4 height in canvas pixels ──────────────────────────────────
+      const a4Px = Math.round((PDF_HEIGHT_MM / PDF_WIDTH_MM) * fullCanvas.width);
+
+      // Usable content height per PDF page (A4 minus header and footer)
+      const usableH  = Math.max(1, a4Px - safeHeaderH - safeFooterH);
+      const numPages = Math.max(1, Math.ceil(totalContentH / usableH));
+
+      for (let s = 0; s < numPages; s++) {
         const sliceCanvas  = document.createElement("canvas");
         sliceCanvas.width  = fullCanvas.width;
-        sliceCanvas.height = a4HeightPx;
+        sliceCanvas.height = a4Px;
         const ctx = sliceCanvas.getContext("2d");
         if (!ctx) continue;
 
-        // White background (the last slice may be shorter than A4 — pad with white)
+        // White background
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
 
-        // Draw the portion of the full canvas that belongs to this slice
-        ctx.drawImage(
-          fullCanvas,
-          0, 0, fullCanvas.width, fullCanvas.height,
-          0, -s * a4HeightPx, fullCanvas.width, fullCanvas.height,
-        );
-
-        // For intermediate slices (not the last), overlay the footer at the bottom.
-        // The last slice already contains the original rendered footer from the DOM.
-        if (s < numSlices - 1 && footerCanvas && footerCanvas.width > 0) {
-          // Scale the footer to match the slice width
-          const footerScaledH = Math.round(
-            footerCanvas.height * (sliceCanvas.width / footerCanvas.width)
-          );
-          const footerY = sliceCanvas.height - footerScaledH;
-          // Erase the area where we'll draw the footer (avoids double-drawing if content reached there)
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, footerY, sliceCanvas.width, footerScaledH);
+        // 1. Header — always at the top of every page
+        if (safeHeaderH > 0) {
           ctx.drawImage(
-            footerCanvas,
-            0, 0, footerCanvas.width, footerCanvas.height,
-            0, footerY, sliceCanvas.width, footerScaledH,
+            fullCanvas,
+            0, 0, fullCanvas.width, safeHeaderH,
+            0, 0, sliceCanvas.width, safeHeaderH,
           );
         }
 
-        // Add PDF page (always A4)
+        // 2. Content chunk for this page
+        const srcY = contentStartY + s * usableH;
+        const srcH = Math.min(usableH, totalContentH - s * usableH);
+        if (srcH > 0) {
+          ctx.drawImage(
+            fullCanvas,
+            0, srcY, fullCanvas.width, srcH,
+            0, safeHeaderH, sliceCanvas.width, srcH,
+          );
+        }
+
+        // 3. Footer — always at the bottom of every page
+        if (safeFooterH > 0) {
+          ctx.drawImage(
+            fullCanvas,
+            0, fullCanvas.height - safeFooterH, fullCanvas.width, safeFooterH,
+            0, a4Px - safeFooterH, sliceCanvas.width, safeFooterH,
+          );
+        }
+
+        // ── Add page to PDF ────────────────────────────────────────────────
         if (firstPdfPage) {
           pdf = new jsPDF({
             orientation: "portrait",
-            unit: "mm",
-            format: [PDF_WIDTH_MM, PDF_HEIGHT_MM],
+            unit:        "mm",
+            format:      [PDF_WIDTH_MM, PDF_HEIGHT_MM],
           });
           firstPdfPage = false;
         } else {
           pdf!.addPage([PDF_WIDTH_MM, PDF_HEIGHT_MM]);
         }
 
-        // JPEG 0.75 balances print clarity with file size.
+        // 0.92 quality — higher than the previous 0.75 for better text clarity
         pdf!.addImage(
-          sliceCanvas.toDataURL("image/jpeg", 0.75),
+          sliceCanvas.toDataURL("image/jpeg", 0.92),
           "JPEG",
           0, 0,
           PDF_WIDTH_MM,
           PDF_HEIGHT_MM,
         );
-
-        // Overlay clickable link annotations so hyperlinks survive the image-based export.
-        // Only on the first slice of each page (links are near the top of the content).
-        if (s === 0) {
-          const currentPdf = pdf!;
-          const pageRect   = pages[i].getBoundingClientRect();
-          if (pageRect.width > 0 && pageRect.height > 0) {
-            const scaleX = PDF_WIDTH_MM  / pageRect.width;
-            const scaleY = PDF_HEIGHT_MM / pageRect.height;
-            pages[i].querySelectorAll<HTMLAnchorElement>("a[href]").forEach((anchor) => {
-              const href = anchor.getAttribute("href");
-              if (!href || !href.startsWith("http")) return;
-              const r = anchor.getBoundingClientRect();
-              const x = (r.left - pageRect.left) * scaleX;
-              const y = (r.top  - pageRect.top)  * scaleY;
-              const w = r.width  * scaleX;
-              const h = r.height * scaleY;
-              if (w > 0 && h > 0) currentPdf.link(x, y, w, h, { url: href });
-            });
-          }
-        }
       }
     }
   } finally {
@@ -351,10 +328,6 @@ export async function exportLetterPdf(
   pdf.save(filename);
 }
 
-/**
- * Same as exportLetterPdf but returns the PDF as a Blob instead of triggering a download.
- * Used when the PDF needs to be uploaded to Supabase Storage.
- */
 export async function exportLetterPdfBlob(
   patientName: string,
   date: string,
