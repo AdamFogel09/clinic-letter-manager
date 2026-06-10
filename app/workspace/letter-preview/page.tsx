@@ -356,17 +356,21 @@ interface SectionDef {
 }
 
 // Fixed A4 page wrapper — exactly PAGE_H tall so every screenshot is A4.
-// contentOffset: how many px into the full content flow this page's window starts.
-// totalContentH: total content height (written to data- attrs for isPageEmpty).
-function A4Page({ children, contentOffset = 0, totalContentH = 0 }: {
+// contentOffset : first visible pixel in the content flow.
+// windowHeight  : how many px of the flow are clipped (≤ CONTENT_H). Pages with
+//                 a moved break point may show slightly less than CONTENT_H, leaving
+//                 a small blank margin at the bottom — intentional, avoids orphans.
+function A4Page({ children, contentOffset = 0, windowHeight = CONTENT_H, totalContentH = 0 }: {
   children: React.ReactNode;
   contentOffset?: number;
+  windowHeight?: number;
   totalContentH?: number;
 }) {
   return (
     <div
       className="a4-page"
       data-content-offset={contentOffset}
+      data-window-height={windowHeight}
       data-total-height={totalContentH}
       style={{
         width: "100%",
@@ -389,8 +393,8 @@ function A4Page({ children, contentOffset = 0, totalContentH = 0 }: {
         padding: "14px 40px 16px",
         position: "relative",
       }}>
-        {/* Fixed-height viewport — clips exactly CONTENT_H px of the content flow */}
-        <div style={{ height: CONTENT_H, overflow: "hidden", position: "relative" }}>
+        {/* Variable-height viewport — clips exactly windowHeight px of the content flow */}
+        <div style={{ height: windowHeight, overflow: "hidden", position: "relative" }}>
           <div style={{ position: "absolute", top: -contentOffset, left: 0, right: 0 }}>
             {children}
           </div>
@@ -401,12 +405,17 @@ function A4Page({ children, contentOffset = 0, totalContentH = 0 }: {
   );
 }
 
-// Renders all sections as a single continuous flow, measures total height, then
-// creates N A4 pages each showing a CONTENT_H-px window. Content splits naturally
-// at page boundaries — no blank gaps from whole-section packing.
+// Renders all sections as one continuous flow, measures total height + section positions,
+// then computes smart page-break offsets with orphan protection:
+//   — never break within the first MIN_BODY_PX px below a section's title bar.
+//   — if a natural CONTENT_H break falls in that "orphan zone", move the break back to
+//     just before the section so it starts cleanly on the next page.
+// Each A4Page shows a `windowHeight` px clip of the flow starting at its offset.
 function PageBuilder({ sections }: { sections: SectionDef[] }) {
-  const [totalHeight, setTotalHeight] = useState(0);
-  const [measuring, setMeasuring]     = useState(true);
+  const [offsets,       setOffsets]       = useState<number[]>([]);
+  const [windowHeights, setWindowHeights] = useState<number[]>([]);
+  const [measuredTotalH, setMeasuredTotalH] = useState(0);
+  const [measuring, setMeasuring]         = useState(true);
   const measureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -428,8 +437,63 @@ function PageBuilder({ sections }: { sections: SectionDef[] }) {
         await new Promise<void>(r => requestAnimationFrame(() => r()));
       }
 
-      const totalH = container.getBoundingClientRect().height;
-      setTotalHeight(totalH);
+      const cRect  = container.getBoundingClientRect();
+      const totalH = cRect.height;
+
+      // Measure each section's top edge and the bottom of its title bar.
+      const secs: { top: number; barEnd: number }[] = [];
+      Array.from(container.querySelectorAll<HTMLElement>("[data-sid]")).forEach(el => {
+        const top  = el.getBoundingClientRect().top  - cRect.top;
+        const bar  = el.querySelector<HTMLElement>(".section-bar, .section-bar-he");
+        const barEnd = bar
+          ? (bar.getBoundingClientRect().bottom - cRect.top)
+          : (top + 32); // fallback: assume 32 px title height
+        secs.push({ top, barEnd });
+      });
+
+      // Compute smart break offsets.
+      // MIN_BODY_PX: minimum body content (below the title bar) that must be visible
+      // on the same page as the title before we allow a break. If less body is visible,
+      // the break moves to just before the section (orphan protection).
+      const MIN_BODY_PX = 50;
+      const computedOffsets: number[]      = [0];
+      const computedWH:      number[]      = [];
+      let prev = 0;
+
+      while (true) {
+        const target = prev + CONTENT_H;
+        if (target >= totalH) {
+          // Last window: show remaining content, capped at CONTENT_H.
+          computedWH.push(Math.min(totalH - prev, CONTENT_H));
+          break;
+        }
+
+        // Check if `target` falls in the orphan zone of any section.
+        let breakAt = target;
+        for (const s of secs) {
+          if (target > s.top && target < s.barEnd + MIN_BODY_PX) {
+            // Break would leave only the title (+ < MIN_BODY_PX of body) visible.
+            // Move break to just before this section starts.
+            const candidate = s.top - SECTION_GAP;
+            if (candidate > prev + 100) breakAt = candidate; // guard: must advance ≥ 100 px
+            break;
+          }
+        }
+
+        computedWH.push(breakAt - prev);
+        computedOffsets.push(breakAt);
+        prev = breakAt;
+      }
+
+      // Drop the last page if it would show < 50 px of content (avoids near-blank pages).
+      if (computedWH.length > 1 && computedWH[computedWH.length - 1] < 50) {
+        computedWH.pop();
+        computedOffsets.pop();
+      }
+
+      setOffsets(computedOffsets);
+      setWindowHeights(computedWH);
+      setMeasuredTotalH(totalH);
       setMeasuring(false);
     };
 
@@ -437,17 +501,14 @@ function PageBuilder({ sections }: { sections: SectionDef[] }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [measuring]);
 
-  // Drop the last page if it would show less than 50 px of content (avoids near-blank pages).
-  let numPages = measuring ? 0 : Math.max(1, Math.ceil(totalHeight / CONTENT_H));
-  if (numPages > 1) {
-    const lastFill = totalHeight - (numPages - 1) * CONTENT_H;
-    if (lastFill < 50) numPages--;
-  }
-
-  // The same content renders in every page — each is windowed to a different offset.
+  // The same content renders in every page — each clips a different windowHeight window.
   const content = (
     <div style={{ display: "flex", flexDirection: "column", gap: SECTION_GAP }}>
-      {sections.map(s => <div key={s.id}>{s.render()}</div>)}
+      {sections.map(s => (
+        <div key={s.id} data-sid={s.id}>
+          {s.render()}
+        </div>
+      ))}
     </div>
   );
 
@@ -472,9 +533,14 @@ function PageBuilder({ sections }: { sections: SectionDef[] }) {
         </div>
       )}
 
-      {/* A4 pages — each shows a CONTENT_H-px window of the content flow */}
-      {!measuring && Array.from({ length: numPages }, (_, i) => (
-        <A4Page key={i} contentOffset={i * CONTENT_H} totalContentH={totalHeight}>
+      {/* A4 pages — each shows a smart-break window of the content flow */}
+      {!measuring && offsets.map((offset, i) => (
+        <A4Page
+          key={i}
+          contentOffset={offset}
+          windowHeight={windowHeights[i] ?? CONTENT_H}
+          totalContentH={measuredTotalH}
+        >
           {content}
         </A4Page>
       ))}
