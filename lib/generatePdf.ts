@@ -108,7 +108,7 @@ function onCloneFix(clonedDoc: Document): void {
   Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar-he")).forEach(bar => {
     imp(bar, "display",    "block");
     imp(bar, "text-align", "center");
-    imp(bar, "padding",    "7px 8px");
+    imp(bar, "padding",    "4px 8px 9px");
     imp(bar, "box-sizing", "border-box");
     imp(bar, "width",      "100%");
     Array.from(bar.querySelectorAll<HTMLElement>(".section-title-text")).forEach(el => {
@@ -127,14 +127,14 @@ function onCloneFix(clonedDoc: Document): void {
     if (items.length >= 2) {
       imp(bar, "display",         "flex");
       imp(bar, "flex-direction",  "row");
-      imp(bar, "align-items",     "center");
+      imp(bar, "align-items",     "flex-start");
       imp(bar, "justify-content", "space-between");
-      imp(bar, "padding",         "5px 10px");
+      imp(bar, "padding",         "3px 10px 8px");
       imp(bar, "box-sizing",      "border-box");
     } else {
       imp(bar, "display",    "block");
       imp(bar, "text-align", "center");
-      imp(bar, "padding",    "5px 10px");
+      imp(bar, "padding",    "3px 10px 8px");
       imp(bar, "box-sizing", "border-box");
       imp(bar, "width",      "100%");
     }

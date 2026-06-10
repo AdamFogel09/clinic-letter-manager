@@ -194,7 +194,7 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
           width: "100%",
           backgroundColor: "#D8DEF6",
           border: "1px solid #000000",
-          padding: "7px 8px",
+          padding: "4px 8px 9px",
           marginBottom: 8,
           boxSizing: "border-box",
           textAlign: "center",
@@ -236,10 +236,10 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
           // Bilingual: flex space-between. Single title: block + text-align center.
           // inline-block children + text-align center is universally reliable (incl. html2canvas).
           display: (title && titleHe) ? "flex" : "block",
-          alignItems: "center",
+          alignItems: "flex-start",
           justifyContent: (title && titleHe) ? "space-between" : undefined,
           textAlign: (title && titleHe) ? undefined : "center",
-          padding: "5px 10px",
+          padding: "3px 10px 8px",
           marginBottom: 10,
           boxSizing: "border-box",
         }}>
