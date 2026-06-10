@@ -284,14 +284,21 @@ function LV({ label, value, boldValue }: { label: string; value: string; boldVal
 
 function TextBlock({ text, rtl }: { text: string; rtl?: boolean }) {
   if (!text?.trim()) return null;
+  // Split into lines so each paragraph is an atomic unit (no mid-line page cuts).
+  const lines = text.split("\n");
   return (
-    <p style={{
-      fontSize: 13, color: "#1A2B4A", lineHeight: 1.7, margin: 0,
-      direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
-      whiteSpace: "pre-wrap",
-    }}>
-      {text}
-    </p>
+    <div style={{ direction: rtl ? "rtl" : "ltr" }}>
+      {lines.map((line, i) => (
+        <div key={i} data-atomic="1" style={{
+          fontSize: 13, color: "#1A2B4A", lineHeight: 1.7,
+          textAlign: rtl ? "right" : "left",
+          whiteSpace: "pre-wrap",
+          minHeight: line.trim() ? undefined : "1.2em",
+        }}>
+          {line || " "}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -302,22 +309,22 @@ function SummaryBlock({ text, rtl }: { text: string; rtl?: boolean }) {
   if (!text?.trim()) return null;
   const lines = text.split("\n").map(l => l.replace(OLD_LABEL, ""));
   return (
-    <p style={{
-      fontSize: 13, color: "#1A2B4A", lineHeight: 1.7, margin: 0,
-      direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
-      whiteSpace: "pre-wrap",
-    }}>
+    <div style={{ direction: rtl ? "rtl" : "ltr" }}>
       {lines.map((line, i) => (
-        <span key={i}>
+        <div key={i} data-atomic="1" style={{
+          fontSize: 13, color: "#1A2B4A", lineHeight: 1.7,
+          textAlign: rtl ? "right" : "left",
+          whiteSpace: "pre-wrap",
+          minHeight: line.trim() ? undefined : "1.2em",
+        }}>
           {DATE_LINE.test(line.trim()) ? (
             <strong style={{ fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif", color: "#1E106E", fontSize: 13 }}>
               {line}
             </strong>
-          ) : line}
-          {i < lines.length - 1 ? "\n" : null}
-        </span>
+          ) : (line || " ")}
+        </div>
       ))}
-    </p>
+    </div>
   );
 }
 
@@ -895,7 +902,7 @@ export default function LetterPreviewPage() {
         <DocSection title="תכנית" heOnly>
           <div style={{ direction: "rtl" }}>
             {d.planStepsHE.filter(s => s.trim()).map((step, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start", textAlign: "right" }}>
+              <div key={i} data-atomic="1" style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start", textAlign: "right" }}>
                 <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
                 <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
               </div>
@@ -957,7 +964,7 @@ export default function LetterPreviewPage() {
         <DocSection title="Medications">
           <div>
             {d.medications.map((m, i) => (
-              <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {m}</p>
+              <p key={i} data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {m}</p>
             ))}
           </div>
         </DocSection>
@@ -972,7 +979,7 @@ export default function LetterPreviewPage() {
         <DocSection title="Allergies">
           <div>
             {d.allergies.map((a, i) => (
-              <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {a}</p>
+              <p key={i} data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {a}</p>
             ))}
           </div>
         </DocSection>
@@ -995,16 +1002,18 @@ export default function LetterPreviewPage() {
       id: "examination",
       estimate: examRows.length * 22 + 35,
       render: () => (
-        <DocSection title="Examination">
-          <div className="pdf-exam-grid" style={{ display: "grid", gridTemplateColumns: "max-content 1fr max-content 1fr", columnGap: 12, rowGap: 5 }}>
-            {examRows.map(([label, value]) => (
-              <div key={label} style={{ display: "contents" }}>
-                <span style={{ fontSize: 13, color: "#475569", fontWeight: 600 }}>{label}</span>
-                <span style={{ fontSize: 13, color: "#1A2B4A" }}>{value}</span>
-              </div>
-            ))}
-          </div>
-        </DocSection>
+        <div data-atomic="1">
+          <DocSection title="Examination">
+            <div className="pdf-exam-grid" style={{ display: "grid", gridTemplateColumns: "max-content 1fr max-content 1fr", columnGap: 12, rowGap: 5 }}>
+              {examRows.map(([label, value]) => (
+                <div key={label} style={{ display: "contents" }}>
+                  <span style={{ fontSize: 13, color: "#475569", fontWeight: 600 }}>{label}</span>
+                  <span style={{ fontSize: 13, color: "#1A2B4A" }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </DocSection>
+        </div>
       ),
     });
 
@@ -1016,7 +1025,7 @@ export default function LetterPreviewPage() {
         <DocSection title="Plan">
           <div>
             {d.planStepsEN.filter(s => s.trim()).map((step, i) => (
-              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start" }}>
+              <div key={i} data-atomic="1" style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start" }}>
                 <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, minWidth: 18, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
                 <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
               </div>
