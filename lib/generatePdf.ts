@@ -104,36 +104,45 @@ function onCloneFix(clonedDoc: Document): void {
     imp(img, "margin",  "0 auto");
   });
 
-  // Fix Hebrew section bars (.section-bar-he): flex + centered.
+  // Fix Hebrew section bars (.section-bar-he): block + text-align center + inline-block child.
   Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar-he")).forEach(bar => {
-    imp(bar, "display",         "flex");
-    imp(bar, "flex-direction",  "row");
-    imp(bar, "align-items",     "center");
-    imp(bar, "justify-content", "center");
-    imp(bar, "padding",         "7px 8px");
-    imp(bar, "text-align",      "center");
-    imp(bar, "box-sizing",      "border-box");
-    imp(bar, "width",           "100%");
+    imp(bar, "display",    "block");
+    imp(bar, "text-align", "center");
+    imp(bar, "padding",    "7px 8px");
+    imp(bar, "box-sizing", "border-box");
+    imp(bar, "width",      "100%");
     Array.from(bar.querySelectorAll<HTMLElement>(".section-title-text")).forEach(el => {
+      imp(el, "display",     "inline-block");
+      imp(el, "text-align",  "center");
       imp(el, "margin",      "0");
       imp(el, "padding",     "0");
       imp(el, "line-height", "1");
-      imp(el, "text-align",  "center");
     });
   });
 
-  // Fix English section bars (.section-bar): flex centering (single title = center, bilingual = space-between).
+  // Fix English section bars (.section-bar): single title = block+center, bilingual = flex space-between.
+  // Using inline-block children + text-align:center is universally supported including html2canvas.
   Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar")).forEach(bar => {
     const items = Array.from(bar.querySelectorAll<HTMLElement>(":scope > .section-title-text"));
-    imp(bar, "display",         "flex");
-    imp(bar, "flex-direction",  "row");
-    imp(bar, "align-items",     "center");
-    imp(bar, "justify-content", items.length >= 2 ? "space-between" : "center");
-    imp(bar, "padding",         "5px 10px");
-    imp(bar, "box-sizing",      "border-box");
-    imp(bar, "width",           "100%");
+    if (items.length >= 2) {
+      imp(bar, "display",         "flex");
+      imp(bar, "flex-direction",  "row");
+      imp(bar, "align-items",     "center");
+      imp(bar, "justify-content", "space-between");
+      imp(bar, "padding",         "5px 10px");
+      imp(bar, "box-sizing",      "border-box");
+    } else {
+      imp(bar, "display",    "block");
+      imp(bar, "text-align", "center");
+      imp(bar, "padding",    "5px 10px");
+      imp(bar, "box-sizing", "border-box");
+      imp(bar, "width",      "100%");
+    }
     items.forEach(el => {
-      imp(el, "margin", "0"); imp(el, "padding", "0"); imp(el, "line-height", "1");
+      imp(el, "display",     "inline-block");
+      imp(el, "margin",      "0");
+      imp(el, "padding",     "0");
+      imp(el, "line-height", "1");
     });
   });
 

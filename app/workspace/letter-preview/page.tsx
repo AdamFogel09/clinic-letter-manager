@@ -204,7 +204,7 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
             fontSize: 13, fontWeight: 700, color: "#1E106E",
             fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
             letterSpacing: "0.04em",
-            display: "block",
+            display: "inline-block",
           }}>
             {title}
           </div>
@@ -233,9 +233,12 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
           width: "100%",
           backgroundColor: "#E2E2E2",
           border: "1px solid #AAAAAA",
-          display: "flex",
+          // Bilingual: flex space-between. Single title: block + text-align center.
+          // inline-block children + text-align center is universally reliable (incl. html2canvas).
+          display: (title && titleHe) ? "flex" : "block",
           alignItems: "center",
-          justifyContent: (title && titleHe) ? "space-between" : "center",
+          justifyContent: (title && titleHe) ? "space-between" : undefined,
+          textAlign: (title && titleHe) ? undefined : "center",
           padding: "5px 10px",
           marginBottom: 10,
           boxSizing: "border-box",
@@ -246,7 +249,7 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
               margin: 0, padding: 0, lineHeight: 1,
               fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
               letterSpacing: "0.05em",
-              display: "block",
+              display: "inline-block",
             }}>
               {title}
             </div>
@@ -257,7 +260,7 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
               margin: 0, padding: 0, lineHeight: 1,
               fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
               direction: "rtl",
-              display: "block",
+              display: "inline-block",
             }}>
               {titleHe}
             </div>
