@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import LetterHeader from "@/components/letter/LetterHeader";
 import LetterFooter from "@/components/letter/LetterFooter";
 import { upsertLetter } from "@/lib/letterStore";
@@ -133,8 +132,13 @@ function formatDisplayDate(d: string): string {
 }
 
 function hasTestData(val: unknown): boolean {
-  if (typeof val === "string") return (val as string).trim().length > 0;
-  if (val && typeof val === "object") return Object.values(val as Record<string, unknown>).some(v => hasTestData(v));
+  if (typeof val === "string") return val.trim().length > 0;
+  if (Array.isArray(val)) return val.some(item => hasTestData(item));
+  if (val && typeof val === "object") {
+    return Object.entries(val as Record<string, unknown>)
+      .filter(([k]) => k !== "id" && k !== "selected")
+      .some(([, v]) => hasTestData(v));
+  }
   return false;
 }
 
@@ -184,35 +188,28 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
   title: string; titleHe?: string; heOnly?: boolean; plain?: boolean; children: React.ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 14, breakInside: "avoid", pageBreakInside: "avoid" }}>
+    <div style={{ marginBottom: 0 }}>
       {heOnly ? (
-        // Hebrew first-page sections (אבחנה/סיכום/תכנית): lavender bar
-        // 7px symmetric padding ensures visual centering even when html2canvas
-        // flex align-items:center bug causes items to render at bottom
         <div className="section-bar-he" style={{
           width: "100%",
           backgroundColor: "#D8DEF6",
           border: "1px solid #000000",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: 28,
           padding: "7px 8px",
           marginBottom: 8,
           boxSizing: "border-box",
+          textAlign: "center",
         }}>
-          <h3 style={{
-            fontSize: 13, fontWeight: 700,
-            color: "#1E106E",
+          <div className="section-title-text" style={{
             margin: 0, padding: 0, lineHeight: 1,
+            fontSize: 13, fontWeight: 700, color: "#1E106E",
             fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
             letterSpacing: "0.04em",
+            display: "block",
           }}>
             {title}
-          </h3>
+          </div>
         </div>
       ) : plain ? (
-        // Classic underline style — used for Lung Function which has its own data layout
         <div style={{
           display: "flex",
           direction: "ltr",
@@ -232,7 +229,6 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
           )}
         </div>
       ) : (
-        // All other sections: light grey full-width bar
         <div className="section-bar" style={{
           width: "100%",
           backgroundColor: "#E2E2E2",
@@ -245,26 +241,26 @@ function DocSection({ title, titleHe, heOnly, plain, children }: {
           boxSizing: "border-box",
         }}>
           {title && (
-            <h3 style={{
-              fontSize: 12, fontWeight: 700,
-              color: "#1A2B4A",
-              margin: 0,
+            <div className="section-title-text" style={{
+              fontSize: 12, fontWeight: 700, color: "#1A2B4A",
+              margin: 0, padding: 0, lineHeight: 1,
               fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
               letterSpacing: "0.05em",
+              display: "block",
             }}>
               {title}
-            </h3>
+            </div>
           )}
           {titleHe && (
-            <span style={{
-              fontSize: title ? 11 : 12,
-              fontWeight: 700,
-              color: "#1A2B4A",
+            <div className="section-title-text" style={{
+              fontSize: title ? 11 : 12, fontWeight: 700, color: "#1A2B4A",
+              margin: 0, padding: 0, lineHeight: 1,
               fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
               direction: "rtl",
+              display: "block",
             }}>
               {titleHe}
-            </span>
+            </div>
           )}
         </div>
       )}
@@ -297,7 +293,6 @@ function TextBlock({ text, rtl }: { text: string; rtl?: boolean }) {
 }
 
 const DATE_LINE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
-// Strip legacy "Review date:" / "תאריך ביקורת:" labels saved before the serializer was fixed
 const OLD_LABEL = /^(Review date:|תאריך ביקורת:)\s*/i;
 
 function SummaryBlock({ text, rtl }: { text: string; rtl?: boolean }) {
@@ -312,11 +307,7 @@ function SummaryBlock({ text, rtl }: { text: string; rtl?: boolean }) {
       {lines.map((line, i) => (
         <span key={i}>
           {DATE_LINE.test(line.trim()) ? (
-            <strong style={{
-              fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
-              color: "#1E106E",
-              fontSize: 13,
-            }}>
+            <strong style={{ fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif", color: "#1E106E", fontSize: 13 }}>
               {line}
             </strong>
           ) : line}
@@ -339,27 +330,152 @@ function InhalerIconSmall() {
   );
 }
 
+// ─── Page layout ──────────────────────────────────────────────────────────────
 
-// ─── A4 Page wrapper ──────────────────────────────────────────────────────────
+// A4 page height in pixels (820 px wide × A4 aspect ratio 297/210).
+// Must match the PAGE_CAPTURE_H constant in generatePdf.ts.
+const PAGE_H = 1160;
 
-function A4Page({ children }: { children: React.ReactNode }) {
+// Visible content height per page (px):
+//   1160 (page) − 228 (header: logo maxHeight 220 + 8 px top padding) − 77 (footer)
+//   − 14 (content top padding) − 16 (content bottom padding) = 825 px.
+// Each page advances by exactly this amount so content flows across pages without
+// overlap or blank gaps.
+const CONTENT_H = 825;
+
+// Vertical gap between sections (px).
+const SECTION_GAP = 12;
+
+interface SectionDef {
+  id: string;
+  estimate: number; // unused in windowing approach, kept for future use
+  render: () => React.ReactNode;
+}
+
+// Fixed A4 page wrapper — exactly PAGE_H tall so every screenshot is A4.
+// contentOffset: how many px into the full content flow this page's window starts.
+// totalContentH: total content height (written to data- attrs for isPageEmpty).
+function A4Page({ children, contentOffset = 0, totalContentH = 0 }: {
+  children: React.ReactNode;
+  contentOffset?: number;
+  totalContentH?: number;
+}) {
   return (
-    <div className="a4-page" style={{
-      width: "100%",
-      maxWidth: 820,
-      minHeight: 1160,
-      backgroundColor: "white",
-      fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
-      boxShadow: "0 4px 6px -1px rgb(0 0 0/0.07), 0 20px 40px rgb(26 43 74/0.10)",
-      display: "flex",
-      flexDirection: "column",
-    }}>
+    <div
+      className="a4-page"
+      data-content-offset={contentOffset}
+      data-total-height={totalContentH}
+      style={{
+        width: "100%",
+        maxWidth: 820,
+        height: PAGE_H,
+        backgroundColor: "white",
+        fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+        boxShadow: "0 4px 6px -1px rgb(0 0 0/0.07), 0 20px 40px rgb(26 43 74/0.10)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       <LetterHeader />
-      <div style={{ flex: "1 1 auto", padding: "14px 40px 24px" }}>
-        {children}
+      {/* a4-page-content: isPageEmpty (generatePdf) queries this element */}
+      <div className="a4-page-content" style={{
+        flex: "1 0 0",
+        minHeight: 0,
+        overflow: "hidden",
+        padding: "14px 40px 16px",
+        position: "relative",
+      }}>
+        {/* Fixed-height viewport — clips exactly CONTENT_H px of the content flow */}
+        <div style={{ height: CONTENT_H, overflow: "hidden", position: "relative" }}>
+          <div style={{ position: "absolute", top: -contentOffset, left: 0, right: 0 }}>
+            {children}
+          </div>
+        </div>
       </div>
       <LetterFooter />
     </div>
+  );
+}
+
+// Renders all sections as a single continuous flow, measures total height, then
+// creates N A4 pages each showing a CONTENT_H-px window. Content splits naturally
+// at page boundaries — no blank gaps from whole-section packing.
+function PageBuilder({ sections }: { sections: SectionDef[] }) {
+  const [totalHeight, setTotalHeight] = useState(0);
+  const [measuring, setMeasuring]     = useState(true);
+  const measureRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!measuring) return;
+
+    const doMeasure = async () => {
+      if (document.fonts?.ready) await document.fonts.ready;
+      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+      const container = measureRef.current;
+      if (!container) return;
+
+      const imgs    = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
+      const pending = imgs.filter(img => !img.complete || img.naturalWidth === 0);
+      if (pending.length > 0) {
+        await Promise.all(pending.map(img => new Promise<void>(r => {
+          img.onload = img.onerror = () => r();
+        })));
+        await new Promise<void>(r => requestAnimationFrame(() => r()));
+      }
+
+      const totalH = container.getBoundingClientRect().height;
+      setTotalHeight(totalH);
+      setMeasuring(false);
+    };
+
+    doMeasure();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measuring]);
+
+  // Drop the last page if it would show less than 50 px of content (avoids near-blank pages).
+  let numPages = measuring ? 0 : Math.max(1, Math.ceil(totalHeight / CONTENT_H));
+  if (numPages > 1) {
+    const lastFill = totalHeight - (numPages - 1) * CONTENT_H;
+    if (lastFill < 50) numPages--;
+  }
+
+  // The same content renders in every page — each is windowed to a different offset.
+  const content = (
+    <div style={{ display: "flex", flexDirection: "column", gap: SECTION_GAP }}>
+      {sections.map(s => <div key={s.id}>{s.render()}</div>)}
+    </div>
+  );
+
+  return (
+    <>
+      {/* Hidden measurement container — 740 px wide matches content area (820 − 40 × 2) */}
+      {measuring && (
+        <div
+          ref={measureRef}
+          aria-hidden="true"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: "-9999px",
+            width: 740,
+            visibility: "hidden",
+            pointerEvents: "none",
+            zIndex: -1,
+          }}
+        >
+          {content}
+        </div>
+      )}
+
+      {/* A4 pages — each shows a CONTENT_H-px window of the content flow */}
+      {!measuring && Array.from({ length: numPages }, (_, i) => (
+        <A4Page key={i} contentOffset={i * CONTENT_H} totalContentH={totalHeight}>
+          {content}
+        </A4Page>
+      ))}
+    </>
   );
 }
 
@@ -387,7 +503,7 @@ export default function LetterPreviewPage() {
     const em = localStorage.getItem("letter_export_mode");
     if (em === "1") {
       setExportMode(true);
-      localStorage.removeItem("letter_export_mode"); // consume the flag
+      localStorage.removeItem("letter_export_mode");
     }
     const ls = localStorage.getItem("letter_status");
     if (ls) setLetterStatus(ls);
@@ -425,21 +541,18 @@ export default function LetterPreviewPage() {
       const date = [(d?.dateDay as string), (d?.dateMonth as string), (d?.dateYear as string)]
         .filter(Boolean).join("/");
 
-      // Generate PDF blob — same rendering as before, but returns bytes for upload
       const { blob, filename } = await exportLetterPdfBlob(
         patientName, date, setExportProgress, patientId, location
       );
 
       const pdfSizeBytes = blob.size;
-      console.log(`[size] PDF size calculated: ${Math.round(pdfSizeBytes / 1024)} KB`);
+      console.log(`[size] PDF size: ${Math.round(pdfSizeBytes / 1024)} KB`);
 
       setExportProgress("Saving PDF…");
       triggerDownload(blob, filename);
       setExportDone(true);
       setExportProgress("");
 
-      // Upload to Supabase Storage (clinic-letters bucket)
-      // Bucket must be created in Supabase dashboard: Storage → New Bucket → "clinic-letters" (private)
       const letterId = localStorage.getItem("letter_current_supabase_id");
       if (letterId) {
         setPdfUploadStatus("uploading");
@@ -460,23 +573,19 @@ export default function LetterPreviewPage() {
           await updateLetterFileUrls(supabase, letterId, { finalPdfUrl: storagePath });
           setPdfUploadStatus("done");
 
-          // Images are stored as compressed JPEG base64 in the DB pictures[] column
-          // (max 1200px, JPEG 0.70 quality). Exact byte count strips base64 padding.
           const pictures = (d?.pictures as string[]) || [];
           const imagesTotalSizeBytes = pictures.reduce((total, pic) => {
             const b64 = pic.split(",")[1] ?? "";
             const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
             return total + Math.floor(b64.length * 3 / 4) - pad;
           }, 0);
-          console.log(`[size] PDF blob: ${Math.round(pdfSizeBytes / 1024)} KB · Images DB: ${pictures.length} image(s) = ${Math.round(imagesTotalSizeBytes / 1024)} KB`);
+          console.log(`[size] PDF: ${Math.round(pdfSizeBytes / 1024)} KB · Images: ${pictures.length} = ${Math.round(imagesTotalSizeBytes / 1024)} KB`);
 
-          // Fire-and-forget size update
           updateLetterFileSizes(supabase, letterId, {
             finalPdfSizeBytes: pdfSizeBytes,
             imagesSizeBytes:   imagesTotalSizeBytes,
           }).catch((e) => console.warn("[preview] size update error:", e));
 
-          // Fire-and-forget: delete old PDF/DOCX files for this patient's other letters
           getLetterById(supabase, letterId).then((letter) => {
             if (letter?.patient_id) {
               cleanupOldLetterFiles(supabase, letterId, letter.patient_id).catch((e) =>
@@ -504,12 +613,10 @@ export default function LetterPreviewPage() {
     if (sent) return;
     const raw = localStorage.getItem("letter_preview");
     const letterData = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
-
     const d = (letterData ?? data) as Record<string, unknown>;
     const patientName = (d?.name as string) || "Unnamed Patient";
     const date = [(d?.dateDay as string), (d?.dateMonth as string), (d?.dateYear as string)].filter(Boolean).join("/");
 
-    // Save to Supabase (primary source of truth)
     try {
       const supabase = createClient();
       const supabaseLetterId = localStorage.getItem("letter_current_supabase_id") || undefined;
@@ -521,13 +628,11 @@ export default function LetterPreviewPage() {
         sentToAnatAt: new Date().toISOString(),
       });
       localStorage.setItem("letter_current_supabase_id", saved.id);
-      // Letter is now in Supabase — clear the local copy of full letter data.
       localStorage.removeItem("letter_preview");
     } catch (err) {
       console.error("[preview] Supabase save error:", err);
     }
 
-    // localStorage fallback
     let letterId = localStorage.getItem("letter_current_id");
     if (!letterId) {
       letterId = `letter-${Date.now().toString(36)}`;
@@ -544,8 +649,6 @@ export default function LetterPreviewPage() {
     });
 
     setSent(true);
-
-    // Later this action will send an email notification to Anat with a secure link.
     localStorage.setItem("letter_just_sent", "1");
     setTimeout(() => router.push("/workspace/anat-review"), 800);
   };
@@ -566,8 +669,6 @@ export default function LetterPreviewPage() {
         } catch { parsed = null; }
       }
 
-      // Safari: if pictures are missing from localStorage (quota exceeded during save),
-      // load them from Supabase using the letter ID written just before navigation.
       const supabaseId = localStorage.getItem("letter_current_supabase_id");
       if (supabaseId && (!parsed?.pictures || (parsed.pictures as string[]).length === 0)) {
         try {
@@ -585,39 +686,511 @@ export default function LetterPreviewPage() {
     run();
   }, []);
 
+  // ─── Build sections list from data ────────────────────────────────────────
+  // All sections are defined here. PageBuilder measures and packs them onto
+  // fixed A4 pages. Hebrew sections (אבחנה / סיכום / תכנית) always come first,
+  // followed by English clinical sections, tests, and finally important notes.
+
   const d = data;
-  const age = d ? calcAge(d.bDay, d.bMonth, d.bYear) : "";
-  const dob = d ? [d.bDay, d.bMonth, d.bYear].filter(Boolean).join(" / ") : "";
-  const letterDate = d ? [d.dateDay, d.dateMonth, d.dateYear].filter(Boolean).join(" / ") : "";
 
-  const examRows = d ? ([
-    ["Appearance", d.appearance],
-    ["Fingernail Clubbing", d.clubbing],
-    ["Cervical Lymphadenopathy", d.lymph],
-    ["Blood Pressure", d.bp],
-    ["Pulse", d.pulse ? `${d.pulse} bpm` : ""],
-    ["Respiratory Rate", d.rr ? `${d.rr} breaths/min` : ""],
-    ["SpO2", d.spo2 ? `${d.spo2}%` : ""],
-    ["Heart Sounds", d.heartSounds === "Other" ? `Other — ${d.heartOther}` : d.heartSounds],
-    ["Lung Auscultation", d.lungAusc === "Other" ? `Other — ${d.lungOther}` : d.lungAusc],
-    ["Other Findings", d.otherFindings],
-  ] as [string, string][]).filter(([, v]) => !!v) : [];
+  const sections = useMemo((): SectionDef[] => {
+    if (!d) return [];
 
-  // Page 1: patient details + Hebrew patient-facing content
-  const hasPage1 = !!(d && (d.name || d.patId || d.diagHE || d.sumHE || d.planStepsHE?.some(s => s.trim())));
-  // Page 2: English clinical sections + medical/exam content
-  const hasPage2 = !!(d && (
-    d.diagEN || d.sumEN || d.planStepsEN?.some(s => s.trim()) ||
-    d.medHistory || d.famHistory ||
-    (d.medications?.length > 0) || (d.allergies?.length > 0) ||
-    (d.vaccinations?.length > 0) || examRows.length > 0
-  ));
-  // Page 3: objective data + inhalers
-  const hasPage3 = !!(d && (
-    hasTestData(d.testResults) ||
-    (d.lungRows?.length > 0) || (d.inhalers?.length > 0)
-  ));
-  const hasPictures = !!(d && d.pictures?.length > 0);
+    const age         = calcAge(d.bDay, d.bMonth, d.bYear);
+    const dob         = [d.bDay, d.bMonth, d.bYear].filter(Boolean).join(" / ");
+    const letterDate  = [d.dateDay, d.dateMonth, d.dateYear].filter(Boolean).join(" / ");
+
+    const examRows = ([
+      ["Appearance",              d.appearance],
+      ["Fingernail Clubbing",     d.clubbing],
+      ["Cervical Lymphadenopathy",d.lymph],
+      ["Blood Pressure",          d.bp],
+      ["Pulse",                   d.pulse   ? `${d.pulse} bpm`            : ""],
+      ["Respiratory Rate",        d.rr      ? `${d.rr} breaths/min`       : ""],
+      ["SpO2",                    d.spo2    ? `${d.spo2}%`                : ""],
+      ["Heart Sounds",            d.heartSounds === "Other" ? `Other — ${d.heartOther}` : d.heartSounds],
+      ["Lung Auscultation",       d.lungAusc === "Other"   ? `Other — ${d.lungOther}`  : d.lungAusc],
+      ["Other Findings",          d.otherFindings],
+    ] as [string, string][]).filter(([, v]) => !!v);
+
+    const arr: SectionDef[] = [];
+
+    // ── 1. Patient header (Lungistitute logo + patient details) ──────────────
+    arr.push({
+      id: "patient-header",
+      estimate: 190,
+      render: () => (
+        <div>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
+            <div className="lungistitute-wrap" style={{ backgroundColor: "#1E106E", isolation: "isolate" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block", mixBlendMode: "screen" }} />
+            </div>
+          </div>
+          <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
+          <div className="pdf-patient-cols" style={{ display: "flex", gap: 32 }}>
+            <div style={{ flex: 1 }}>
+              <LV label="Name"          value={d.name} />
+              <LV label="ID"            value={d.patId} />
+              <LV label="Date of Birth" value={dob} />
+              <LV label="Age / Gender"  value={[age, d.gender].filter(Boolean).join("  ·  ")} />
+              <LV label="Email"         value={d.email} />
+              <LV label="Phone"         value={formatPhone(d.phone)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <LV label="Smoking / Vaping" value={d.smoking} />
+              <LV label="Pets"             value={d.pets} />
+              <LV label="Occupation"       value={d.occupation} />
+              <LV label="Referred By"      value={d.referredBy} />
+              <LV label="Location"         value={d.location} />
+              <LV label="Date"             value={letterDate} boldValue />
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
+        </div>
+      ),
+    });
+
+    // ── 2. Hebrew diagnosis ──────────────────────────────────────────────────
+    if (d.diagHE?.trim()) arr.push({
+      id: "diag-he",
+      estimate: 80,
+      render: () => (
+        <DocSection title="אבחנה" heOnly>
+          <TextBlock text={d.diagHE} rtl />
+        </DocSection>
+      ),
+    });
+
+    // ── 3. Hebrew summary ────────────────────────────────────────────────────
+    if (d.sumHE?.trim()) arr.push({
+      id: "sum-he",
+      estimate: 110,
+      render: () => (
+        <DocSection title="סיכום" heOnly>
+          <SummaryBlock text={d.sumHE} rtl />
+        </DocSection>
+      ),
+    });
+
+    // ── 4. Hebrew plan ───────────────────────────────────────────────────────
+    if (d.planStepsHE?.some(s => s.trim())) arr.push({
+      id: "plan-he",
+      estimate: d.planStepsHE.filter(s => s.trim()).length * 28 + 40,
+      render: () => (
+        <DocSection title="תכנית" heOnly>
+          <div style={{ direction: "rtl" }}>
+            {d.planStepsHE.filter(s => s.trim()).map((step, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start", textAlign: "right" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
+                <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
+              </div>
+            ))}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 5. English diagnosis ─────────────────────────────────────────────────
+    if (d.diagEN?.trim()) arr.push({
+      id: "diag-en",
+      estimate: 80,
+      render: () => (
+        <DocSection title="Diagnosis">
+          <TextBlock text={d.diagEN} />
+        </DocSection>
+      ),
+    });
+
+    // ── 6. English summary ───────────────────────────────────────────────────
+    if (d.sumEN?.trim()) arr.push({
+      id: "sum-en",
+      estimate: 110,
+      render: () => (
+        <DocSection title="Summary">
+          <SummaryBlock text={d.sumEN} />
+        </DocSection>
+      ),
+    });
+
+    // ── 7. Medical history ───────────────────────────────────────────────────
+    if (d.medHistory?.trim()) arr.push({
+      id: "med-history",
+      estimate: 80,
+      render: () => (
+        <DocSection title="Medical History">
+          <TextBlock text={d.medHistory} />
+        </DocSection>
+      ),
+    });
+
+    // ── 8. Family history ────────────────────────────────────────────────────
+    if (d.famHistory?.trim()) arr.push({
+      id: "fam-history",
+      estimate: 80,
+      render: () => (
+        <DocSection title="Family History">
+          <TextBlock text={d.famHistory} />
+        </DocSection>
+      ),
+    });
+
+    // ── 9. Medications ───────────────────────────────────────────────────────
+    if (d.medications?.length > 0) arr.push({
+      id: "medications",
+      estimate: d.medications.length * 24 + 35,
+      render: () => (
+        <DocSection title="Medications">
+          <div>
+            {d.medications.map((m, i) => (
+              <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {m}</p>
+            ))}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 10. Allergies ────────────────────────────────────────────────────────
+    if (d.allergies?.length > 0) arr.push({
+      id: "allergies",
+      estimate: d.allergies.length * 24 + 35,
+      render: () => (
+        <DocSection title="Allergies">
+          <div>
+            {d.allergies.map((a, i) => (
+              <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {a}</p>
+            ))}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 11. Vaccinations ─────────────────────────────────────────────────────
+    if (d.vaccinations?.length > 0) arr.push({
+      id: "vaccinations",
+      estimate: 50,
+      render: () => (
+        <DocSection title="Vaccinations">
+          <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0 }}>{d.vaccinations.join(", ")}</p>
+        </DocSection>
+      ),
+    });
+
+    // ── 12. Examination ──────────────────────────────────────────────────────
+    if (examRows.length > 0) arr.push({
+      id: "examination",
+      estimate: examRows.length * 22 + 35,
+      render: () => (
+        <DocSection title="Examination">
+          <div className="pdf-exam-grid" style={{ display: "grid", gridTemplateColumns: "max-content 1fr max-content 1fr", columnGap: 12, rowGap: 5 }}>
+            {examRows.map(([label, value]) => (
+              <div key={label} style={{ display: "contents" }}>
+                <span style={{ fontSize: 13, color: "#475569", fontWeight: 600 }}>{label}</span>
+                <span style={{ fontSize: 13, color: "#1A2B4A" }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 13. English plan ─────────────────────────────────────────────────────
+    if (d.planStepsEN?.some(s => s.trim())) arr.push({
+      id: "plan-en",
+      estimate: d.planStepsEN.filter(s => s.trim()).length * 28 + 35,
+      render: () => (
+        <DocSection title="Plan">
+          <div>
+            {d.planStepsEN.filter(s => s.trim()).map((step, i) => (
+              <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, minWidth: 18, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
+                <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
+              </div>
+            ))}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 14. Test results ─────────────────────────────────────────────────────
+    if (hasTestData(d.testResults)) arr.push({
+      id: "test-results",
+      estimate: 220,
+      render: () => (
+        <DocSection title="Test Results">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+            {d.testResults.ekg.length > 0 && (
+              <TRGroup label="EKG">
+                {d.testResults.ekg.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.ekg.length - 1 ? 8 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    {entry.result?.trim() && <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>}
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.echo?.length > 0 && (
+              <TRGroup label="Echocardiogram">
+                {d.testResults.echo.map((entry, idx) => (
+                  <div key={entry.id ?? idx} style={{ marginBottom: d.testResults.echo.length > 1 && idx < d.testResults.echo.length - 1 ? 8 : 0 }}>
+                    {d.testResults.echo.length > 1 && <p style={{ fontSize: 11, fontWeight: 600, color: "#64748B", margin: "0 0 2px" }}>Entry {idx + 1}</p>}
+                    {entry.date && <p style={{ fontSize: 11, color: "#64748B", margin: "0 0 2px" }}>Date: {formatDisplayDate(entry.date)}</p>}
+                    <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.blood.length > 0 && d.testResults.blood.some(e => e.testType || e.details) && (
+              <TRGroup label="Blood Tests">
+                {d.testResults.blood.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.blood.length - 1 ? 10 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    <TRField label="Type"    value={entry.testType} />
+                    <TRField label="Results" value={entry.details} />
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.bronchWash.length > 0 && d.testResults.bronchWash.some(e => e.microbiology || e.cytology || e.cellCounts) && (
+              <TRGroup label="Bronchoscopy Washing">
+                {d.testResults.bronchWash.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.bronchWash.length - 1 ? 10 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    <TRField label="Microbiology" value={entry.microbiology} />
+                    <TRField label="Cytology"     value={entry.cytology} />
+                    <TRField label="Cell Counts"  value={entry.cellCounts} />
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.bronchBiopsy.length > 0 && d.testResults.bronchBiopsy.some(e => e.pathology || e.microbiology) && (
+              <TRGroup label="Bronchoscopy Biopsy">
+                {d.testResults.bronchBiopsy.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.bronchBiopsy.length - 1 ? 10 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    <TRField label="Pathology"    value={entry.pathology} />
+                    <TRField label="Microbiology" value={entry.microbiology} />
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.ebus.length > 0 && d.testResults.ebus.some(e => e.cytology) && (
+              <TRGroup label="EBUS">
+                {d.testResults.ebus.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.ebus.length - 1 ? 10 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    <TRField label="Cytology" value={entry.cytology} />
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.pleuralFluid.length > 0 && d.testResults.pleuralFluid.some(e => e.cytology || e.microbiology || e.biochemistry || e.cellCounts) && (
+              <TRGroup label="Pleural Fluid">
+                {d.testResults.pleuralFluid.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.pleuralFluid.length - 1 ? 10 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    <TRField label="Cytology"     value={entry.cytology} />
+                    <TRField label="Microbiology" value={entry.microbiology} />
+                    <TRField label="Biochemistry" value={entry.biochemistry} />
+                    <TRField label="Cell Counts"  value={entry.cellCounts} />
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.pleuralBiopsy.length > 0 && d.testResults.pleuralBiopsy.some(e => e.pathology || e.microbiology) && (
+              <TRGroup label="Pleural Biopsy">
+                {d.testResults.pleuralBiopsy.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.pleuralBiopsy.length - 1 ? 10 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    <TRField label="Pathology"    value={entry.pathology} />
+                    <TRField label="Microbiology" value={entry.microbiology} />
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+            {d.testResults.otherTests.length > 0 && d.testResults.otherTests.some(e => e.testName || e.result) && (
+              <TRGroup label="Other Test">
+                {d.testResults.otherTests.map((entry, idx) => (
+                  <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.otherTests.length - 1 ? 10 : 0 }}>
+                    {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
+                    {entry.testName?.trim() && <TRField label="Test" value={entry.testName} />}
+                    {entry.result?.trim() && <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>}
+                  </div>
+                ))}
+              </TRGroup>
+            )}
+
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 15. Lung function ────────────────────────────────────────────────────
+    if (d.lungRows?.length > 0) arr.push({
+      id: "lung-function",
+      estimate: d.lungRows.length * 95 + 40,
+      render: () => (
+        <DocSection title="" titleHe="תפקוד ריאות">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {d.lungRows.map(row => {
+              const mainFields:  [string, string][] = [["FEV1 L", row.fev1l], ["FEV1 %", row.fev1p], ["FVC L", row.fvcl], ["FVC %", row.fvcp], ["FEV1/FVC %", row.ratio], ["FEF 25-75 %", row.fef]];
+              const extraFields: [string, string][] = [["TLC L", row.tlcl], ["TLC %", row.tlc], ["RV L", row.rvl], ["RV %", row.rv], ["DLCO %", row.dlco], ["KCO %", row.kco], ["FeNO", row.feno], ["Metacholine", row.meta], ["6 Min Walk", row.walk], ["Ht/Wt/BMI", row.hwbmi]];
+              const hasMain  = mainFields.some(([, v]) => v?.trim());
+              const hasExtra = extraFields.some(([, v]) => v?.trim());
+              return (
+                <div key={row.id} style={{ border: "1.5px solid #160B5C", borderRadius: 10, overflow: "hidden" }}>
+                  {row.date && (
+                    <div style={{ backgroundColor: "#F2A56B", padding: "5px 12px" }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#000000" }}>Date: {formatDisplayDate(row.date)}</span>
+                    </div>
+                  )}
+                  <div style={{ padding: "5px 8px" }}>
+                    {(hasMain || hasExtra) && (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "4px 6px" }}>
+                        {[...mainFields, ...extraFields].map(([label, val]) => (
+                          <div key={label} style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 6.5, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.02em" }}>{label}</div>
+                            <div style={{ fontSize: 13, color: "#1A2B4A", fontWeight: 600 }}>{val?.trim() || "—"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 16. Inhalers ─────────────────────────────────────────────────────────
+    if (d.inhalers?.some(inh => inh.name?.trim())) arr.push({
+      id: "inhalers",
+      estimate: d.inhalers.filter(inh => inh.name?.trim()).length * 90 + 40,
+      render: () => (
+        <DocSection title="" titleHe="סרטון המסביר איך להשתמש במשאף שלך">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {d.inhalers.map((inh, idx) => inh.name ? (
+              <div key={inh.id ?? idx} style={{ display: "flex", gap: 16, alignItems: "center", padding: "10px 14px", border: "1px solid #E2E8F0", borderRadius: 12, backgroundColor: "#FAFBFF" }}>
+                <div style={{ width: 72, height: 72, borderRadius: 10, backgroundColor: "#EBF3FB", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                  {inh.imageUrl
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    ? <img src={inh.imageUrl} alt={inh.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    : <InhalerIconSmall />
+                  }
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "#1A2B4A", margin: "0 0 4px" }}>{inh.name}</p>
+                  {inh.link && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <svg viewBox="0 0 16 16" fill="none" stroke="#4A90D9" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, flexShrink: 0 }}>
+                        <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M9 1h6m0 0v6m0-6L7 9"/>
+                      </svg>
+                      <a href={inh.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4A90D9", textDecoration: "none", fontWeight: 500 }}>
+                        Watch video guide on RightBreathe
+                      </a>
+                      <span style={{ fontSize: 11, color: "#64748B", fontWeight: 400 }}>
+                        (גלול עד למטה אחרי כניסה לקישור בכדי לצפות בסרטון ההדרכה)
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null)}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 17. Pictures ─────────────────────────────────────────────────────────
+    if (d.pictures?.length > 0) arr.push({
+      id: "pictures",
+      estimate: Math.ceil(d.pictures.length / 2) * 300 + 40,
+      render: () => (
+        <DocSection title="Pictures" titleHe="תמונות">
+          <div style={{ display: "grid", gridTemplateColumns: d.pictures.length === 1 ? "1fr" : "1fr 1fr", gap: 16 }}>
+            {d.pictures.map((src, i) => (
+              <div key={i} style={{ overflow: "hidden", border: "2px solid #000000", backgroundColor: "#ffffff" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt={`Image ${i + 1}`} style={{ width: "100%", display: "block", objectFit: "contain", maxHeight: 280, backgroundColor: "#ffffff" }} />
+              </div>
+            ))}
+          </div>
+        </DocSection>
+      ),
+    });
+
+    // ── 18. Important notes + stamp (always last) ─────────────────────────
+    arr.push({
+      id: "important-notes",
+      estimate: 380,
+      render: () => (
+        <div>
+          <div className="section-bar-he" style={{
+            width: "100%",
+            backgroundColor: "#E2E2E2",
+            border: "1px solid #AAAAAA",
+            padding: "7px 8px",
+            marginBottom: 10,
+            boxSizing: "border-box",
+            textAlign: "center",
+          }}>
+            <div className="section-title-text" style={{
+              margin: 0, padding: 0, lineHeight: 1,
+              fontSize: 13, fontWeight: 700, color: "#1A2B4A",
+              fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+              letterSpacing: "0.04em",
+              display: "block",
+            }}>
+              נקודות חשובות
+            </div>
+          </div>
+
+          <div>
+            {([
+              "מכתב זה הוא מסמך סודי המיועד רק למטופל, או למטפל מועמד ואנשי מקצוע בתחום הבריאות המעורבים בטיפול הרפואי הישיר במטופל. אם מסמך זה התקבל בטעות, אנא החזר אותו מיד לכתובת: lungdrsumit@gmail.com .",
+              "יש להעביר מכתב זה לרופא המשפחה כדי לעיין בתוכנית הניהול והחקירה.",
+              "כל ביקור במרפאה (כולל ביקורות מעקב ולאחר בדיקות) נדרשות בתשלום.",
+            ] as string[]).map((text, i) => {
+              const color = i === 2 ? "#DC2626" : "#160B5C";
+              return (
+                <div key={i} style={{ display: "flex", direction: "rtl", gap: 6, alignItems: "flex-start", marginBottom: 4 }}>
+                  <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.5, color }}>{i + 1}.</span>
+                  <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color, textAlign: "right" }}>{text}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
+
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/stamp.png" alt="Official Stamp" style={{ width: 180, height: 180, objectFit: "contain" }} />
+          </div>
+        </div>
+      ),
+    });
+
+    return arr;
+  }, [d]);
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  // PageBuilder key: remount (and re-measure) when the patient / letter date changes.
+  const builderKey = d
+    ? `${d.name}|${d.patId}|${d.dateDay}-${d.dateMonth}-${d.dateYear}`
+    : "empty";
 
   return (
     <>
@@ -634,63 +1207,35 @@ export default function LetterPreviewPage() {
             boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: "50%", backgroundColor: "#FEE2E2",
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="#BE123C" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
                   <circle cx="8" cy="8" r="7"/><path d="M8 5v3M8 11h.01"/>
                 </svg>
               </div>
-              <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", margin: 0 }}>
-                Letter already sent to patient
-              </h3>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: "#1A2B4A", margin: 0 }}>Letter already sent to patient</h3>
             </div>
             <p style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 20 }}>
               This letter has already been sent to the patient. Editing it will <strong>not</strong> change the email that was already sent. You can still make corrections for your records — just re-export the PDF before sending again.
             </p>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setEditWarning(false)}
-                style={{
-                  fontSize: 13, fontWeight: 600, borderRadius: 10, padding: "8px 18px",
-                  backgroundColor: "white", color: "#64748B",
-                  border: "1px solid #E2E8F0", cursor: "pointer",
-                }}>
+              <button onClick={() => setEditWarning(false)} style={{ fontSize: 13, fontWeight: 600, borderRadius: 10, padding: "8px 18px", backgroundColor: "white", color: "#64748B", border: "1px solid #E2E8F0", cursor: "pointer" }}>
                 Cancel
               </button>
-              <button
-                onClick={() => { setEditWarning(false); navigateToEditor(); }}
-                style={{
-                  fontSize: 13, fontWeight: 600, borderRadius: 10, padding: "8px 18px",
-                  backgroundColor: "#BE123C", color: "#fff",
-                  border: "1px solid #BE123C", cursor: "pointer",
-                }}>
+              <button onClick={() => { setEditWarning(false); navigateToEditor(); }} style={{ fontSize: 13, fontWeight: 600, borderRadius: 10, padding: "8px 18px", backgroundColor: "#BE123C", color: "#fff", border: "1px solid #BE123C", cursor: "pointer" }}>
                 Edit Anyway
               </button>
             </div>
           </div>
         </div>
       )}
+
       <style>{`
         @media print {
           body { margin: 0 !important; background: white !important; }
           .preview-toolbar { display: none !important; }
-          .preview-wrapper {
-            padding: 0 !important;
-            gap: 0 !important;
-            background: white !important;
-          }
-          .a4-page {
-            box-shadow: none !important;
-            break-after: page;
-            page-break-after: always;
-            min-height: 100vh;
-          }
-          .a4-page:last-child {
-            break-after: auto;
-            page-break-after: auto;
-          }
+          .preview-wrapper { padding: 0 !important; gap: 0 !important; background: white !important; }
+          .a4-page { box-shadow: none !important; break-after: page; page-break-after: always; }
+          .a4-page:last-child { break-after: auto; page-break-after: auto; }
         }
       `}</style>
 
@@ -705,11 +1250,7 @@ export default function LetterPreviewPage() {
       }}>
 
         {/* Toolbar */}
-        <div className="preview-toolbar" style={{
-          width: "100%", maxWidth: 820,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          {/* Back button */}
+        <div className="preview-toolbar" style={{ width: "100%", maxWidth: 820, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <button
             onClick={() => {
               localStorage.removeItem("letter_export_mode");
@@ -723,16 +1264,12 @@ export default function LetterPreviewPage() {
             Back
           </button>
 
-          {/* Toolbar actions */}
           {exportMode ? (
-            /* ── Export Final PDF mode ── */
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {exportDone && pdfUploadStatus === "idle" && (
                   <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12 }}>
-                      <path d="M3 8l4 4 6-7"/>
-                    </svg>
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12 }}><path d="M3 8l4 4 6-7"/></svg>
                     PDF downloaded
                   </span>
                 )}
@@ -747,70 +1284,33 @@ export default function LetterPreviewPage() {
                     {exportError}
                   </span>
                 )}
-                <button type="button"
-                  onClick={handleEditLetter}
-                  style={{
-                    fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px",
-                    backgroundColor: "white", color: "#64748B",
-                    border: "1px solid #E2E8F0", cursor: "pointer", transition: "all 0.15s",
-                  }}>
+                <button type="button" onClick={handleEditLetter} style={{ fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px", backgroundColor: "white", color: "#64748B", border: "1px solid #E2E8F0", cursor: "pointer", transition: "all 0.15s" }}>
                   Edit Letter
                 </button>
-                <button type="button"
-                  onClick={handleExportPdf}
-                  disabled={exporting}
-                  style={{
-                    fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 20px",
-                    backgroundColor: exporting ? "#F4F6F9" : "#0D9488",
-                    color: exporting ? "#94A3B8" : "#fff",
-                    border: exporting ? "1px solid #E2E8F0" : "1px solid #0D9488",
-                    cursor: exporting ? "default" : "pointer",
-                    transition: "all 0.15s",
-                  }}>
+                <button type="button" onClick={handleExportPdf} disabled={exporting} style={{ fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 20px", backgroundColor: exporting ? "#F4F6F9" : "#0D9488", color: exporting ? "#94A3B8" : "#fff", border: exporting ? "1px solid #E2E8F0" : "1px solid #0D9488", cursor: exporting ? "default" : "pointer", transition: "all 0.15s" }}>
                   {exporting ? "Generating PDF…" : exportDone ? "Download Again" : "Download Final PDF"}
                 </button>
               </div>
-              {/* Upload status feedback */}
               {pdfUploadStatus === "uploading" && (
                 <span style={{ fontSize: 11, color: "#94A3B8" }}>Uploading PDF to secure storage…</span>
               )}
               {pdfUploadStatus === "done" && (
                 <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 11, height: 11 }}>
-                    <path d="M3 8l4 4 6-7"/>
-                  </svg>
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 11, height: 11 }}><path d="M3 8l4 4 6-7"/></svg>
                   PDF saved to storage
                 </span>
               )}
               {pdfUploadStatus === "error" && (
-                <span style={{ fontSize: 11, color: "#BE123C" }}>
-                  Could not save to storage: {pdfUploadError}
-                </span>
+                <span style={{ fontSize: 11, color: "#BE123C" }}>Could not save to storage: {pdfUploadError}</span>
               )}
             </div>
           ) : (
-            /* ── Normal preview mode ── */
             <div style={{ display: "flex", gap: 8 }}>
-              <button type="button"
-                onClick={handleEditLetter}
-                style={{
-                  fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px",
-                  backgroundColor: "white", color: "#64748B",
-                  border: "1px solid #E2E8F0", cursor: "pointer", transition: "all 0.15s",
-                }}>
+              <button type="button" onClick={handleEditLetter} style={{ fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px", backgroundColor: "white", color: "#64748B", border: "1px solid #E2E8F0", cursor: "pointer", transition: "all 0.15s" }}>
                 Edit Letter
               </button>
               {returnTo !== "review" && (
-                <button type="button"
-                  onClick={handleSendToAnat}
-                  disabled={sent}
-                  style={{
-                    fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 20px", cursor: sent ? "default" : "pointer",
-                    backgroundColor: sent ? "#EDE9FE" : "#1A2B4A",
-                    color: sent ? "#7C3AED" : "#ffffff",
-                    border: sent ? "1px solid #EDE9FE" : "1px solid #1A2B4A",
-                    transition: "all 0.15s",
-                  }}>
+                <button type="button" onClick={handleSendToAnat} disabled={sent} style={{ fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 20px", cursor: sent ? "default" : "pointer", backgroundColor: sent ? "#EDE9FE" : "#1A2B4A", color: sent ? "#7C3AED" : "#ffffff", border: sent ? "1px solid #EDE9FE" : "1px solid #1A2B4A", transition: "all 0.15s" }}>
                   {sent ? "Sent to Anat ✓" : "Send to Anat"}
                 </button>
               )}
@@ -818,443 +1318,14 @@ export default function LetterPreviewPage() {
           )}
         </div>
 
-        {/* ── Page 1: Patient Details · Hebrew Diagnosis · Hebrew Summary · Hebrew Plan ── */}
-        {hasPage1 && (
-          <A4Page>
-            {d && (d.name || d.patId) && (
-              <div style={{ marginBottom: 16, breakInside: "avoid", pageBreakInside: "avoid" }}>
-                {/* Colorize the black logo to brand purple using screen blend mode:
-                    black pixels × screen × #1E106E bg = #1E106E; white pixels = white */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
-                  {/* lungistitute-wrap class is targeted by generatePdf.ts to fix rendering
-                      in html2canvas, which does not support mix-blend-mode:screen */}
-                  <div className="lungistitute-wrap" style={{ backgroundColor: "#1E106E", isolation: "isolate" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block", mixBlendMode: "screen" }} />
-                  </div>
-                </div>
-                <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
-                <div className="pdf-patient-cols" style={{ display: "flex", gap: 32 }}>
-                  <div style={{ flex: 1 }}>
-                    <LV label="Name"          value={d.name} />
-                    <LV label="ID"            value={d.patId} />
-                    <LV label="Date of Birth" value={dob} />
-                    <LV label="Age / Gender"  value={[age, d.gender].filter(Boolean).join("  ·  ")} />
-                    <LV label="Email"         value={d.email} />
-                    <LV label="Phone"         value={formatPhone(d.phone)} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <LV label="Smoking / Vaping" value={d.smoking} />
-                    <LV label="Pets"             value={d.pets} />
-                    <LV label="Occupation"       value={d.occupation} />
-                    <LV label="Referred By"      value={d.referredBy} />
-                    <LV label="Location"         value={d.location} />
-                    <LV label="Date"             value={letterDate} boldValue />
-                  </div>
-                </div>
-                <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
-              </div>
-            )}
-
-            {d?.diagHE && (
-              <DocSection title="אבחנה" heOnly>
-                <TextBlock text={d.diagHE} rtl />
-              </DocSection>
-            )}
-
-            {d?.sumHE && (
-              <DocSection title="סיכום" heOnly>
-                <SummaryBlock text={d.sumHE} rtl />
-              </DocSection>
-            )}
-
-            {d?.planStepsHE?.some(s => s.trim()) && (
-              <DocSection title="תכנית" heOnly>
-                <div style={{ direction: "rtl" }}>
-                  {d.planStepsHE.filter(s => s.trim()).map((step, i) => (
-                    <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start", textAlign: "right" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
-                      <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
-                    </div>
-                  ))}
-                </div>
-              </DocSection>
-            )}
-          </A4Page>
-        )}
-
-        {/* ── Page 2: English Diagnosis · Summary · Medical History · Medications · Examination · Plan ── */}
-        {hasPage2 && (
-          <A4Page>
-            {d?.diagEN && (
-              <DocSection title="Diagnosis">
-                <TextBlock text={d.diagEN} />
-              </DocSection>
-            )}
-
-            {d?.sumEN && (
-              <DocSection title="Summary">
-                <SummaryBlock text={d.sumEN} />
-              </DocSection>
-            )}
-
-            {d?.medHistory && (
-              <DocSection title="Medical History">
-                <TextBlock text={d.medHistory} />
-              </DocSection>
-            )}
-
-            {d?.famHistory && (
-              <DocSection title="Family History">
-                <TextBlock text={d.famHistory} />
-              </DocSection>
-            )}
-
-            {d && d.medications?.length > 0 && (
-              <DocSection title="Medications">
-                <div>
-                  {d.medications.map((m, i) => (
-                    <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {m}</p>
-                  ))}
-                </div>
-              </DocSection>
-            )}
-
-            {d && d.allergies?.length > 0 && (
-              <DocSection title="Allergies">
-                <div>
-                  {d.allergies.map((a, i) => (
-                    <p key={i} style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {a}</p>
-                  ))}
-                </div>
-              </DocSection>
-            )}
-
-            {d && d.vaccinations?.length > 0 && (
-              <DocSection title="Vaccinations">
-                <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0 }}>{d.vaccinations.join(", ")}</p>
-              </DocSection>
-            )}
-
-            {examRows.length > 0 && (
-              <DocSection title="Examination">
-                <div className="pdf-exam-grid" style={{ display: "grid", gridTemplateColumns: "max-content 1fr max-content 1fr", columnGap: 12, rowGap: 5 }}>
-                  {examRows.map(([label, value]) => (
-                    <div key={label} style={{ display: "contents" }}>
-                      <span style={{ fontSize: 13, color: "#475569", fontWeight: 600 }}>{label}</span>
-                      <span style={{ fontSize: 13, color: "#1A2B4A" }}>{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </DocSection>
-            )}
-
-            {d?.planStepsEN?.some(s => s.trim()) && (
-              <DocSection title="Plan">
-                <div>
-                  {d.planStepsEN.filter(s => s.trim()).map((step, i) => (
-                    <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "flex-start" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, minWidth: 18, color: "#1A2B4A", lineHeight: 1.8 }}>{i + 1}.</span>
-                      <span style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, flex: 1 }}>{step}</span>
-                    </div>
-                  ))}
-                </div>
-              </DocSection>
-            )}
-          </A4Page>
-        )}
-
-        {/* ── Page 3: Test Results · Lung Function · Inhalers ── */}
-        {hasPage3 && (
-          <A4Page>
-            {d && hasTestData(d.testResults) && (
-              <DocSection title="Test Results">
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-                  {/* EKG */}
-                  {d.testResults.ekg.length > 0 && (
-                    <TRGroup label="EKG">
-                      {d.testResults.ekg.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.ekg.length - 1 ? 8 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          {entry.result?.trim() && <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>}
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* Echocardiogram */}
-                  {d.testResults.echo?.length > 0 && (
-                    <TRGroup label="Echocardiogram">
-                      {d.testResults.echo.map((entry, idx) => (
-                        <div key={entry.id ?? idx} style={{ marginBottom: d.testResults.echo.length > 1 && idx < d.testResults.echo.length - 1 ? 8 : 0 }}>
-                          {d.testResults.echo.length > 1 && <p style={{ fontSize: 11, fontWeight: 600, color: "#64748B", margin: "0 0 2px" }}>Entry {idx + 1}</p>}
-                          {entry.date && <p style={{ fontSize: 11, color: "#64748B", margin: "0 0 2px" }}>Date: {formatDisplayDate(entry.date)}</p>}
-                          <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* Blood Tests */}
-                  {d.testResults.blood.length > 0 && d.testResults.blood.some(e => e.testType || e.details) && (
-                    <TRGroup label="Blood Tests">
-                      {d.testResults.blood.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.blood.length - 1 ? 10 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          <TRField label="Type" value={entry.testType} />
-                          <TRField label="Results" value={entry.details} />
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* Bronchoscopy Washing */}
-                  {d.testResults.bronchWash.length > 0 && d.testResults.bronchWash.some(e => e.microbiology || e.cytology || e.cellCounts) && (
-                    <TRGroup label="Bronchoscopy Washing">
-                      {d.testResults.bronchWash.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.bronchWash.length - 1 ? 10 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          <TRField label="Microbiology" value={entry.microbiology} />
-                          <TRField label="Cytology"     value={entry.cytology} />
-                          <TRField label="Cell Counts"  value={entry.cellCounts} />
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* Bronchoscopy Biopsy */}
-                  {d.testResults.bronchBiopsy.length > 0 && d.testResults.bronchBiopsy.some(e => e.pathology || e.microbiology) && (
-                    <TRGroup label="Bronchoscopy Biopsy">
-                      {d.testResults.bronchBiopsy.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.bronchBiopsy.length - 1 ? 10 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          <TRField label="Pathology"    value={entry.pathology} />
-                          <TRField label="Microbiology" value={entry.microbiology} />
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* EBUS */}
-                  {d.testResults.ebus.length > 0 && d.testResults.ebus.some(e => e.cytology) && (
-                    <TRGroup label="EBUS">
-                      {d.testResults.ebus.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.ebus.length - 1 ? 10 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          <TRField label="Cytology" value={entry.cytology} />
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* Pleural Fluid */}
-                  {d.testResults.pleuralFluid.length > 0 && d.testResults.pleuralFluid.some(e => e.cytology || e.microbiology || e.biochemistry || e.cellCounts) && (
-                    <TRGroup label="Pleural Fluid">
-                      {d.testResults.pleuralFluid.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.pleuralFluid.length - 1 ? 10 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          <TRField label="Cytology"     value={entry.cytology} />
-                          <TRField label="Microbiology" value={entry.microbiology} />
-                          <TRField label="Biochemistry" value={entry.biochemistry} />
-                          <TRField label="Cell Counts"  value={entry.cellCounts} />
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* Pleural Biopsy */}
-                  {d.testResults.pleuralBiopsy.length > 0 && d.testResults.pleuralBiopsy.some(e => e.pathology || e.microbiology) && (
-                    <TRGroup label="Pleural Biopsy">
-                      {d.testResults.pleuralBiopsy.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.pleuralBiopsy.length - 1 ? 10 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          <TRField label="Pathology"    value={entry.pathology} />
-                          <TRField label="Microbiology" value={entry.microbiology} />
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                  {/* Other Test */}
-                  {d.testResults.otherTests.length > 0 && d.testResults.otherTests.some(e => e.testName || e.result) && (
-                    <TRGroup label="Other Test">
-                      {d.testResults.otherTests.map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ marginBottom: idx < d.testResults.otherTests.length - 1 ? 10 : 0 }}>
-                          {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
-                          {entry.testName?.trim() && <TRField label="Test" value={entry.testName} />}
-                          {entry.result?.trim() && <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>}
-                        </div>
-                      ))}
-                    </TRGroup>
-                  )}
-
-                </div>
-              </DocSection>
-            )}
-
-            {d && d.lungRows?.length > 0 && (
-              <DocSection title="" titleHe="תפקוד ריאות">
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {d.lungRows.map(row => {
-                    const mainFields:  [string, string][] = [["FEV1 L", row.fev1l], ["FEV1 %", row.fev1p], ["FVC L", row.fvcl], ["FVC %", row.fvcp], ["FEV1/FVC %", row.ratio], ["FEF 25-75 %", row.fef]];
-                    const extraFields: [string, string][] = [["TLC L", row.tlcl], ["TLC %", row.tlc], ["RV L", row.rvl], ["RV %", row.rv], ["DLCO %", row.dlco], ["KCO %", row.kco], ["FeNO", row.feno], ["Metacholine", row.meta], ["6 Min Walk", row.walk], ["Ht/Wt/BMI", row.hwbmi]];
-                    const hasMain  = mainFields.some(([, v]) => v?.trim());
-                    const hasExtra = extraFields.some(([, v]) => v?.trim());
-                    return (
-                      <div key={row.id} style={{ border: "1.5px solid #160B5C", borderRadius: 10, overflow: "hidden" }}>
-                        {/* Date header */}
-                        {row.date && (
-                          <div style={{ backgroundColor: "#F2A56B", padding: "5px 12px" }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#000000" }}>Date: {formatDisplayDate(row.date)}</span>
-                          </div>
-                        )}
-
-                        <div style={{ padding: "5px 8px" }}>
-                          {(hasMain || hasExtra) && (
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "4px 6px" }}>
-                              {[...mainFields, ...extraFields].map(([label, val]) => (
-                                <div key={label} style={{ textAlign: "center" }}>
-                                  <div style={{ fontSize: 6.5, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.02em" }}>{label}</div>
-                                  <div style={{ fontSize: 13, color: "#1A2B4A", fontWeight: 600 }}>{val?.trim() || "—"}</div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </DocSection>
-            )}
-
-            {d?.inhalers?.length > 0 && (
-              <DocSection title="" titleHe="סרטון המסביר איך להשתמש במשאף שלך">
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {d.inhalers.map((inh, idx) => inh.name ? (
-                    <div key={inh.id ?? idx} style={{ display: "flex", gap: 16, alignItems: "center", padding: "10px 14px", border: "1px solid #E2E8F0", borderRadius: 12, backgroundColor: "#FAFBFF" }}>
-                      <div style={{
-                        width: 72, height: 72, borderRadius: 10,
-                        backgroundColor: "#EBF3FB", border: "1px solid #E2E8F0",
-                        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                        overflow: "hidden",
-                      }}>
-                        {inh.imageUrl
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          ? <img src={inh.imageUrl} alt={inh.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                          : <InhalerIconSmall />
-                        }
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: "#1A2B4A", margin: "0 0 4px" }}>{inh.name}</p>
-                        {inh.link && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <svg viewBox="0 0 16 16" fill="none" stroke="#4A90D9" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, flexShrink: 0 }}>
-                              <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M9 1h6m0 0v6m0-6L7 9"/>
-                            </svg>
-                            <a href={inh.link} target="_blank" rel="noopener noreferrer"
-                              style={{ fontSize: 11, color: "#4A90D9", textDecoration: "none", fontWeight: 500 }}>
-                              Watch video guide on RightBreathe
-                            </a>
-                            <span style={{ fontSize: 11, color: "#64748B", fontWeight: 400 }}>
-                              (גלול עד למטה אחרי כניסה לקישור בכדי לצפות בסרטון ההדרכה)
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : null)}
-                </div>
-              </DocSection>
-            )}
-          </A4Page>
-        )}
-
-        {/* ── Page 4: Pictures ── */}
-        {hasPictures && (
-          <A4Page>
-            <DocSection title="Pictures" titleHe="תמונות">
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: d!.pictures.length === 1 ? "1fr" : "1fr 1fr",
-                gap: 16,
-              }}>
-                {d!.pictures.map((src, i) => (
-                  <div key={i} style={{ overflow: "hidden", border: "2px solid #000000", backgroundColor: "#ffffff" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={src}
-                      alt={`Image ${i + 1}`}
-                      style={{ width: "100%", display: "block", objectFit: "contain", maxHeight: 280, backgroundColor: "#ffffff" }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </DocSection>
-          </A4Page>
-        )}
-
-        {/* ── Final Page: Important Notes + Signature ── */}
-        <A4Page>
-          {/* Important Notes + Stamp below — kept together, no page splits */}
-          <div style={{ breakInside: "avoid", pageBreakInside: "avoid" }}>
-
-            {/* Important Notes — full width */}
-            <div>
-              {/* Heading bar — 7px symmetric padding ensures centering in html2canvas */}
-              <div className="section-bar-he" style={{
-                width: "100%",
-                backgroundColor: "#E2E2E2",
-                border: "1px solid #AAAAAA",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                minHeight: 28,
-                padding: "7px 8px",
-                marginBottom: 10,
-                boxSizing: "border-box",
-              }}>
-                <h3 style={{
-                  fontSize: 13, fontWeight: 700,
-                  color: "#1A2B4A",
-                  margin: 0, padding: 0, lineHeight: 1,
-                  fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
-                  letterSpacing: "0.04em",
-                }}>
-                  נקודות חשובות
-                </h3>
-              </div>
-
-              {/* Notes list — RTL */}
-              <div>
-                {[
-                  "מכתב זה הוא מסמך סודי המיועד רק למטופל, או למטפל מועמד ואנשי מקצוע בתחום הבריאות המעורבים בטיפול הרפואי הישיר במטופל. אם מסמך זה התקבל בטעות, אנא החזר אותו מיד לכתובת: lungdrsumit@gmail.com .",
-                  "יש להעביר מכתב זה לרופא המשפחה כדי לעיין בתוכנית הניהול והחקירה.",
-                  "כל ביקור במרפאה (כולל ביקורות מעקב ולאחר בדיקות) נדרשות בתשלום.",
-                ].map((text, i) => {
-                  const color = i === 2 ? "#DC2626" : "#160B5C";
-                  return (
-                    <div key={i} style={{ display: "flex", direction: "rtl", gap: 6, alignItems: "flex-start", marginBottom: 4 }}>
-                      <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.5, color }}>{i + 1}.</span>
-                      <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color, textAlign: "right" }}>{text}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Line below notes */}
-              <div style={{ borderTop: "1px solid #160B5C", marginTop: 10 }} />
-            </div>
-
-            {/* Stamp below notes — centred, large */}
-            <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/stamp.png" alt="Official Stamp" style={{ width: 180, height: 180, objectFit: "contain" }} />
-            </div>
-
+        {/* Letter pages — built and packed by PageBuilder */}
+        {sections.length > 0 ? (
+          <PageBuilder key={builderKey} sections={sections} />
+        ) : (
+          <div style={{ color: "#94A3B8", fontSize: 13, padding: 40 }}>
+            Loading letter…
           </div>
-        </A4Page>
+        )}
 
       </div>
     </>

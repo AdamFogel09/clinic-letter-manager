@@ -1,27 +1,73 @@
-// Client-side PDF generation: direct capture of each .a4-page preview element.
+// PDF export: direct screenshot of each fixed-size .a4-page element.
 //
-// Architecture:
-//   1. Find all .a4-page elements in the live DOM — filter empty ones.
-//   2. Capture each page directly with html2canvas (no hidden containers).
-//   3. From the first capture, extract header and footer strips.
-//   4. Slice each page's content into A4-sized chunks, compositing the
-//      shared header + content chunk + footer onto every PDF page.
+// Architecture (new):
+//   1. Find all .a4-page elements rendered by the preview PageBuilder.
+//   2. Filter out genuinely empty pages (text + image + SVG check).
+//   3. Wait for fonts and images to load.
+//   4. Capture each page with html2canvas — pages are already exactly 1160 px
+//      tall (fixed by A4Page component), so no slicing needed.
+//   5. Add each captured canvas as one A4 PDF page (210 × 297 mm).
 //
-// This eliminates blank pages caused by the previous approach (hidden fixed
-// div at left:-10000px, which html2canvas rendered as an empty canvas).
+// This eliminates all blank pages caused by the previous slicer approach,
+// which created nearly-empty "last slice" pages whenever content was even
+// slightly taller than A4.
 
 const PDF_W_MM = 210;
 const PDF_H_MM = 297;
-const SCALE    = 2;    // capture resolution multiplier (2× = sharp on retina)
-const JPEG_Q   = 0.82; // JPEG quality: readable + compact
+const SCALE    = 1.5;   // 1.5× → sharp text, ~30 % smaller than 2×
+const JPEG_Q   = 0.82;  // JPEG quality: readable + compact
 
 function imp(el: HTMLElement, prop: string, val: string) {
   el.style.setProperty(prop, val, "important");
 }
 
+/** Returns true if a page element has no meaningful visible content. */
+export function isPageEmpty(pageEl: HTMLElement): boolean {
+  // Windowed pages carry data-content-offset / data-total-height so we can tell
+  // whether this viewport actually shows any content from the flow.
+  const offset = parseFloat(pageEl.dataset.contentOffset ?? "0");
+  const totalH = parseFloat(pageEl.dataset.totalHeight  ?? "-1");
+  if (totalH >= 0 && offset >= totalH) return true;
+
+  const contentEl = pageEl.querySelector<HTMLElement>(".a4-page-content");
+  if (!contentEl) return true;
+
+  // Text covers most sections (diagnosis, summary, plan, etc.)
+  if ((contentEl.innerText ?? "").trim().length > 0) return false;
+
+  // Images (pictures page, inhaler images, stamp — innerText misses these)
+  const imgs = Array.from(contentEl.querySelectorAll<HTMLImageElement>("img"));
+  if (imgs.some(img => img.complete && img.naturalWidth > 0)) return false;
+
+  // Inline SVG icons
+  if (contentEl.querySelector("svg")) return false;
+
+  return true;
+}
+
 function onCloneFix(clonedDoc: Document): void {
-  // Recolor lungistitute logo black pixels → brand purple (#1E106E).
-  // html2canvas ignores CSS mix-blend-mode:screen, so we pre-bake the color.
+  // Force each .a4-page in the clone to exactly 1160 px and clip overflow,
+  // so html2canvas captures a clean A4-sized rectangle every time.
+  Array.from(clonedDoc.querySelectorAll<HTMLElement>(".a4-page")).forEach(page => {
+    imp(page, "height",     "1160px");
+    imp(page, "min-height", "1160px");
+    imp(page, "max-height", "1160px");
+    imp(page, "overflow",   "hidden");
+    imp(page, "box-shadow", "none");
+    imp(page, "margin",     "0");
+  });
+  Array.from(clonedDoc.querySelectorAll<HTMLElement>(".a4-page-content")).forEach(el => {
+    imp(el, "overflow", "hidden");
+  });
+  // Remove the grey background and gap between pages visible in the browser.
+  Array.from(clonedDoc.querySelectorAll<HTMLElement>(".preview-wrapper")).forEach(el => {
+    imp(el, "background", "white");
+    imp(el, "gap",        "0");
+    imp(el, "padding",    "0");
+  });
+
+  // Recolor lungistitute logo: html2canvas ignores mix-blend-mode:screen,
+  // so we pre-bake black pixels → brand purple (#1E106E).
   try {
     const clonedImg = clonedDoc.querySelector<HTMLImageElement>(".lungistitute-wrap img");
     if (clonedImg) {
@@ -45,58 +91,50 @@ function onCloneFix(clonedDoc: Document): void {
     }
   } catch { /* logo falls back gracefully */ }
 
-  // Fix lavender Hebrew section bars (.section-bar-he).
-  // html2canvas has a bug with flex align-items:center that pushes text to bottom.
+  // Fix header: reinforce flex centering so the logo stays horizontally centered.
+  Array.from(clonedDoc.querySelectorAll<HTMLElement>(".letter-header-wrap")).forEach(hdr => {
+    imp(hdr, "display",         "flex");
+    imp(hdr, "flex-direction",  "column");
+    imp(hdr, "align-items",     "center");
+    imp(hdr, "justify-content", "center");
+    imp(hdr, "text-align",      "center");
+  });
+  Array.from(clonedDoc.querySelectorAll<HTMLElement>(".letter-header-wrap img")).forEach(img => {
+    imp(img, "display", "block");
+    imp(img, "margin",  "0 auto");
+  });
+
+  // Fix Hebrew section bars (.section-bar-he): flex + centered.
   Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar-he")).forEach(bar => {
-    imp(bar, "display",    "block");
-    imp(bar, "padding",    "7px 8px");
-    imp(bar, "min-height", "0");
-    imp(bar, "text-align", "center");
-    imp(bar, "overflow",   "hidden");
-    imp(bar, "box-sizing", "border-box");
-    imp(bar, "width",      "100%");
-    Array.from(bar.querySelectorAll<HTMLElement>("h3, span")).forEach(el => {
-      imp(el, "display",     "block");
-      imp(el, "text-align",  "center");
-      imp(el, "width",       "100%");
+    imp(bar, "display",         "flex");
+    imp(bar, "flex-direction",  "row");
+    imp(bar, "align-items",     "center");
+    imp(bar, "justify-content", "center");
+    imp(bar, "padding",         "7px 8px");
+    imp(bar, "text-align",      "center");
+    imp(bar, "box-sizing",      "border-box");
+    imp(bar, "width",           "100%");
+    Array.from(bar.querySelectorAll<HTMLElement>(".section-title-text")).forEach(el => {
       imp(el, "margin",      "0");
       imp(el, "padding",     "0");
-      imp(el, "line-height", "1.3");
+      imp(el, "line-height", "1");
+      imp(el, "text-align",  "center");
     });
   });
 
-  // Fix grey English section bars (.section-bar).
+  // Fix English section bars (.section-bar): flex centering (single title = center, bilingual = space-between).
   Array.from(clonedDoc.querySelectorAll<HTMLElement>(".section-bar")).forEach(bar => {
-    const h3   = bar.querySelector<HTMLElement>(":scope > h3");
-    const span = bar.querySelector<HTMLElement>(":scope > span");
-    if (h3 && span) {
-      imp(bar,  "display",         "flex");
-      imp(bar,  "flex-direction",  "row");
-      imp(bar,  "justify-content", "space-between");
-      imp(bar,  "align-items",     "flex-start");
-      imp(bar,  "padding",         "5px 10px");
-      imp(bar,  "min-height",      "0");
-      imp(bar,  "box-sizing",      "border-box");
-      imp(h3,   "margin", "0"); imp(h3,   "padding", "0"); imp(h3,   "line-height", "1.3");
-      imp(span, "margin", "0"); imp(span, "padding", "0"); imp(span, "line-height", "1.3");
-    } else {
-      imp(bar, "display",    "block");
-      imp(bar, "padding",    "5px 10px");
-      imp(bar, "min-height", "0");
-      imp(bar, "text-align", "center");
-      imp(bar, "overflow",   "hidden");
-      imp(bar, "box-sizing", "border-box");
-      imp(bar, "width",      "100%");
-      [h3, span].forEach(el => {
-        if (!el) return;
-        imp(el, "display",     "block");
-        imp(el, "text-align",  "center");
-        imp(el, "width",       "100%");
-        imp(el, "margin",      "0");
-        imp(el, "padding",     "0");
-        imp(el, "line-height", "1.3");
-      });
-    }
+    const items = Array.from(bar.querySelectorAll<HTMLElement>(":scope > .section-title-text"));
+    imp(bar, "display",         "flex");
+    imp(bar, "flex-direction",  "row");
+    imp(bar, "align-items",     "center");
+    imp(bar, "justify-content", items.length >= 2 ? "space-between" : "center");
+    imp(bar, "padding",         "5px 10px");
+    imp(bar, "box-sizing",      "border-box");
+    imp(bar, "width",           "100%");
+    items.forEach(el => {
+      imp(el, "margin", "0"); imp(el, "padding", "0"); imp(el, "line-height", "1");
+    });
   });
 
   // Unwrap display:contents divs in the exam grid (not supported by html2canvas).
@@ -119,14 +157,15 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
   if (allPages.length === 0)
     throw new Error("No letter pages found. Please open the letter preview first.");
 
-  // Skip pages with no visible text — prevents exporting blank PDF pages
-  const pages = allPages.filter(p => (p.innerText?.trim() ?? "").length > 0);
+  // Filter pages that contain no real content.
+  const pages = allPages.filter(p => !isPageEmpty(p));
   if (pages.length === 0)
     throw new Error("Letter pages appear to be empty — nothing to export.");
 
+  // Wait for web fonts.
   if (document.fonts?.ready) await document.fonts.ready;
 
-  // Wait for all images in the visible pages to finish loading
+  // Wait for all images in the visible pages to finish loading.
   const allImgs  = pages.flatMap(p => Array.from(p.querySelectorAll<HTMLImageElement>("img")));
   const unloaded = allImgs.filter(img => !img.complete || img.naturalWidth === 0);
   if (unloaded.length > 0) {
@@ -140,8 +179,7 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     if (failCount > 0) console.warn(`[generatePdf] ${failCount} image(s) failed to load.`);
   }
 
-  // Inject capture-time style overrides into the live document.
-  // html2canvas clones the document including these styles.
+  // Inject capture-time style overrides (applied to live document; onclone mirrors them).
   const captureStyle = document.createElement("style");
   captureStyle.textContent = `
     .a4-page {
@@ -150,11 +188,10 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
       max-width: 820px !important;
       min-width: 820px !important;
     }
-    .preview-wrapper { background: white !important; gap: 0 !important; }
+    .preview-wrapper { background: white !important; gap: 0 !important; padding: 0 !important; }
     .lungistitute-wrap { background-color: white !important; isolation: auto !important; }
     .lungistitute-wrap img { mix-blend-mode: normal !important; }
-    .letter-header-wrap { display: block !important; text-align: center !important; }
-    .letter-header-wrap > img { display: inline-block !important; }
+    .letter-header-wrap { display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; }
     .pdf-patient-cols { gap: 0 !important; }
     .pdf-patient-cols > div:first-child { margin-right: 32px !important; }
     .pdf-lv { gap: 0 !important; }
@@ -173,108 +210,25 @@ async function buildLetterPdfDoc(onProgress?: (msg: string) => void): Promise<un
     onclone:         onCloneFix as (clonedDoc: Document) => void,
   };
 
-  let pdf:         InstanceType<typeof jsPDF> | null = null;
-  let headerStrip: HTMLCanvasElement | null = null;
-  let footerStrip: HTMLCanvasElement | null = null;
-  let headerH  = 0;
-  let footerH  = 0;
-  let CANVAS_W    = Math.round(820 * SCALE);                         // updated from first capture
-  let A4_CANVAS_H = Math.round(CANVAS_W * (PDF_H_MM / PDF_W_MM));   // updated from first capture
+  let pdf: InstanceType<typeof jsPDF> | null = null;
 
   try {
     for (let pi = 0; pi < pages.length; pi++) {
       const pageEl = pages[pi];
       onProgress?.(`Capturing page ${pi + 1} of ${pages.length}…`);
 
-      // Capture the full .a4-page element directly from the live DOM
-      const pageCanvas = await html2canvas(pageEl, captureOpts);
+      // Capture the page. onCloneFix forces height: 1160px + overflow: hidden in
+      // the clone, so the canvas is always exactly 820 × 1160 (at 1× scale).
+      const canvas = await html2canvas(pageEl, captureOpts);
 
-      // First page: lock dimensions and extract reusable header/footer strips
-      if (pi === 0) {
-        CANVAS_W    = pageCanvas.width;
-        A4_CANVAS_H = Math.round(CANVAS_W * (PDF_H_MM / PDF_W_MM));
-
-        const headerEl = pageEl.querySelector<HTMLElement>(".letter-header-wrap");
-        const footerEl = pageEl.querySelector<HTMLElement>(".letter-footer-bar");
-        const pageDomH = Math.max(pageEl.getBoundingClientRect().height, 1);
-        const hdrDomH  = headerEl?.getBoundingClientRect().height ?? 0;
-        const ftrDomH  = footerEl?.getBoundingClientRect().height ?? 0;
-
-        const domScale = pageCanvas.height / pageDomH;
-        headerH = Math.min(Math.ceil(hdrDomH * domScale),     Math.floor(A4_CANVAS_H * 0.40));
-        footerH = Math.min(Math.ceil(ftrDomH * domScale) + 4, Math.floor(A4_CANVAS_H * 0.20));
-
-        headerStrip        = document.createElement("canvas");
-        headerStrip.width  = CANVAS_W;
-        headerStrip.height = headerH;
-        headerStrip.getContext("2d")!.drawImage(
-          pageCanvas, 0, 0, CANVAS_W, headerH,
-          0, 0, CANVAS_W, headerH,
-        );
-
-        footerStrip        = document.createElement("canvas");
-        footerStrip.width  = CANVAS_W;
-        footerStrip.height = footerH;
-        footerStrip.getContext("2d")!.drawImage(
-          pageCanvas,
-          0, pageCanvas.height - footerH, CANVAS_W, footerH,
-          0, 0, CANVAS_W, footerH,
-        );
+      // All PDF pages are standard A4 (210 × 297 mm).
+      if (pdf === null) {
+        pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [PDF_W_MM, PDF_H_MM] });
+      } else {
+        pdf.addPage([PDF_W_MM, PDF_H_MM]);
       }
 
-      // Content region sits between header and footer in the captured canvas
-      const usableH     = A4_CANVAS_H - headerH - footerH;
-      if (usableH <= 0) throw new Error("Header/footer height leaves no room for content.");
-
-      const contentStart = headerH;
-      const contentEnd   = pageCanvas.height - footerH;
-      const contentH     = Math.max(0, contentEnd - contentStart);
-
-      // A page taller than A4 (content overflow) becomes multiple PDF pages
-      const numSlices = Math.max(1, Math.ceil(contentH / usableH));
-
-      for (let s = 0; s < numSlices; s++) {
-        if (numSlices > 1) onProgress?.(`Page ${pi + 1} · part ${s + 1}/${numSlices}…`);
-
-        const srcY = contentStart + s * usableH;
-        const srcH = Math.min(usableH, contentEnd - srcY);
-
-        // Build one A4-sized canvas: header strip + content slice + footer strip
-        const sliceCanvas        = document.createElement("canvas");
-        sliceCanvas.width        = CANVAS_W;
-        sliceCanvas.height       = A4_CANVAS_H;
-        const ctx                = sliceCanvas.getContext("2d")!;
-
-        // White background (fills the gap on the last partial slice)
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, CANVAS_W, A4_CANVAS_H);
-
-        // Header at top of every page
-        if (headerStrip && headerH > 0) {
-          ctx.drawImage(headerStrip, 0, 0, CANVAS_W, headerH, 0, 0, CANVAS_W, headerH);
-        }
-
-        // Content slice (white space below if srcH < usableH — last page padding)
-        if (srcH > 0) {
-          ctx.drawImage(pageCanvas, 0, srcY, CANVAS_W, srcH, 0, headerH, CANVAS_W, srcH);
-        }
-
-        // Footer pinned at bottom of every page
-        if (footerStrip && footerH > 0) {
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, A4_CANVAS_H - footerH, CANVAS_W, footerH);
-          ctx.drawImage(footerStrip, 0, 0, CANVAS_W, footerH, 0, A4_CANVAS_H - footerH, CANVAS_W, footerH);
-        }
-
-        // Add page to PDF at exact A4 dimensions
-        const pageHMM = (A4_CANVAS_H / CANVAS_W) * PDF_W_MM; // ≈ 297 mm
-        if (pdf === null) {
-          pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [PDF_W_MM, pageHMM] });
-        } else {
-          pdf.addPage([PDF_W_MM, pageHMM]);
-        }
-        pdf.addImage(sliceCanvas.toDataURL("image/jpeg", JPEG_Q), "JPEG", 0, 0, PDF_W_MM, pageHMM);
-      }
+      pdf.addImage(canvas.toDataURL("image/jpeg", JPEG_Q), "JPEG", 0, 0, PDF_W_MM, PDF_H_MM);
     }
   } finally {
     document.head.removeChild(captureStyle);
