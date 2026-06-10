@@ -144,7 +144,7 @@ function hasTestData(val: unknown): boolean {
 
 function TRGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div data-atomic="1" style={{ marginBottom: 10 }}>
       <p style={{ fontSize: 13, fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 5px" }}>{label}</p>
       <div>{children}</div>
     </div>
@@ -440,44 +440,89 @@ function PageBuilder({ sections }: { sections: SectionDef[] }) {
       const cRect  = container.getBoundingClientRect();
       const totalH = cRect.height;
 
-      // Measure each section's top edge and the bottom of its title bar.
-      const secs: { top: number; barEnd: number }[] = [];
+      // ── No-break zones ───────────────────────────────────────────────────────
+      // Zone = a half-open interval [top, bottom) in the content flow.
+      // A break at c is INSIDE a zone if: zone.top ≤ c < zone.bottom.
+      // We want every break point to fall OUTSIDE all zones.
+      //
+      // Zone types:
+      //   1. Orphan zone  – first (barHeight + MIN_BODY_PX) px of a section title bar.
+      //      Prevents leaving a lone title at the bottom of a page.
+      //   2. Atomic zone  – full bounds of elements marked [data-atomic].
+      //      Prevents cutting lung-function rows, TRGroups, or the important-notes block.
+
+      const MIN_BODY_PX = 50; // min body below title bar that must be visible on same page
+      const MIN_PAGE_PX = 80; // minimum windowHeight guard — page must show ≥ 80 px
+
+      // Collect orphan zones from section title bars.
+      const allZones: { top: number; bottom: number }[] = [];
       Array.from(container.querySelectorAll<HTMLElement>("[data-sid]")).forEach(el => {
         const top  = el.getBoundingClientRect().top  - cRect.top;
         const bar  = el.querySelector<HTMLElement>(".section-bar, .section-bar-he");
         const barEnd = bar
           ? (bar.getBoundingClientRect().bottom - cRect.top)
-          : (top + 32); // fallback: assume 32 px title height
-        secs.push({ top, barEnd });
+          : (top + 32);
+        allZones.push({ top, bottom: barEnd + MIN_BODY_PX });
       });
 
-      // Compute smart break offsets.
-      // MIN_BODY_PX: minimum body content (below the title bar) that must be visible
-      // on the same page as the title before we allow a break. If less body is visible,
-      // the break moves to just before the section (orphan protection).
-      const MIN_BODY_PX = 50;
-      const computedOffsets: number[]      = [0];
-      const computedWH:      number[]      = [];
+      // Collect atomic element zones (full element bounds = no split allowed).
+      Array.from(container.querySelectorAll<HTMLElement>("[data-atomic]")).forEach(el => {
+        const r = el.getBoundingClientRect();
+        allZones.push({ top: r.top - cRect.top, bottom: r.bottom - cRect.top });
+      });
+
+      // ── Break-point algorithm ────────────────────────────────────────────────
+      // For each page, find the LATEST valid break ≤ prev + CONTENT_H:
+      //   • Try the natural break (prev + CONTENT_H) first.
+      //   • If it's inside a zone, generate candidates from zone boundaries:
+      //       – just AFTER a zone (zone.bottom)  → keeps the element on this page
+      //       – just BEFORE a zone (zone.top − GAP) → pushes the element to next page
+      //   • Among all candidates ≤ target that are valid, pick the LARGEST
+      //     (= most content on page, least blank space).
+      //   • Fallback: if no valid candidate meets the MIN_PAGE_PX guard, accept the
+      //     natural break (rare edge case with very large atomic elements).
+
+      const isValidBreak = (c: number, prev_: number, target_: number) =>
+        c > prev_ + MIN_PAGE_PX &&
+        c <= target_ &&
+        !allZones.some(z => c >= z.top && c < z.bottom);
+
+      const computedOffsets: number[] = [0];
+      const computedWH:      number[] = [];
       let prev = 0;
 
       while (true) {
         const target = prev + CONTENT_H;
         if (target >= totalH) {
-          // Last window: show remaining content, capped at CONTENT_H.
           computedWH.push(Math.min(totalH - prev, CONTENT_H));
           break;
         }
 
-        // Check if `target` falls in the orphan zone of any section.
-        let breakAt = target;
-        for (const s of secs) {
-          if (target > s.top && target < s.barEnd + MIN_BODY_PX) {
-            // Break would leave only the title (+ < MIN_BODY_PX of body) visible.
-            // Move break to just before this section starts.
-            const candidate = s.top - SECTION_GAP;
-            if (candidate > prev + 100) breakAt = candidate; // guard: must advance ≥ 100 px
-            break;
-          }
+        if (isValidBreak(target, prev, target)) {
+          // Natural break is clean — use it.
+          computedWH.push(CONTENT_H);
+          computedOffsets.push(target);
+          prev = target;
+          continue;
+        }
+
+        // Natural break hits a zone — build a candidate list from zone boundaries.
+        const candidateSet = new Set<number>();
+        for (const zone of allZones) {
+          // Only care about zones that overlap with the window (prev, target].
+          if (zone.bottom <= prev || zone.top >= target) continue;
+          // Break BEFORE the zone (zone pushed to next page).
+          const before = zone.top - SECTION_GAP;
+          if (before > prev + MIN_PAGE_PX) candidateSet.add(before);
+          // Break AFTER the zone (zone stays on this page) — only if it fits.
+          if (zone.bottom <= target) candidateSet.add(zone.bottom);
+        }
+
+        // Sort descending (largest = most content first).
+        const sorted = Array.from(candidateSet).sort((a, b) => b - a);
+        let breakAt = target; // fallback: accept split
+        for (const c of sorted) {
+          if (isValidBreak(c, prev, target)) { breakAt = c; break; }
         }
 
         computedWH.push(breakAt - prev);
@@ -485,7 +530,7 @@ function PageBuilder({ sections }: { sections: SectionDef[] }) {
         prev = breakAt;
       }
 
-      // Drop the last page if it would show < 50 px of content (avoids near-blank pages).
+      // Drop a near-empty last page (< 50 px content).
       if (computedWH.length > 1 && computedWH[computedWH.length - 1] < 50) {
         computedWH.pop();
         computedOffsets.pop();
@@ -1116,7 +1161,7 @@ export default function LetterPreviewPage() {
               const hasMain  = mainFields.some(([, v]) => v?.trim());
               const hasExtra = extraFields.some(([, v]) => v?.trim());
               return (
-                <div key={row.id} style={{ border: "1.5px solid #160B5C", borderRadius: 10, overflow: "hidden" }}>
+                <div key={row.id} data-atomic="1" style={{ border: "1.5px solid #160B5C", borderRadius: 10, overflow: "hidden" }}>
                   {row.date && (
                     <div style={{ backgroundColor: "#F2A56B", padding: "5px 12px" }}>
                       <span style={{ fontSize: 13, fontWeight: 700, color: "#000000" }}>Date: {formatDisplayDate(row.date)}</span>
@@ -1204,7 +1249,7 @@ export default function LetterPreviewPage() {
       id: "important-notes",
       estimate: 380,
       render: () => (
-        <div>
+        <div data-atomic="1">
           <div className="section-bar-he" style={{
             width: "100%",
             backgroundColor: "#E2E2E2",
