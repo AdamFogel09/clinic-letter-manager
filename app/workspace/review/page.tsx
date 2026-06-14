@@ -9,15 +9,10 @@ import { createClient } from "@/lib/supabase/client";
 import {
   getLettersByStatus,
   updateLetterStatus,
-  updateLetterFileUrls,
   deleteOldLettersForPatient,
 } from "@/lib/supabase/letters";
 import {
-  getLetters,
   markAsPreviewed,
-  updateStatus as updateLocalStatus,
-  setReviewFile,
-  markSentToPatient,
   type StoredLetter,
   type LetterStatus,
 } from "@/lib/letterStore";
@@ -70,10 +65,12 @@ function WaitingCard({
   onMarkReviewed,
 }: {
   letter: StoredLetter;
-  onMarkReviewed: (filename: string) => void;
+  onMarkReviewed: (filename: string) => Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const colors  = STATUS_COLORS["Waiting for Anat"];
+  const [uploading,   setUploading]   = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   return (
     <div className="bg-white rounded-2xl border px-5 py-4"
@@ -94,26 +91,36 @@ function WaitingCard({
       </div>
       <div className="flex items-center gap-3 mt-3 pt-3 flex-wrap" style={{ borderTop: "1px solid #F1F5F9" }}>
         <p className="text-xs flex-1 min-w-0" style={{ color: "#94A3B8" }}>
-          Waiting for Anat to return the reviewed file
+          {uploading ? "Marking as reviewed…" : "Waiting for Anat to return the reviewed file"}
         </p>
         <input ref={fileRef} type="file" accept=".docx,.pages,.doc" className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            onMarkReviewed(file.name);
+            setUploading(true);
+            setUploadError("");
+            onMarkReviewed(file.name)
+              .catch(err => setUploadError(err instanceof Error ? err.message : "Failed to mark as reviewed."))
+              .finally(() => setUploading(false));
             e.target.value = "";
           }} />
-        <button onClick={() => fileRef.current?.click()}
+        <button onClick={() => !uploading && fileRef.current?.click()} disabled={uploading}
           className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
-          style={{ backgroundColor: "#1A2B4A", color: "#fff", borderColor: "#1A2B4A" }}
-          onMouseEnter={e => (e.currentTarget.style.transform = "translateY(-1px)")}
+          style={{ backgroundColor: uploading ? "#F4F6F9" : "#1A2B4A", color: uploading ? "#94A3B8" : "#fff",
+            borderColor: uploading ? "#E2E8F0" : "#1A2B4A", cursor: uploading ? "default" : "pointer" }}
+          onMouseEnter={e => { if (!uploading) e.currentTarget.style.transform = "translateY(-1px)"; }}
           onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-          Upload Reviewed File
+          {uploading ? "Updating…" : "Upload Reviewed File"}
         </button>
       </div>
-      <p className="text-[10px] mt-1.5 text-right" style={{ color: "#CBD5E1" }}>
-        Accepts .docx · .pages · .doc
-      </p>
+      {uploadError && (
+        <p className="text-xs mt-1.5 text-right font-semibold" style={{ color: "#BE123C" }}>{uploadError}</p>
+      )}
+      {!uploadError && (
+        <p className="text-[10px] mt-1.5 text-right" style={{ color: "#CBD5E1" }}>
+          Accepts .docx · .pages · .doc
+        </p>
+      )}
     </div>
   );
 }
@@ -124,9 +131,24 @@ function ReviewedCard({
   letter, onPreview, onApprove,
 }: {
   letter: StoredLetter;
-  onPreview: () => void; onApprove: () => void;
+  onPreview: () => void; onApprove: () => Promise<void>;
 }) {
   const colors = STATUS_COLORS["Reviewed"];
+  const [approving,   setApproving]   = useState(false);
+  const [approveError, setApproveError] = useState("");
+
+  const handleApproveClick = async () => {
+    if (approving) return;
+    setApproving(true);
+    setApproveError("");
+    try {
+      await onApprove();
+    } catch (err) {
+      setApproveError(err instanceof Error ? err.message : "Approve failed. Please try again.");
+    } finally {
+      setApproving(false);
+    }
+  };
   return (
     <div className="bg-white rounded-2xl border px-5 py-4"
       style={{ borderColor: "#E2E8F0", boxShadow: "0 1px 3px 0 rgb(0 0 0/0.05), 0 4px 16px 0 rgb(26 43 74/0.04)" }}>
@@ -154,8 +176,12 @@ function ReviewedCard({
           Reviewed
         </span>
       </div>
-      <div className="flex items-center gap-3 mt-3 pt-3" style={{ borderTop: "1px solid #F1F5F9" }}>
-        <div className="flex-1 min-w-0" />
+      <div className="flex items-center gap-3 mt-3 pt-3 flex-wrap" style={{ borderTop: "1px solid #F1F5F9" }}>
+        <div className="flex-1 min-w-0">
+          {approveError && (
+            <p className="text-xs font-semibold" style={{ color: "#BE123C" }}>{approveError}</p>
+          )}
+        </div>
         <button onClick={onPreview}
           className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
           style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#E2E8F0" }}
@@ -163,12 +189,15 @@ function ReviewedCard({
           onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
           Preview Letter
         </button>
-        <button onClick={onApprove}
+        <button onClick={handleApproveClick} disabled={approving}
           className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
-          style={{ backgroundColor: "#1A2B4A", color: "#fff", borderColor: "#1A2B4A", cursor: "pointer" }}
-          onMouseEnter={e => (e.currentTarget.style.transform = "translateY(-1px)")}
+          style={{ backgroundColor: approving ? "#F4F6F9" : "#1A2B4A",
+            color: approving ? "#94A3B8" : "#fff",
+            borderColor: approving ? "#E2E8F0" : "#1A2B4A",
+            cursor: approving ? "default" : "pointer" }}
+          onMouseEnter={e => { if (!approving) e.currentTarget.style.transform = "translateY(-1px)"; }}
           onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-          Approve
+          {approving ? "Approving…" : "Approve"}
         </button>
       </div>
     </div>
@@ -594,16 +623,7 @@ export default function ReviewPage() {
   const loadAll = async () => {
     const supabase = createClient();
     const statuses: LetterStatus[] = ["Waiting for Anat", "Reviewed", "Ready for Patient", "Sent to Patient"];
-    const supabaseLetters = await getLettersByStatus(supabase, statuses);
-
-    if (supabaseLetters.length > 0) {
-      setLetters(supabaseLetters);
-    } else {
-      // Fallback to localStorage while Supabase is empty or unavailable
-      setLetters(getLetters().filter((l) =>
-        statuses.includes(l.status as LetterStatus)
-      ));
-    }
+    setLetters(await getLettersByStatus(supabase, statuses));
   };
 
   useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -613,33 +633,32 @@ export default function ReviewPage() {
     await updateLetterStatus(supabase, letter.id, "Ready for Patient", {
       approvedAt: new Date().toISOString(),
     });
-    updateLocalStatus(letter.id, "Ready for Patient");
-    loadAll();
+    await loadAll();
   };
 
   const handleUploadReviewed = async (letter: StoredLetter, filename: string) => {
     const supabase = createClient();
     await updateLetterStatus(supabase, letter.id, "Reviewed", {
-      reviewedAt:      new Date().toISOString(),
-      reviewFileName:  filename,
+      reviewedAt:     new Date().toISOString(),
+      reviewFileName: filename,
     });
-    setReviewFile(letter.id, filename);
-    updateLocalStatus(letter.id, "Reviewed");
-    loadAll();
+    await loadAll();
   };
 
   const handleMarkSent = async (letter: StoredLetter, email: string) => {
     const supabase = createClient();
-    await updateLetterStatus(supabase, letter.id, "Sent to Patient", {
-      sentToPatientAt: new Date().toISOString(),
-    });
-    markSentToPatient(letter.id, email);
-    // Only now — after the letter is confirmed sent — delete all previous
-    // letters for this patient. Content is preserved in the new sent letter.
-    if (letter.patientDbId) {
-      await deleteOldLettersForPatient(supabase, letter.id, letter.patientDbId);
+    try {
+      await updateLetterStatus(supabase, letter.id, "Sent to Patient", {
+        sentToPatientAt: new Date().toISOString(),
+      });
+      if (letter.patientDbId) {
+        await deleteOldLettersForPatient(supabase, letter.id, letter.patientDbId);
+      }
+    } catch (err) {
+      console.error("[handleMarkSent]", err);
+    } finally {
+      await loadAll();
     }
-    loadAll();
   };
 
   const navigateToPreview = (letter: StoredLetter, exportMode = false) => {
@@ -698,6 +717,7 @@ export default function ReviewPage() {
             onApprove={() => handleApprove(l)} />
         ))}
       </Section>
+
 
       <Section title="Ready for Patient" count={ready.length}
         badge={{ bg: "#CCFBF1", text: "#0D9488" }} empty="No letters ready for patient yet">

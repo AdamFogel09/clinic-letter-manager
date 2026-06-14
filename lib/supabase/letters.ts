@@ -457,8 +457,11 @@ export async function updateLetterStatus(
 
   if (error) {
     console.error("[updateLetterStatus] error:", error.code, error.message);
-  } else if (!data) {
+    throw new Error(error.message || "Status update failed.");
+  }
+  if (!data) {
     console.error("[updateLetterStatus] Letter not found or permission denied.");
+    throw new Error("Letter not found — it may have been deleted.");
   }
 }
 
@@ -496,7 +499,10 @@ export async function updateLetterHebrew(
     .from("letters")
     .update(payload)
     .eq("id", id);
-  if (error) console.error("Supabase Hebrew update error:", error);
+  if (error) {
+    console.error("Supabase Hebrew update error:", error);
+    throw new Error(error.message || "Failed to save Hebrew translation.");
+  }
 }
 
 /**

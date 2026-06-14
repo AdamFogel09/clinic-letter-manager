@@ -74,9 +74,10 @@ export default function AnatReviewLetterPage() {
   const [patId,     setPatId]     = useState("");
   const [letterDate, setLetterDate] = useState("");
 
-  const [saving,    setSaving]    = useState(false);
-  const [finishing, setFinishing] = useState(false);
-  const [savedMsg,  setSavedMsg]  = useState(false);
+  const [saving,      setSaving]      = useState(false);
+  const [finishing,   setFinishing]   = useState(false);
+  const [savedMsg,    setSavedMsg]    = useState(false);
+  const [finishError, setFinishError] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -195,6 +196,8 @@ export default function AnatReviewLetterPage() {
 
   const handleFinishReview = async () => {
     setFinishing(true);
+    setFinishError("");
+    try {
     const supabase = createClient();
     // Save Hebrew + update status in Supabase
     await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections, diagItems, planSteps });
@@ -251,8 +254,12 @@ export default function AnatReviewLetterPage() {
       localStorage.setItem("letter_preview",           JSON.stringify(d));
       localStorage.setItem("letter_current_supabase_id", id);
     }
-    setFinishing(false);
     router.push("/workspace/review");
+    } catch (err) {
+      setFinishError(err instanceof Error ? err.message : "Failed to finish review. Please try again.");
+    } finally {
+      setFinishing(false);
+    }
   };
 
 
@@ -302,6 +309,11 @@ export default function AnatReviewLetterPage() {
         </div>
         <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
           {savedMsg && <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>Draft saved ✓</span>}
+          {finishError && (
+            <span className="text-xs font-semibold max-w-xs text-right" style={{ color: "#BE123C" }}>
+              {finishError}
+            </span>
+          )}
           <button onClick={handleSaveDraft} disabled={saving}
             className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 hover:-translate-y-px"
             style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#E2E8F0", opacity: saving ? 0.7 : 1 }}>
@@ -585,6 +597,11 @@ export default function AnatReviewLetterPage() {
         {savedMsg && (
           <p className="text-sm font-semibold text-center mb-2.5" style={{ color: "#0D9488" }}>
             Draft saved ✓
+          </p>
+        )}
+        {finishError && (
+          <p className="text-xs font-semibold text-center mb-2" style={{ color: "#BE123C" }}>
+            {finishError}
           </p>
         )}
         <div className="flex gap-3">
