@@ -19,7 +19,7 @@ import {
   planStepsToHEArr,
 } from "@/lib/supabase/letters";
 import {
-  getLetter,
+  getLetters,
   updateLetterData,
   updateStatus,
 } from "@/lib/letterStore";
@@ -129,7 +129,7 @@ export default function AnatReviewLetterPage() {
         }
       } else {
         // Fallback to localStorage
-        const local = getLetter(id);
+        const local = getLetters().find((l) => l.id === id) ?? null;
         if (!local) { setNotFound(true); setLoading(false); return; }
         const d = (local.data ?? {}) as Record<string, unknown>;
         setPatName(local.patientName || "");

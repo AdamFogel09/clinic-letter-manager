@@ -59,44 +59,11 @@ export function upsertLetter(letter: StoredLetter): void {
   saveLetters(letters);
 }
 
-export function setReviewFile(id: string, filename: string): void {
-  const letters = getLetters();
-  const letter = letters.find((l) => l.id === id);
-  if (letter) {
-    letter.reviewFileName = filename;
-    letter.reviewFileUploadedAt = new Date().toISOString();
-    saveLetters(letters);
-  }
-}
-
 export function updateStatus(id: string, status: LetterStatus): void {
   const letters = getLetters();
   const letter = letters.find((l) => l.id === id);
   if (letter) {
     letter.status = status;
-    saveLetters(letters);
-  }
-}
-
-export function countByStatus(status: LetterStatus): number {
-  return getLetters().filter((l) => l.status === status).length;
-}
-
-export function getLettersByStatus(status: LetterStatus): StoredLetter[] {
-  return getLetters().filter((l) => l.status === status);
-}
-
-export function getLetter(id: string): StoredLetter | null {
-  return getLetters().find((l) => l.id === id) ?? null;
-}
-
-export function markSentToPatient(id: string, email: string): void {
-  const letters = getLetters();
-  const letter = letters.find((l) => l.id === id);
-  if (letter) {
-    letter.status = "Sent to Patient";
-    letter.sentToEmail = email;
-    letter.sentAt = new Date().toISOString();
     saveLetters(letters);
   }
 }
@@ -124,14 +91,4 @@ export function markAsPreviewed(id: string): void {
   } catch { /* ignore */ }
 }
 
-export function hasPreviewed(id: string): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const raw = localStorage.getItem(PREVIEWED_KEY);
-    const ids: string[] = raw ? JSON.parse(raw) : [];
-    return ids.includes(id);
-  } catch {
-    return false;
-  }
-}
 
