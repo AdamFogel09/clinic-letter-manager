@@ -1,4 +1,4 @@
----
+! vercel logout---
 name: project-clinic-letter-manager
 description: Stack, current state, and architectural decisions for the clinic-letter-manager app
 metadata:

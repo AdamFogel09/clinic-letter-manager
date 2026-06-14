@@ -71,7 +71,7 @@ function buildRawEmail(params: {
 
 export async function POST(req: NextRequest) {
   // ── Gmail connection check ────────────────────────────────────────────────────
-  if (!isGmailConnected()) {
+  if (!(await isGmailConnected())) {
     return NextResponse.json(
       { error: "Gmail is not connected. Please connect Gmail from the Dashboard first." },
       { status: 503 }
@@ -156,26 +156,39 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Send via Gmail API ─────────────────────────────────────────────────────────
-  const authClient = getAuthenticatedClient();
+  // getAuthenticatedClient loads stored tokens and auto-refreshes the access token
+  // if it has expired. Returns null only when the refresh token itself is invalid
+  // (revoked, missing) — i.e. a full reconnect is required.
+  const authClient = await getAuthenticatedClient();
   if (!authClient) {
-    return NextResponse.json({ error: "Gmail auth client unavailable." }, { status: 503 });
+    return NextResponse.json(
+      { error: "Gmail connection expired. Please click 'Reconnect Gmail' on the Dashboard." },
+      { status: 503 }
+    );
   }
 
   const gmail = google.gmail({ version: "v1", auth: authClient });
 
   const emailBodyHtml = `<!DOCTYPE html>
-<html dir="rtl" lang="he">
+<html lang="he">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="direction:rtl;text-align:right;font-family:Arial,'Helvetica Neue',sans-serif;font-size:16px;line-height:1.9;color:#222222;max-width:600px;margin:0 auto;padding:32px 24px;background-color:#ffffff;">
-  <p style="margin:0 0 18px;">לכבוד המטופל,</p>
-  <p style="margin:0 0 18px;">בבקשה מצאו את מכתב הקליניקה שלכם מצורף.</p>
-  <p style="margin:0 0 18px;">אנא קראו אותו בעיון ושלחו עותק אל רופא המשפחה שלכם.</p>
-  <p style="margin:0 0 18px;">לכל שאלה לגבי תוכן המכתב, צרו עמנו קשר.</p>
-  <p style="margin:0 0 18px;">בברכה,</p>
-  <p style="margin:0;">ד&quot;ר סומיט צ&#39;טרג&#39;י</p>
+<body>
+<div dir="rtl" style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.6;">
+  <p>לכבוד המטופל,</p>
+
+  <p>בבקשה מצאו את מכתב הקליניקה שלכם מצורף.</p>
+
+  <p>אנא קראו אותו בעיון ושלחו עותק אל רופא המשפחה שלכם.</p>
+
+  <p>לכל שאלה לגבי תוכן המכתב, צרו עמנו קשר.</p>
+
+  <p>בברכה,</p>
+
+  <p>ד"ר סומיט צ'טרג'י</p>
+</div>
 </body>
 </html>`;
 
@@ -196,15 +209,16 @@ export async function POST(req: NextRequest) {
     });
   } catch (sendErr: unknown) {
     console.error("[send-patient-email] Gmail send error:", sendErr);
+    const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
     const isAuthError =
-      sendErr instanceof Error &&
-      (sendErr.message.includes("invalid_grant") ||
-        sendErr.message.includes("Invalid Credentials") ||
-        sendErr.message.includes("Token has been expired"));
+      msg.includes("invalid_grant") ||
+      msg.includes("Invalid Credentials") ||
+      msg.includes("Token has been expired") ||
+      msg.includes("invalid_token");
     return NextResponse.json(
       {
         error: isAuthError
-          ? "Gmail connection has expired. Please click 'Reconnect Gmail' on the Dashboard."
+          ? "Gmail connection expired. Please click 'Reconnect Gmail' on the Dashboard."
           : "Failed to send email via Gmail. Please try again.",
       },
       { status: isAuthError ? 401 : 502 }

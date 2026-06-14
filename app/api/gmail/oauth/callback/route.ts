@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOAuth2Client, saveRefreshToken } from "@/lib/gmail";
+import { getOAuth2Client, saveTokens } from "@/lib/gmail";
 
 export async function GET(req: NextRequest) {
-  const code = req.nextUrl.searchParams.get("code");
+  const code  = req.nextUrl.searchParams.get("code");
   const error = req.nextUrl.searchParams.get("error");
 
   if (error) {
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
         <p>${error}</p>
         <a href="/dashboard">Back to Dashboard</a>
       </body></html>`,
-      { headers: { "Content-Type": "text/html" } }
+      { headers: { "Content-Type": "text/html" } },
     );
   }
 
@@ -35,29 +35,40 @@ export async function GET(req: NextRequest) {
     return new NextResponse(
       `<html><body style="font-family:sans-serif;padding:40px;text-align:center">
         <h2 style="color:#D97706">No refresh token received</h2>
-        <p>Google only returns a refresh token on first authorisation.<br>
-        If you have already connected Gmail before, revoke access at
-        <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>
-        and try again.</p>
-        <a href="/api/gmail/oauth/start">Try again</a>
+        <p>Google only returns a refresh token when granting access for the first time,
+        or after revoking and re-authorising the app.</p>
+        <p>Please visit
+        <a href="https://myaccount.google.com/permissions" target="_blank">myaccount.google.com/permissions</a>,
+        remove <strong>Clinic Letter Manager</strong>, then try connecting again.</p>
+        <a href="/api/gmail/oauth/start"
+          style="display:inline-block;margin-top:16px;padding:10px 24px;
+          background:#1A2B4A;color:white;border-radius:10px;text-decoration:none;font-size:14px">
+          Try again
+        </a>
       </body></html>`,
-      { headers: { "Content-Type": "text/html" } }
+      { headers: { "Content-Type": "text/html" } },
     );
   }
 
-  // In production, refresh tokens must be stored encrypted in the database or secure secret storage.
-  saveRefreshToken(tokens.refresh_token);
+  // Persist the full token set so auto-refresh works without another reconnect
+  await saveTokens({
+    refresh_token: tokens.refresh_token,
+    access_token:  tokens.access_token  ?? null,
+    expiry_date:
+      typeof tokens.expiry_date === "number" ? tokens.expiry_date : null,
+  });
 
   return new NextResponse(
     `<html><body style="font-family:sans-serif;padding:40px;text-align:center">
-      <h2 style="color:#0D9488">✓ Gmail connected successfully</h2>
-      <p>Dr. Sumit's Gmail account is now connected.<br>
-      You can now send clinic letters directly from the Review page.</p>
-      <a href="/dashboard" style="display:inline-block;margin-top:16px;padding:10px 24px;
+      <h2 style="color:#0D9488">&#10003; Gmail connected successfully.</h2>
+      <p>lungdrsumit@gmail.com is now connected.<br>
+      You can send clinic letters directly from the Review page.</p>
+      <a href="/dashboard"
+        style="display:inline-block;margin-top:16px;padding:10px 24px;
         background:#1A2B4A;color:white;border-radius:10px;text-decoration:none;font-size:14px">
         Back to Dashboard
       </a>
     </body></html>`,
-    { headers: { "Content-Type": "text/html" } }
+    { headers: { "Content-Type": "text/html" } },
   );
 }

@@ -189,11 +189,33 @@ function ReviewedCard({
 // ─── Send confirmation modal ──────────────────────────────────────────────────
 
 function ConfirmSendModal({
-  patientName, patientEmail, sending, onCancel, onConfirm,
+  patientName, patientEmail, sending, success, onCancel, onConfirm,
 }: {
   patientName: string; patientEmail: string;
-  sending: boolean; onCancel: () => void; onConfirm: () => void;
+  sending: boolean; success: boolean; onCancel: () => void; onConfirm: () => void;
 }) {
+  if (success) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{ backgroundColor: "rgba(26,43,74,0.45)" }}>
+        <div className="bg-white rounded-2xl p-6 w-full max-w-sm mx-4"
+          style={{ boxShadow: "0 24px 64px rgb(26 43 74 / 0.25)" }}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center justify-center rounded-full flex-shrink-0"
+              style={{ width: 36, height: 36, backgroundColor: "#F0FDF4" }}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="#16A34A" strokeWidth={2}
+                strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <path d="M3 8l4 4 6-7"/>
+              </svg>
+            </div>
+            <h3 className="text-base font-bold" style={{ color: "#16A34A" }}>Email sent!</h3>
+          </div>
+          <p className="text-sm" style={{ color: "#1A2B4A" }}>Email sent to patient successfully.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: "rgba(26,43,74,0.45)" }} onClick={onCancel}>
@@ -265,6 +287,7 @@ function ReadyCard({
   const [downloadError, setDownloadError] = useState("");
   const [showModal,    setShowModal]    = useState(false);
   const [sending,      setSending]      = useState(false);
+  const [sendSuccess,  setSendSuccess]  = useState(false);
   const [noEmailError, setNoEmailError] = useState(false);
   const [sendError,    setSendError]    = useState("");
 
@@ -303,8 +326,12 @@ function ReadyCard({
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Send failed.");
-      await onMarkSent(patientEmail);
-      setShowModal(false);
+      setSending(false);
+      setSendSuccess(true);
+      // Show success message briefly before updating letter status
+      setTimeout(async () => {
+        await onMarkSent(patientEmail);
+      }, 1500);
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "Failed to send.");
       setSending(false);
@@ -315,7 +342,7 @@ function ReadyCard({
     <>
       {showModal && (
         <ConfirmSendModal patientName={patientName} patientEmail={patientEmail}
-          sending={sending} onCancel={() => { if (!sending) setShowModal(false); }} onConfirm={confirmSend} />
+          sending={sending} success={sendSuccess} onCancel={() => { if (!sending && !sendSuccess) setShowModal(false); }} onConfirm={confirmSend} />
       )}
       <div className="bg-white rounded-2xl border px-5 py-4"
         style={{ borderColor: "#E2E8F0", boxShadow: "0 1px 3px 0 rgb(0 0 0/0.05), 0 4px 16px 0 rgb(26 43 74/0.04)" }}>

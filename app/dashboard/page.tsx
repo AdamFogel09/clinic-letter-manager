@@ -5,6 +5,8 @@ import Link from "next/link";
 import StatusCard from "@/components/dashboard/StatusCard";
 import { getLetters } from "@/lib/letterStore";
 
+type GmailStatus = "checking" | "connected" | "disconnected";
+
 export default function DashboardPage() {
   const [counts, setCounts] = useState({
     draft: 0,
@@ -14,6 +16,7 @@ export default function DashboardPage() {
     readyForPatient: 0,
     total: 0,
   });
+  const [gmailStatus, setGmailStatus] = useState<GmailStatus>("checking");
 
   useEffect(() => {
     const letters = getLetters();
@@ -25,6 +28,11 @@ export default function DashboardPage() {
       readyForPatient:  letters.filter((l) => l.status === "Ready for Patient").length,
       total:            letters.length,
     });
+
+    fetch("/api/gmail/status")
+      .then(r => r.json())
+      .then(d => setGmailStatus(d.connected ? "connected" : "disconnected"))
+      .catch(() => setGmailStatus("disconnected"));
   }, []);
 
   const cards = [
@@ -133,7 +141,7 @@ export default function DashboardPage() {
             Clinic letter workspace
           </p>
         </div>
-        <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+        <div className="flex items-center justify-end gap-2 pt-1">
           <Link
             href="/workspace/new-patient"
             className="inline-flex items-center text-sm font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-md"
@@ -158,27 +166,28 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Gmail connection */}
-      <div className="px-4 sm:px-8 mb-3">
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl flex-wrap"
-          style={{ border: "1px solid #E2E8F0", backgroundColor: "#FAFBFC" }}>
-          <svg viewBox="0 0 20 20" fill="none" stroke="#94A3B8"
-            strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round"
+      {/* Gmail — full-width prominent button */}
+      <div className="px-4 sm:px-8 mb-4">
+        <a
+          href="/api/gmail/oauth/start"
+          className="flex items-center justify-center gap-3 w-full py-4 rounded-2xl text-sm font-bold transition-all duration-150 hover:-translate-y-px hover:shadow-lg active:scale-95"
+          style={{
+            backgroundColor:
+              gmailStatus === "checking"  ? "#64748B" :
+              gmailStatus === "connected" ? "#0D9488" : "#DC2626",
+            color: "#ffffff",
+          }}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor"
+            strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
             className="w-4 h-4 flex-shrink-0">
             <rect x="2" y="4" width="16" height="12" rx="2"/>
             <path d="M2 6l8 5 8-5"/>
           </svg>
-          <p className="text-xs" style={{ color: "#64748B" }}>
-            Gmail: <span className="font-semibold">lungdrsumit@gmail.com</span>
-          </p>
-          <a
-            href="/api/gmail/oauth/start"
-            className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0"
-            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
-          >
-            Connect / Reconnect Gmail
-          </a>
-        </div>
+          {gmailStatus === "checking"  && "Gmail — checking…"}
+          {gmailStatus === "connected" && "Gmail Connected ✓ — Click to Reconnect"}
+          {gmailStatus === "disconnected" && "⚠ Gmail Disconnected — Click Here to Reconnect"}
+        </a>
       </div>
 
       {/* Patient History Search placeholder */}

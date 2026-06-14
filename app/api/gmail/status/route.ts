@@ -9,15 +9,7 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  const client = getAuthenticatedClient();
-  if (!client) {
-    return NextResponse.json({ connected: false });
-  }
-
-  try {
-    await client.getAccessToken();
-    return NextResponse.json({ connected: true });
-  } catch {
-    return NextResponse.json({ connected: false });
-  }
+  // getAuthenticatedClient already handles token loading + auto-refresh
+  const client = await getAuthenticatedClient();
+  return NextResponse.json({ connected: !!client });
 }
