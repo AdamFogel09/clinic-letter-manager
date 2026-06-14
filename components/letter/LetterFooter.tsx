@@ -8,7 +8,7 @@ export default function LetterFooter() {
       alignItems: "flex-start",
       flexShrink: 0,
       gap: 16,
-      fontFamily: "'Avenir Next', Avenir, 'Helvetica Neue', Arial, sans-serif",
+      fontFamily: "Arial, Helvetica, sans-serif",
     }}>
       {/* Left — licences + specialty */}
       <div style={{ flexShrink: 0 }}>
