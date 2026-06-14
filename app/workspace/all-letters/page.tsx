@@ -39,6 +39,57 @@ function formatDOB(day: string, month: string, year: string): string {
 
 // ── Patient card with expandable letter history ───────────────────────────────
 
+function DownloadPdfButton({ letter }: { letter: StoredLetter }) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  const handleClick = async () => {
+    if (state === "loading") return;
+    setState("loading");
+    try {
+      const res = await fetch("/api/export-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ letterId: letter.id }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { error?: string }).error || `Export failed (${res.status})`);
+      }
+      const blob = new Blob([await res.arrayBuffer()], { type: "application/pdf" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `${letter.patientName.replace(/\s+/g, "_")}_${letter.letterDate || "letter"}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setState("done");
+      setTimeout(() => setState("idle"), 3000);
+    } catch {
+      setState("error");
+      setTimeout(() => setState("idle"), 4000);
+    }
+  };
+
+  const label  = state === "loading" ? "Exporting…" : state === "done" ? "Saved ✓" : state === "error" ? "Failed" : "Save PDF";
+  const bg     = state === "done" ? "#F0FDF4" : state === "error" ? "#FEF2F2" : "white";
+  const color  = state === "done" ? "#16A34A" : state === "error" ? "#DC2626" : "#64748B";
+  const border = state === "done" ? "#BBF7D0" : state === "error" ? "#FECACA" : "#E2E8F0";
+
+  return (
+    <button onClick={handleClick} disabled={state === "loading"}
+      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all inline-flex items-center gap-1"
+      style={{ backgroundColor: bg, color, borderColor: border, cursor: state === "loading" ? "default" : "pointer" }}>
+      {state === "idle" && (
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75}
+          strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+          <path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/>
+        </svg>
+      )}
+      {label}
+    </button>
+  );
+}
+
 function PatientCard({
   patient, letters, duplicatingId,
   onStartNewLetter, onOpenLetter, onPreviewLetter, onDuplicateLetter,
@@ -144,6 +195,7 @@ function PatientCard({
                         style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}>
                         Preview
                       </button>
+                      <DownloadPdfButton letter={letter} />
                       <button
                         onClick={() => onDuplicateLetter(letter)}
                         disabled={isDuplicating}
@@ -241,7 +293,11 @@ export default function AllLettersPage() {
   };
 
   const openPreview = (letter: StoredLetter) => {
-    if (letter.data) localStorage.setItem("letter_preview", JSON.stringify(letter.data));
+    if (letter.data) {
+      const { pictures: _p, ...dataWithoutPictures } = letter.data as Record<string, unknown>;
+      try { localStorage.setItem("letter_preview", JSON.stringify(dataWithoutPictures)); }
+      catch { localStorage.removeItem("letter_preview"); }
+    }
     localStorage.setItem("letter_current_id",          letter.id);
     localStorage.setItem("letter_current_supabase_id", letter.id);
     localStorage.setItem("letter_return_to", "all-letters");
@@ -367,6 +423,7 @@ export default function AllLettersPage() {
                 onPreviewLetter={openPreview}
                 onDuplicateLetter={handleDuplicate}
               />
+
             ))}
           </div>
         )}
