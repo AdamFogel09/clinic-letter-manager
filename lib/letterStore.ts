@@ -12,6 +12,7 @@ export interface StoredLetter {
   id: string;
   patientName: string;
   patientId: string;
+  patientDbId?: string;       // Supabase patient UUID — used for cross-letter cleanup
   letterDate: string;
   status: LetterStatus;
   savedAt: string;

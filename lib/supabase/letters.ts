@@ -146,6 +146,7 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
 
   return {
     id:          letter.id,
+    patientDbId: letter.patient_id,
     patientName: p?.full_name          || "",
     patientId:   p?.patient_id_number  || "",
     letterDate:  letter.letter_date    || "",
@@ -649,10 +650,6 @@ export async function duplicateLetter(
     .single();
 
   if (error || !data) throw new Error(error?.message || "Failed to create update letter.");
-
-  // Delete all previous letters for this patient now that the new update exists
-  await deleteOldLettersForPatient(supabase, data.id, source.patient_id);
-
   return { id: data.id };
 }
 

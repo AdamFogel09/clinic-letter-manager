@@ -10,6 +10,7 @@ import {
   getLettersByStatus,
   updateLetterStatus,
   updateLetterFileUrls,
+  deleteOldLettersForPatient,
 } from "@/lib/supabase/letters";
 import {
   getLetters,
@@ -633,6 +634,11 @@ export default function ReviewPage() {
       sentToPatientAt: new Date().toISOString(),
     });
     markSentToPatient(letter.id, email);
+    // Only now — after the letter is confirmed sent — delete all previous
+    // letters for this patient. Content is preserved in the new sent letter.
+    if (letter.patientDbId) {
+      await deleteOldLettersForPatient(supabase, letter.id, letter.patientDbId);
+    }
     loadAll();
   };
 
