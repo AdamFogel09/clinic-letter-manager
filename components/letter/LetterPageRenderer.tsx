@@ -636,7 +636,7 @@ export default function LetterPageRenderer({
             {d.testResults.echo.map((entry, idx) => (
               <div key={entry.id ?? idx} style={{ marginBottom: d.testResults.echo.length > 1 && idx < d.testResults.echo.length - 1 ? 8 : 0 }}>
                 {d.testResults.echo.length > 1 && <p style={{ fontSize: 11, fontWeight: 600, color: "#64748B", margin: "0 0 2px" }}>Entry {idx + 1}</p>}
-                {entry.date && <p style={{ fontSize: 11, color: "#64748B", margin: "0 0 2px" }}>Date: {formatDisplayDate(entry.date)}</p>}
+                {entry.date?.trim() && <p style={{ fontSize: 12, color: "#475569", margin: "0 0 3px", fontWeight: 600 }}>{formatDisplayDate(entry.date)}</p>}
                 <p style={{ fontSize: 13, color: "#1A2B4A", margin: 0, lineHeight: 1.6 }}>{entry.result}</p>
               </div>
             ))}
