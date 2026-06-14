@@ -1,8 +1,5 @@
 "use client";
 
-// Patients and letters are now stored in Supabase.
-// Letters are now saved to Supabase. Temporary storage is only fallback for unsaved draft state.
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -38,9 +35,12 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   "Sent to Patient":   { bg: "#F0FDF4", text: "#16A34A" },
 };
 
+type GmailStatus = "checking" | "connected" | "disconnected";
+
 export default function WorkspacePage() {
   const router = useRouter();
 
+  const [gmailStatus, setGmailStatus] = useState<GmailStatus>("checking");
   const [counts, setCounts] = useState({
     draft: 0, readyForReview: 0, waitingForAnat: 0,
     reviewed: 0, readyForPatient: 0,
@@ -79,6 +79,12 @@ export default function WorkspacePage() {
 
     // Patients from Supabase
     getAllPatients(supabase).then(setPatients);
+
+    // Gmail connection status
+    fetch("/api/gmail/status")
+      .then(r => r.json())
+      .then(d => setGmailStatus(d.connected ? "connected" : "disconnected"))
+      .catch(() => setGmailStatus("disconnected"));
   }, []);
 
   // Close dropdown on outside click
@@ -149,6 +155,30 @@ export default function WorkspacePage() {
             New Letter
           </Link>
         </div>
+      </div>
+
+      {/* Gmail status button */}
+      <div className="px-6 sm:px-8 mb-4">
+        <a
+          href="/api/gmail/oauth/start"
+          className="flex items-center justify-center gap-3 w-full py-4 rounded-2xl text-sm font-bold transition-all duration-150 hover:-translate-y-px hover:shadow-lg active:scale-95"
+          style={{
+            backgroundColor:
+              gmailStatus === "checking"  ? "#64748B" :
+              gmailStatus === "connected" ? "#0D9488" : "#DC2626",
+            color: "#ffffff",
+          }}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor"
+            strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+            className="w-4 h-4 flex-shrink-0">
+            <rect x="2" y="4" width="16" height="12" rx="2"/>
+            <path d="M2 6l8 5 8-5"/>
+          </svg>
+          {gmailStatus === "checking"     && "Gmail — checking…"}
+          {gmailStatus === "connected"    && "Gmail Connected ✓ — Click to Reconnect"}
+          {gmailStatus === "disconnected" && "⚠ Gmail Disconnected — Click Here to Connect"}
+        </a>
       </div>
 
       {/* Patient Search */}
