@@ -177,11 +177,7 @@ export async function POST(req: NextRequest) {
 </head>
 <body>
 <div dir="rtl" style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.6;">
-  <p>לכבוד המטופל,</p>
-
-  <p>בבקשה מצאו את מכתב הקליניקה שלכם מצורף.</p>
-
-  <p>אנא קראו אותו בעיון ושלחו עותק אל רופא המשפחה שלכם.</p>
+  <p>שלום, מצורף מכתבך ממרפאתו של ד"ר סומיט . אנא קראו אותו בעיון ושלחו עותק אל רופא המשפחה שלכם.</p>
 
   <p>לכל שאלה לגבי תוכן המכתב, צרו עמנו קשר.</p>
 
