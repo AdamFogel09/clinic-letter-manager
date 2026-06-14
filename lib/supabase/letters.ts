@@ -649,7 +649,57 @@ export async function duplicateLetter(
     .single();
 
   if (error || !data) throw new Error(error?.message || "Failed to create update letter.");
+
+  // Delete all previous letters for this patient now that the new update exists
+  await deleteOldLettersForPatient(supabase, data.id, source.patient_id);
+
   return { id: data.id };
+}
+
+/**
+ * Delete all letters for a patient except the given one — both storage files
+ * (PDF, DOCX) and the DB rows. Called immediately after duplicateLetter() so
+ * only the new update draft survives.
+ */
+export async function deleteOldLettersForPatient(
+  supabase: SupabaseClient,
+  currentLetterId: string,
+  patientUuid: string,
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data, error } = await supabase
+    .from("letters")
+    .select("id, final_pdf_url, editable_docx_url")
+    .eq("patient_id", patientUuid)
+    .eq("created_by", user.id)
+    .neq("id", currentLetterId);
+
+  if (error || !data || data.length === 0) return;
+
+  // Delete storage files for each old letter
+  const storagePaths = (data as { id: string; final_pdf_url: string | null; editable_docx_url: string | null }[])
+    .flatMap(r => [r.final_pdf_url, r.editable_docx_url].filter((p): p is string => !!p));
+
+  if (storagePaths.length > 0) {
+    const { error: storageErr } = await supabase.storage.from("clinic-letters").remove(storagePaths);
+    if (storageErr) console.warn("[deleteOldLettersForPatient] Storage delete error:", storageErr.message);
+  }
+
+  // Delete the DB rows
+  const oldIds = (data as { id: string }[]).map(r => r.id);
+  const { error: deleteErr } = await supabase
+    .from("letters")
+    .delete()
+    .in("id", oldIds)
+    .eq("created_by", user.id);
+
+  if (deleteErr) {
+    console.warn("[deleteOldLettersForPatient] DB delete error:", deleteErr.message);
+  } else {
+    console.log(`[deleteOldLettersForPatient] Deleted ${oldIds.length} old letter(s) for patient ${patientUuid.slice(0, 8)}`);
+  }
 }
 
 /**
