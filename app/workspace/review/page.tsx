@@ -662,7 +662,18 @@ export default function ReviewPage() {
   };
 
   const navigateToPreview = (letter: StoredLetter, exportMode = false) => {
-    if (letter.data) localStorage.setItem("letter_preview", JSON.stringify(letter.data));
+    if (letter.data) {
+      // Strip pictures before storing — they're large base64 blobs that can
+      // exhaust the 5 MB localStorage quota. The preview page fetches them
+      // from Supabase separately when they're missing.
+      const { pictures: _p, ...dataWithoutPictures } = letter.data as Record<string, unknown>;
+      try {
+        localStorage.setItem("letter_preview", JSON.stringify(dataWithoutPictures));
+      } catch {
+        // Quota exceeded — preview page will fall back to Supabase fetch
+        localStorage.removeItem("letter_preview");
+      }
+    }
     localStorage.setItem("letter_current_id",          letter.id);
     localStorage.setItem("letter_current_supabase_id", letter.id);
     localStorage.setItem("letter_return_to", "review");

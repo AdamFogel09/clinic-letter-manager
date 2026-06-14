@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, updateLetterFileSizes, getLetterById, cleanupOldLetterFiles } from "@/lib/supabase/letters";
+import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, updateLetterFileSizes, getLetterById, cleanupOldLetterFiles, supabaseLetterToStoredLetter } from "@/lib/supabase/letters";
 import { triggerDownload, finalPdfFilename } from "@/lib/generateDocx";
 import LetterPageRenderer, { type LetterData } from "@/components/letter/LetterPageRenderer";
 
@@ -288,6 +288,24 @@ export default function LetterPreviewPage() {
       }
 
       const supabaseId = localStorage.getItem("letter_current_supabase_id");
+
+      // If localStorage is empty or missing key content, fetch the full letter from Supabase.
+      // This handles: stale cache, cleared storage, or quota-exceeded writes.
+      if (supabaseId && (!parsed || !parsed.name)) {
+        try {
+          const supabase = createClient();
+          const letter = await getLetterById(supabase, supabaseId);
+          if (letter) {
+            const sl = supabaseLetterToStoredLetter(letter);
+            if (sl.data) parsed = sl.data as Record<string, unknown>;
+          }
+        } catch (e) {
+          console.warn("[preview] Supabase full-letter fetch failed:", e);
+        }
+      }
+
+      // Supplement missing pictures from Supabase (covers the case where
+      // localStorage data was stored without pictures to avoid quota issues)
       if (supabaseId && (!parsed?.pictures || (parsed.pictures as string[]).length === 0)) {
         try {
           const supabase = createClient();
