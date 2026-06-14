@@ -58,17 +58,6 @@ const navItems = [
       </svg>
     ),
   },
-  {
-    label: "All Letters",
-    href: "/workspace/all-letters",
-    icon: (
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
-        <rect x="1" y="3" width="14" height="3" rx="1" />
-        <path d="M2 6v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6" />
-        <path d="M6 10h4" />
-      </svg>
-    ),
-  },
 ];
 
 export default function Sidebar({
