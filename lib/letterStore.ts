@@ -68,6 +68,14 @@ export function updateStatus(id: string, status: LetterStatus): void {
   }
 }
 
+export function removeLettersById(ids: string[]): void {
+  if (!ids.length || typeof window === "undefined") return;
+  try {
+    const remaining = getLetters().filter((l) => !ids.includes(l.id));
+    saveLetters(remaining);
+  } catch { /* ignore */ }
+}
+
 export function updateLetterData(id: string, updates: Record<string, unknown>): void {
   const letters = getLetters();
   const letter = letters.find((l) => l.id === id);

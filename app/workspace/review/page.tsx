@@ -13,6 +13,7 @@ import {
 } from "@/lib/supabase/letters";
 import {
   markAsPreviewed,
+  removeLettersById,
   type StoredLetter,
   type LetterStatus,
 } from "@/lib/letterStore";
@@ -291,7 +292,7 @@ function ReadyCard({
   letter: StoredLetter;
   onPreview: () => void;
   onExportPdf: () => void;
-  onMarkSent: (email: string) => Promise<void>;
+  onMarkSent: () => Promise<void>;
 }) {
   const colors       = STATUS_COLORS["Ready for Patient"];
   const d            = (letter.data ?? {}) as Record<string, unknown>;
@@ -346,9 +347,9 @@ function ReadyCard({
       if (!res.ok) throw new Error(json.error || "Send failed.");
       setSending(false);
       setSendSuccess(true);
-      // Show success message briefly before updating letter status
+      // Trigger cleanup of old letters after email confirmed sent
       setTimeout(async () => {
-        await onMarkSent(patientEmail);
+        await onMarkSent();
       }, 1500);
     } catch (err) {
       setSendError(err instanceof Error ? err.message : "Failed to send.");
@@ -618,7 +619,8 @@ function Section({ title, count, badge, empty, children }: {
 
 export default function ReviewPage() {
   const router = useRouter();
-  const [letters, setLetters] = useState<StoredLetter[]>([]);
+  const [letters, setLetters]       = useState<StoredLetter[]>([]);
+  const [deleteError, setDeleteError] = useState("");
 
   const loadAll = async () => {
     const supabase = createClient();
@@ -645,17 +647,18 @@ export default function ReviewPage() {
     await loadAll();
   };
 
-  const handleMarkSent = async (letter: StoredLetter, email: string) => {
+  const handleMarkSent = async (letter: StoredLetter) => {
     const supabase = createClient();
+    setDeleteError("");
     try {
-      await updateLetterStatus(supabase, letter.id, "Sent to Patient", {
-        sentToPatientAt: new Date().toISOString(),
-      });
       if (letter.patientDbId) {
-        await deleteOldLettersForPatient(supabase, letter.id, letter.patientDbId);
+        const deletedIds = await deleteOldLettersForPatient(supabase, letter.id, letter.patientDbId);
+        if (deletedIds.length > 0) removeLettersById(deletedIds);
       }
     } catch (err) {
-      console.error("[handleMarkSent]", err);
+      const msg = err instanceof Error ? err.message : "Failed to delete old letter(s).";
+      setDeleteError(msg);
+      console.error("[handleMarkSent] cleanup failed:", err);
     } finally {
       await loadAll();
     }
@@ -712,6 +715,32 @@ export default function ReviewPage() {
         </div>
       </div>
 
+      {deleteError && (
+        <div className="px-6 sm:px-8 mb-4">
+          <div className="rounded-xl px-4 py-3 flex items-start gap-2"
+            style={{ backgroundColor: "#FFF1F2", border: "1px solid #FECDD3" }}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="#BE123C" strokeWidth={1.75}
+              strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0 mt-px">
+              <circle cx="8" cy="8" r="7"/><path d="M8 5v4M8 11h.01"/>
+            </svg>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold" style={{ color: "#BE123C" }}>
+                Email sent, but old letter cleanup failed:
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "#9F1239" }}>{deleteError}</p>
+              <p className="text-xs mt-1" style={{ color: "#9F1239" }}>
+                The letter was sent successfully. You can delete the old letter manually from All Letters.
+              </p>
+            </div>
+            <button onClick={() => setDeleteError("")} className="flex-shrink-0 mt-0.5"
+              style={{ color: "#BE123C", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}
+                strokeLinecap="round" className="w-3 h-3"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       <Section title="Waiting for Anat" count={waiting.length}
         badge={{ bg: "#EDE9FE", text: "#7C3AED" }} empty="No letters waiting for review">
         {waiting.map((l) => (
@@ -736,7 +765,7 @@ export default function ReviewPage() {
           <ReadyCard key={l.id} letter={l}
             onPreview={() => navigateToPreview(l, false)}
             onExportPdf={() => navigateToPreview(l, true)}
-            onMarkSent={(email) => handleMarkSent(l, email)} />
+            onMarkSent={() => handleMarkSent(l)} />
         ))}
       </Section>
 

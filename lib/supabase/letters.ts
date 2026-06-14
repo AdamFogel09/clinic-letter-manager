@@ -660,49 +660,53 @@ export async function duplicateLetter(
 }
 
 /**
- * Delete all letters for a patient except the given one — both storage files
- * (PDF, DOCX) and the DB rows. Called immediately after duplicateLetter() so
- * only the new update draft survives.
+ * Delete previously-sent letters for a patient (status "Sent to Patient" only),
+ * keeping the current letter intact. Cleans up both storage files and DB rows.
+ * Returns the IDs of deleted letters so the caller can purge them from localStorage.
  */
 export async function deleteOldLettersForPatient(
   supabase: SupabaseClient,
   currentLetterId: string,
   patientUuid: string,
-): Promise<void> {
+): Promise<string[]> {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return [];
 
   const { data, error } = await supabase
     .from("letters")
     .select("id, final_pdf_url, editable_docx_url")
     .eq("patient_id", patientUuid)
     .eq("created_by", user.id)
-    .neq("id", currentLetterId);
+    .neq("id", currentLetterId)
+    .in("status", ["Sent to Patient", "Ready for Patient"]);
 
-  if (error || !data || data.length === 0) return;
+  if (error) throw new Error(`Could not load old letters: ${error.message}`);
+  if (!data || data.length === 0) return [];
 
-  // Delete storage files for each old letter
-  const storagePaths = (data as { id: string; final_pdf_url: string | null; editable_docx_url: string | null }[])
-    .flatMap(r => [r.final_pdf_url, r.editable_docx_url].filter((p): p is string => !!p));
+  type Row = { id: string; final_pdf_url: string | null; editable_docx_url: string | null };
+  const rows = data as Row[];
 
+  // Delete storage files first
+  const storagePaths = rows.flatMap(r =>
+    [r.final_pdf_url, r.editable_docx_url].filter((p): p is string => !!p)
+  );
   if (storagePaths.length > 0) {
     const { error: storageErr } = await supabase.storage.from("clinic-letters").remove(storagePaths);
-    if (storageErr) console.warn("[deleteOldLettersForPatient] Storage delete error:", storageErr.message);
+    if (storageErr) console.warn("[deleteOldLettersForPatient] Storage delete warning:", storageErr.message);
   }
 
   // Delete the DB rows
-  const oldIds = (data as { id: string }[]).map(r => r.id);
+  const oldIds = rows.map(r => r.id);
   const { error: deleteErr } = await supabase
     .from("letters")
     .delete()
     .in("id", oldIds)
     .eq("created_by", user.id);
 
-  if (deleteErr) {
-    console.warn("[deleteOldLettersForPatient] DB delete error:", deleteErr.message);
-  } else {
-    console.log(`[deleteOldLettersForPatient] Deleted ${oldIds.length} old letter(s) for patient ${patientUuid.slice(0, 8)}`);
-  }
+  if (deleteErr) throw new Error(`Failed to delete old letters: ${deleteErr.message}`);
+
+  console.log(`[deleteOldLettersForPatient] Deleted ${oldIds.length} old letter(s) for patient ${patientUuid.slice(0, 8)}`);
+  return oldIds;
 }
 
 /**
