@@ -93,7 +93,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const executablePath = await getExecPath();
     browser = await puppeteer.launch({
       args: getLaunchArgs(),
-      defaultViewport: { width: 1200, height: 900, deviceScaleFactor: 2 },
+      defaultViewport: { width: 1200, height: 900, deviceScaleFactor: 1.5 },
       executablePath,
       headless: true,
     });
@@ -129,41 +129,37 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const pdfDoc = await PDFDocument.create();
 
     for (const pageEl of pageElements) {
-      const box: { x: number; y: number; width: number; height: number } | null =
+      // boundingBox() returns page-relative coordinates (not viewport-relative)
+      const pageBox: { x: number; y: number; width: number; height: number } | null =
         await pageEl.boundingBox();
 
-      const screenshotBuf: Buffer = await pageEl.screenshot({ type: "png" });
-      const pngImage = await pdfDoc.embedPng(screenshotBuf);
+      // JPEG at quality 75 — ~3–5× smaller than PNG with imperceptible quality loss
+      const screenshotBuf: Buffer = await pageEl.screenshot({ type: "jpeg", quality: 75 });
+      const jpgImage = await pdfDoc.embedJpg(screenshotBuf);
       const pdfPage = pdfDoc.addPage([A4_W_PT, A4_H_PT]);
-      pdfPage.drawImage(pngImage, { x: 0, y: 0, width: A4_W_PT, height: A4_H_PT });
+      pdfPage.drawImage(jpgImage, { x: 0, y: 0, width: A4_W_PT, height: A4_H_PT });
 
-      // Link annotations for inhaler URLs
-      if (box) {
-        const links: Array<{ href: string; left: number; top: number; width: number; height: number }> =
-          await page.evaluate((el: Element) => {
-            return Array.from(
-              el.querySelectorAll<HTMLAnchorElement>("a[href]"),
-            ).map((a) => {
-              const r = a.getBoundingClientRect();
-              return {
-                href: a.getAttribute("href") || "",
-                left: r.left,
-                top: r.top,
-                width: r.width,
-                height: r.height,
-              };
-            });
-          }, pageEl);
+      // Link annotations — use ElementHandle.boundingBox() so coordinates are
+      // page-relative (consistent with pageEl.boundingBox()), not viewport-relative.
+      // getBoundingClientRect() would be wrong for pages below the viewport fold.
+      if (pageBox) {
+        const linkHandles = await pageEl.$$("[data-pdf-link]");
+        for (const linkHandle of linkHandles) {
+          const href: string = await linkHandle.evaluate(
+            (el: Element) => (el as HTMLAnchorElement).getAttribute("data-pdf-link") ?? "",
+          );
+          if (!href.startsWith("http")) continue;
 
-        for (const link of links) {
-          if (!link.href.startsWith("http")) continue;
-          const relLeft = link.left - box.x;
-          const relTop = link.top - box.y;
-          const xPt = (relLeft / box.width) * A4_W_PT;
-          const wPt = (link.width / box.width) * A4_W_PT;
-          const hPt = (link.height / box.height) * A4_H_PT;
-          // PDF y-axis is bottom-up
-          const yPt = A4_H_PT - ((relTop + link.height) / box.height) * A4_H_PT;
+          const linkBox = await linkHandle.boundingBox();
+          if (!linkBox) continue;
+
+          const relLeft = linkBox.x - pageBox.x;
+          const relTop  = linkBox.y - pageBox.y;
+          const xPt  = (relLeft / pageBox.width)  * A4_W_PT;
+          const wPt  = (linkBox.width  / pageBox.width)  * A4_W_PT;
+          const hPt  = (linkBox.height / pageBox.height) * A4_H_PT;
+          // PDF y-axis is bottom-up: compute bottom-left corner of the annotation rect
+          const yPt  = A4_H_PT - ((relTop + linkBox.height) / pageBox.height) * A4_H_PT;
 
           const annotRef = pdfDoc.context.register(
             pdfDoc.context.obj({
@@ -174,7 +170,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               A: {
                 Type: PDFName.of("Action"),
                 S: PDFName.of("URI"),
-                URI: PDFString.of(link.href),
+                URI: PDFString.of(href),
               },
             }),
           );
@@ -182,10 +178,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           if (annotArr instanceof PDFArray) {
             annotArr.push(annotRef);
           } else {
-            pdfPage.node.set(
-              PDFName.of("Annots"),
-              pdfDoc.context.obj([annotRef]),
-            );
+            pdfPage.node.set(PDFName.of("Annots"), pdfDoc.context.obj([annotRef]));
           }
         }
       }

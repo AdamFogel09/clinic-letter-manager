@@ -808,7 +808,7 @@ export default function LetterPageRenderer({
                 <svg viewBox="0 0 16 16" fill="none" stroke="#4A90D9" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12, flexShrink: 0 }}>
                   <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M9 1h6m0 0v6m0-6L7 9"/>
                 </svg>
-                <a href={inh.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4A90D9", textDecoration: "none", fontWeight: 500 }}>
+                <a href={inh.link} data-pdf-link={inh.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4A90D9", textDecoration: "none", fontWeight: 500 }}>
                   Watch video guide on RightBreathe
                 </a>
                 <span style={{ fontSize: 11, color: "#64748B", fontWeight: 400 }}>
