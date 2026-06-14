@@ -6,6 +6,15 @@ import { existsSync } from "fs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+// @sparticuz/chromium detects the Lambda environment via AWS_EXECUTION_ENV /
+// AWS_LAMBDA_JS_RUNTIME to decide whether to extract bundled .so files
+// (libnss3, etc.) and add their path to LD_LIBRARY_PATH.
+// Vercel sets neither variable, so we set it here — at module load time —
+// before the first require("@sparticuz/chromium") runs.
+if (process.env.VERCEL && !process.env.AWS_LAMBDA_JS_RUNTIME) {
+  process.env.AWS_LAMBDA_JS_RUNTIME = "nodejs20.x";
+}
+
 const A4_W_PT = 595.28;
 const A4_H_PT = 841.89;
 
