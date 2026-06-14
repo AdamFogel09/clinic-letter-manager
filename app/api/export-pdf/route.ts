@@ -6,17 +6,14 @@ import { existsSync } from "fs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const CHROMIUM_URL =
-  "https://github.com/Sparticuz/chromium/releases/download/v132.0.0/chromium-v132.0.0-pack.tar";
-
 const A4_W_PT = 595.28;
 const A4_H_PT = 841.89;
 
 async function getExecPath(): Promise<string> {
   if (process.env.VERCEL) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const chromium = require("@sparticuz/chromium-min");
-    return chromium.executablePath(CHROMIUM_URL);
+    const chromium = require("@sparticuz/chromium");
+    return chromium.executablePath();
   }
   if (process.env.CHROME_EXECUTABLE_PATH) {
     return process.env.CHROME_EXECUTABLE_PATH;
@@ -45,7 +42,7 @@ async function getExecPath(): Promise<string> {
 function getLaunchArgs(): string[] {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const chromiumArgs: string[] = process.env.VERCEL
-    ? require("@sparticuz/chromium-min").args
+    ? require("@sparticuz/chromium").args
     : [];
   return [
     ...chromiumArgs,
