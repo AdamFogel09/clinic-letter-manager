@@ -95,6 +95,24 @@ export async function updatePatientIdNumber(
   if (error) console.error("[updatePatientIdNumber]", error.message);
 }
 
+export type EditablePatientFields = Partial<Omit<Patient, "id" | "created_at" | "updated_at" | "created_by" | "calculated_age">>;
+
+export async function updatePatient(
+  supabase: SupabaseClient,
+  patientUuid: string,
+  fields: EditablePatientFields,
+): Promise<{ error: string | null }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+  const { error } = await supabase
+    .from("patients")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("id", patientUuid)
+    .eq("created_by", user.id);
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
 export async function searchPatients(
   supabase: SupabaseClient,
   query: string

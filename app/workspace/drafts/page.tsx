@@ -137,7 +137,7 @@ export default function DraftsPage() {
                     onClick={() => openInEditor(letter, router)}
                     className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 hover:-translate-y-px"
                     style={{ backgroundColor: "#1A2B4A", color: "#fff", borderColor: "#1A2B4A" }}>
-                    Continue Letter
+                    Create Update Letter
                   </button>
                 </div>
               </div>

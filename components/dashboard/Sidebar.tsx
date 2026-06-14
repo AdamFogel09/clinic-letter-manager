@@ -28,16 +28,6 @@ const navItems = [
     ),
   },
   {
-    label: "New Letter",
-    href: "/workspace/new-letter",
-    icon: (
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
-        <circle cx="8" cy="8" r="7" />
-        <path d="M8 5v6M5 8h6" />
-      </svg>
-    ),
-  },
-  {
     label: "Drafts",
     href: "/workspace/drafts",
     icon: (

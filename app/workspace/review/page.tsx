@@ -120,9 +120,9 @@ function WaitingCard({
 // ─── Reviewed card ────────────────────────────────────────────────────────────
 
 function ReviewedCard({
-  letter, previewed, onPreview, onApprove,
+  letter, onPreview, onApprove,
 }: {
-  letter: StoredLetter; previewed: boolean;
+  letter: StoredLetter;
   onPreview: () => void; onApprove: () => void;
 }) {
   const colors = STATUS_COLORS["Reviewed"];
@@ -154,17 +154,7 @@ function ReviewedCard({
         </span>
       </div>
       <div className="flex items-center gap-3 mt-3 pt-3" style={{ borderTop: "1px solid #F1F5F9" }}>
-        <div className="flex-1 min-w-0">
-          {previewed
-            ? <p className="text-xs flex items-center gap-1.5" style={{ color: "#0D9488" }}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5}
-                  strokeLinecap="round" strokeLinejoin="round" style={{ width: 11, height: 11, flexShrink: 0 }}>
-                  <path d="M3 8l4 4 6-7"/>
-                </svg>
-                Letter previewed — ready to approve
-              </p>
-            : <p className="text-xs" style={{ color: "#94A3B8" }}>Preview the letter before approving</p>}
-        </div>
+        <div className="flex-1 min-w-0" />
         <button onClick={onPreview}
           className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
           style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#E2E8F0" }}
@@ -172,13 +162,11 @@ function ReviewedCard({
           onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
           Preview Letter
         </button>
-        <button onClick={previewed ? onApprove : undefined} disabled={!previewed}
+        <button onClick={onApprove}
           className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
-          style={previewed
-            ? { backgroundColor: "#1A2B4A", color: "#fff", borderColor: "#1A2B4A", cursor: "pointer" }
-            : { backgroundColor: "#F4F6F9", color: "#CBD5E1", borderColor: "#E2E8F0", cursor: "not-allowed" }}
-          onMouseEnter={e => { if (previewed) (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "none"; }}>
+          style={{ backgroundColor: "#1A2B4A", color: "#fff", borderColor: "#1A2B4A", cursor: "pointer" }}
+          onMouseEnter={e => (e.currentTarget.style.transform = "translateY(-1px)")}
+          onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
           Approve
         </button>
       </div>
@@ -600,8 +588,7 @@ function Section({ title, count, badge, empty, children }: {
 
 export default function ReviewPage() {
   const router = useRouter();
-  const [letters,     setLetters]     = useState<StoredLetter[]>([]);
-  const [previewedIds, setPreviewedIds] = useState<string[]>([]);
+  const [letters, setLetters] = useState<StoredLetter[]>([]);
 
   const loadAll = async () => {
     const supabase = createClient();
@@ -616,10 +603,6 @@ export default function ReviewPage() {
         statuses.includes(l.status as LetterStatus)
       ));
     }
-    try {
-      const raw = localStorage.getItem("clinic_previewed_v1");
-      setPreviewedIds(raw ? JSON.parse(raw) : []);
-    } catch { setPreviewedIds([]); }
   };
 
   useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -705,7 +688,6 @@ export default function ReviewPage() {
         badge={{ bg: "#FFE4E6", text: "#BE123C" }} empty="No letters pending approval">
         {reviewed.map((l) => (
           <ReviewedCard key={l.id} letter={l}
-            previewed={previewedIds.includes(l.id)}
             onPreview={() => navigateToPreview(l, false)}
             onApprove={() => handleApprove(l)} />
         ))}

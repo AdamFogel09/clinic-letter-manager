@@ -763,7 +763,7 @@ export default function LetterPageRenderer({
                 <div className="pdf-lung-grid" style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: "4px 6px" }}>
                   {[...mainFields, ...extraFields].map(([label, val]) => (
                     <div key={label} style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 6.5, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.02em" }}>{label}</div>
+                      <div style={{ fontSize: 9, color: "#475569", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.02em" }}>{label}</div>
                       <div style={{ fontSize: 13, color: "#1A2B4A", fontWeight: 600 }}>{val?.trim() || "—"}</div>
                     </div>
                   ))}
@@ -840,7 +840,7 @@ export default function LetterPageRenderer({
       id: "pictures",
       estimate: Math.ceil(d.pictures.length / 2) * 300 + 40,
       render: () => (
-        <DocSection title="Pictures" titleHe="תמונות">
+        <DocSection title="" titleHe="תמונות" heOnly>
           <div style={{ display: "grid", gridTemplateColumns: d.pictures.length === 1 ? "1fr" : "1fr 1fr", gap: 16 }}>
             {d.pictures.map((src, i) => (
               <div key={i} style={{ overflow: "hidden", border: "2px solid #000000", backgroundColor: "#ffffff" }}>

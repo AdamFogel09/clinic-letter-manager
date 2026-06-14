@@ -6,7 +6,7 @@ import Link from "next/link";
 import StatusCard from "@/components/dashboard/StatusCard";
 import { getLetters } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { getAllPatients, patientToDraft, type Patient } from "@/lib/supabase/patients";
+import { getAllPatients, patientToDraft, updatePatient, type Patient } from "@/lib/supabase/patients";
 import { getLetterCounts } from "@/lib/supabase/letters";
 
 function calcAge(day: string, month: string, year: string): string {
@@ -51,6 +51,12 @@ export default function WorkspacePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen,  setSearchOpen]  = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // Edit patient modal
+  const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+  const [editFields, setEditFields]         = useState<Partial<Patient>>({});
+  const [editSaving, setEditSaving]         = useState(false);
+  const [editError,  setEditError]          = useState("");
 
   useEffect(() => {
     const supabase = createClient();
@@ -122,6 +128,37 @@ export default function WorkspacePage() {
   const viewHistory = (p: Patient) => {
     const param = encodeURIComponent(p.patient_id_number || p.full_name);
     router.push(`/workspace/all-letters?q=${param}`);
+  };
+
+  const openEdit = (p: Patient) => {
+    setEditingPatient(p);
+    setEditFields({
+      full_name: p.full_name, patient_id_number: p.patient_id_number,
+      birthdate_day: p.birthdate_day, birthdate_month: p.birthdate_month, birthdate_year: p.birthdate_year,
+      gender: p.gender, email: p.email, phone: p.phone,
+      smoking_vaping: p.smoking_vaping, pets: p.pets,
+      occupation: p.occupation, referred_by: p.referred_by, location: p.location,
+    });
+    setEditError("");
+    setSearchOpen(false);
+  };
+
+  const saveEdit = async () => {
+    if (!editingPatient) return;
+    setEditSaving(true);
+    setEditError("");
+    const supabase = createClient();
+    const { error } = await updatePatient(supabase, editingPatient.id, editFields);
+    if (error) {
+      setEditError(error);
+      setEditSaving(false);
+      return;
+    }
+    // Refresh the local patients list
+    const updated = await getAllPatients(supabase);
+    setPatients(updated);
+    setEditingPatient(null);
+    setEditSaving(false);
   };
 
   const cards = [
@@ -280,11 +317,18 @@ export default function WorkspacePage() {
 
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <button
+                              onClick={() => openEdit(p)}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all duration-150 hover:-translate-y-px"
+                              style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}
+                            >
+                              Edit
+                            </button>
+                            <button
                               onClick={() => viewHistory(p)}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all duration-150 hover:-translate-y-px"
                               style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}
                             >
-                              View History
+                              History
                             </button>
                             <button
                               onClick={() => startNewLetter(p)}
@@ -318,6 +362,72 @@ export default function WorkspacePage() {
           ))}
         </div>
       </div>
+
+      {/* Edit patient modal */}
+      {editingPatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ backgroundColor: "rgba(26,43,74,0.5)" }}
+          onClick={() => !editSaving && setEditingPatient(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            style={{ boxShadow: "0 24px 64px rgb(26 43 74 / 0.25)" }}
+            onClick={e => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4 flex items-center justify-between"
+              style={{ borderBottom: "1px solid #F1F5F9" }}>
+              <h2 className="text-base font-bold" style={{ color: "#1A2B4A" }}>Edit Patient</h2>
+              <button onClick={() => !editSaving && setEditingPatient(null)}
+                className="w-7 h-7 flex items-center justify-center rounded-full"
+                style={{ background: "#F1F5F9", color: "#64748B" }}>
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}
+                  strokeLinecap="round" className="w-3 h-3">
+                  <path d="M2 2l8 8M10 2l-8 8"/>
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-4 grid grid-cols-2 gap-4">
+              {[
+                { label: "Full Name",      key: "full_name",          colSpan: true },
+                { label: "Patient ID",     key: "patient_id_number",  colSpan: false },
+                { label: "Email",          key: "email",              colSpan: true },
+                { label: "Phone",          key: "phone",              colSpan: false },
+                { label: "Day (DD)",       key: "birthdate_day",      colSpan: false },
+                { label: "Month (MM)",     key: "birthdate_month",    colSpan: false },
+                { label: "Year (YYYY)",    key: "birthdate_year",     colSpan: false },
+                { label: "Gender",         key: "gender",             colSpan: false },
+                { label: "Smoking/Vaping", key: "smoking_vaping",     colSpan: false },
+                { label: "Pets",           key: "pets",               colSpan: false },
+                { label: "Occupation",     key: "occupation",         colSpan: false },
+                { label: "Referred By",    key: "referred_by",        colSpan: false },
+                { label: "Location",       key: "location",           colSpan: false },
+              ].map(({ label, key, colSpan }) => (
+                <div key={key} className={colSpan ? "col-span-2" : ""}>
+                  <label className="block text-xs font-semibold mb-1" style={{ color: "#64748B" }}>{label}</label>
+                  <input
+                    value={(editFields as Record<string, string>)[key] ?? ""}
+                    onChange={e => setEditFields(prev => ({ ...prev, [key]: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none"
+                    style={{ border: "1px solid #E2E8F0", color: "#1A2B4A", backgroundColor: "#FAFBFC" }}
+                  />
+                </div>
+              ))}
+            </div>
+            {editError && (
+              <p className="px-6 pb-2 text-xs" style={{ color: "#DC2626" }}>{editError}</p>
+            )}
+            <div className="px-6 pb-6 flex gap-2 justify-end">
+              <button onClick={() => setEditingPatient(null)} disabled={editSaving}
+                className="text-xs font-semibold px-4 py-2 rounded-xl border"
+                style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}>
+                Cancel
+              </button>
+              <button onClick={saveEdit} disabled={editSaving}
+                className="text-xs font-semibold px-4 py-2 rounded-xl"
+                style={{ backgroundColor: editSaving ? "#94A3B8" : "#1A2B4A", color: "#fff" }}>
+                {editSaving ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
