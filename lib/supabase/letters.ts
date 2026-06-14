@@ -91,11 +91,9 @@ export interface SupabaseLetter {
   reviewed_at: string | null;
   approved_at: string | null;
   sent_to_patient_at: string | null;
-  editable_docx_url: string | null;
   final_pdf_url: string | null;
   // File size tracking (bytes). Null until the relevant action has been performed.
   final_pdf_size_bytes:      number | null;
-  editable_docx_size_bytes:  number | null;
   images_total_size_bytes:   number | null;
   total_storage_size_bytes:  number | null;
   summary_sections:  SummarySection[]   | null;
@@ -152,14 +150,8 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
     letterDate:  letter.letter_date    || "",
     status:      letter.status,
     savedAt:     letter.updated_at     || letter.created_at,
-    reviewFileName:  letter.editable_docx_url
-      ? letter.editable_docx_url.split("/").pop()
-      : undefined,
     // Storage paths — present when the file has been uploaded to clinic-letters bucket
-    finalPdfPath:      letter.final_pdf_url      || undefined,
-    editableDocxPath:  letter.editable_docx_url?.includes("/")
-      ? letter.editable_docx_url
-      : undefined,
+    finalPdfPath: letter.final_pdf_url || undefined,
     finalPdfSizeBytes:     letter.final_pdf_size_bytes     ?? null,
     imagesTotalSizeBytes:  letter.images_total_size_bytes  ?? null,
     totalStorageSizeBytes: letter.total_storage_size_bytes ?? null,
@@ -445,7 +437,6 @@ export async function updateLetterStatus(
   if (extra?.reviewedAt)      payload.reviewed_at        = extra.reviewedAt;
   if (extra?.approvedAt)      payload.approved_at        = extra.approvedAt;
   if (extra?.sentToPatientAt) payload.sent_to_patient_at = extra.sentToPatientAt;
-  if (extra?.reviewFileName)  payload.editable_docx_url  = extra.reviewFileName;
 
   const { data, error } = await supabase
     .from("letters")
@@ -515,28 +506,25 @@ export async function updateLetterFileSizes(
   supabase: SupabaseClient,
   letterId: string,
   sizes: {
-    finalPdfSizeBytes?:     number;
-    imagesSizeBytes?:       number;
-    editableDocxSizeBytes?: number;
+    finalPdfSizeBytes?: number;
+    imagesSizeBytes?:   number;
   }
 ): Promise<void> {
   // Fetch the current row so we can compute a correct total
   const { data: existing } = await supabase
     .from("letters")
-    .select("final_pdf_size_bytes, images_total_size_bytes, editable_docx_size_bytes")
+    .select("final_pdf_size_bytes, images_total_size_bytes")
     .eq("id", letterId)
     .single();
 
-  const pdfBytes  = sizes.finalPdfSizeBytes     ?? (existing?.final_pdf_size_bytes      ?? 0);
-  const imgBytes  = sizes.imagesSizeBytes        ?? (existing?.images_total_size_bytes   ?? 0);
-  const docxBytes = sizes.editableDocxSizeBytes  ?? (existing?.editable_docx_size_bytes  ?? 0);
+  const pdfBytes = sizes.finalPdfSizeBytes ?? (existing?.final_pdf_size_bytes    ?? 0);
+  const imgBytes = sizes.imagesSizeBytes   ?? (existing?.images_total_size_bytes ?? 0);
 
   const payload: Record<string, number> = {
-    total_storage_size_bytes: (pdfBytes || 0) + (imgBytes || 0) + (docxBytes || 0),
+    total_storage_size_bytes: (pdfBytes || 0) + (imgBytes || 0),
   };
-  if (sizes.finalPdfSizeBytes     !== undefined) payload.final_pdf_size_bytes     = sizes.finalPdfSizeBytes;
-  if (sizes.imagesSizeBytes       !== undefined) payload.images_total_size_bytes  = sizes.imagesSizeBytes;
-  if (sizes.editableDocxSizeBytes !== undefined) payload.editable_docx_size_bytes = sizes.editableDocxSizeBytes;
+  if (sizes.finalPdfSizeBytes !== undefined) payload.final_pdf_size_bytes    = sizes.finalPdfSizeBytes;
+  if (sizes.imagesSizeBytes   !== undefined) payload.images_total_size_bytes = sizes.imagesSizeBytes;
 
   const { error } = await supabase.from("letters").update(payload).eq("id", letterId);
   if (error) {
@@ -556,13 +544,13 @@ export async function updateLetterFileSizes(
 export async function updateLetterFileUrls(
   supabase: SupabaseClient,
   letterId: string,
-  updates: { finalPdfUrl?: string; editableDocxUrl?: string }
+  updates: { finalPdfUrl?: string }
 ): Promise<void> {
-  const payload: Record<string, string> = {};
-  if (updates.finalPdfUrl   !== undefined) payload.final_pdf_url      = updates.finalPdfUrl;
-  if (updates.editableDocxUrl !== undefined) payload.editable_docx_url = updates.editableDocxUrl;
-  if (!Object.keys(payload).length) return;
-  const { error } = await supabase.from("letters").update(payload).eq("id", letterId);
+  if (updates.finalPdfUrl === undefined) return;
+  const { error } = await supabase
+    .from("letters")
+    .update({ final_pdf_url: updates.finalPdfUrl })
+    .eq("id", letterId);
   if (error) console.error("[updateLetterFileUrls]", error.message);
 }
 
@@ -674,7 +662,7 @@ export async function deleteOldLettersForPatient(
 
   const { data, error } = await supabase
     .from("letters")
-    .select("id, final_pdf_url, editable_docx_url")
+    .select("id, final_pdf_url")
     .eq("patient_id", patientUuid)
     .eq("created_by", user.id)
     .neq("id", currentLetterId)
@@ -683,13 +671,13 @@ export async function deleteOldLettersForPatient(
   if (error) throw new Error(`Could not load old letters: ${error.message}`);
   if (!data || data.length === 0) return [];
 
-  type Row = { id: string; final_pdf_url: string | null; editable_docx_url: string | null };
+  type Row = { id: string; final_pdf_url: string | null };
   const rows = data as Row[];
 
   // Delete storage files first
-  const storagePaths = rows.flatMap(r =>
-    [r.final_pdf_url, r.editable_docx_url].filter((p): p is string => !!p)
-  );
+  const storagePaths = rows
+    .map(r => r.final_pdf_url)
+    .filter((p): p is string => !!p);
   if (storagePaths.length > 0) {
     const { error: storageErr } = await supabase.storage.from("clinic-letters").remove(storagePaths);
     if (storageErr) console.warn("[deleteOldLettersForPatient] Storage delete warning:", storageErr.message);
@@ -722,7 +710,7 @@ export async function cleanupOldLetterFiles(
 ): Promise<void> {
   const { data, error } = await supabase
     .from("letters")
-    .select("id, final_pdf_url, editable_docx_url")
+    .select("id, final_pdf_url")
     .eq("patient_id", patientUuid)
     .neq("id", currentLetterId);
 
@@ -731,25 +719,23 @@ export async function cleanupOldLetterFiles(
     return;
   }
 
-  for (const row of data as { id: string; final_pdf_url: string | null; editable_docx_url: string | null }[]) {
-    const paths = [row.final_pdf_url, row.editable_docx_url].filter((p): p is string => !!p);
-    if (paths.length === 0) continue;
+  for (const row of data as { id: string; final_pdf_url: string | null }[]) {
+    if (!row.final_pdf_url) continue;
 
-    const { error: deleteErr } = await supabase.storage.from("clinic-letters").remove(paths);
+    const { error: deleteErr } = await supabase.storage.from("clinic-letters").remove([row.final_pdf_url]);
     if (deleteErr) {
       console.warn(`[cleanupOldLetterFiles] Storage delete failed for letter ${row.id.slice(0, 8)}:`, deleteErr.message);
       continue;
     }
 
-    const clear: Record<string, null> = {};
-    if (row.final_pdf_url)     clear.final_pdf_url     = null;
-    if (row.editable_docx_url) clear.editable_docx_url = null;
-
-    const { error: updateErr } = await supabase.from("letters").update(clear).eq("id", row.id);
+    const { error: updateErr } = await supabase
+      .from("letters")
+      .update({ final_pdf_url: null })
+      .eq("id", row.id);
     if (updateErr) {
       console.warn(`[cleanupOldLetterFiles] DB clear failed for letter ${row.id.slice(0, 8)}:`, updateErr.message);
     } else {
-      console.log(`[cleanupOldLetterFiles] Deleted ${paths.length} old file(s) for letter ${row.id.slice(0, 8)}`);
+      console.log(`[cleanupOldLetterFiles] Cleared PDF path for letter ${row.id.slice(0, 8)}`);
     }
   }
 }
