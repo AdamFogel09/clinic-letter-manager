@@ -423,7 +423,7 @@ export default function LetterPageRenderer({
             </div>
           </div>
           <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
-          <div className="pdf-patient-cols" style={{ display: "flex", gap: 32 }}>
+          <div className="pdf-patient-cols" style={{ display: "flex" }}>
             <div style={{ flex: 1 }}>
               <LV label="Name"          value={d.name} />
               <LV label="ID"            value={d.patId} />
@@ -432,7 +432,7 @@ export default function LetterPageRenderer({
               <LV label="Email"         value={d.email} />
               <LV label="Phone"         value={formatPhone(d.phone)} />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1, paddingLeft: 32 }}>
               <LV label="Smoking / Vaping" value={d.smoking} />
               <LV label="Pets"             value={d.pets} />
               <LV label="Occupation"       value={d.occupation} />

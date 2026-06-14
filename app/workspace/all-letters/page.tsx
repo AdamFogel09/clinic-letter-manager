@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getAllPatients, patientToDraft, type Patient } from "@/lib/supabase/patients";
-import { getAllLetters, duplicateLetter } from "@/lib/supabase/letters";
+import { getAllLetters, duplicateLetter, deleteLetter } from "@/lib/supabase/letters";
 import { type StoredLetter, type LetterStatus } from "@/lib/letterStore";
 
 const STATUS_COLORS: Record<LetterStatus, { bg: string; text: string }> = {
@@ -91,16 +91,18 @@ function DownloadPdfButton({ letter }: { letter: StoredLetter }) {
 }
 
 function PatientCard({
-  patient, letters, duplicatingId,
-  onStartNewLetter, onOpenLetter, onPreviewLetter, onDuplicateLetter,
+  patient, letters, duplicatingId, deletingId,
+  onStartNewLetter, onOpenLetter, onPreviewLetter, onDuplicateLetter, onDeleteLetter,
 }: {
   patient: Patient;
   letters: StoredLetter[];
   duplicatingId: string | null;
+  deletingId: string | null;
   onStartNewLetter:   (p: Patient) => void;
   onOpenLetter:       (l: StoredLetter) => void;
   onPreviewLetter:    (l: StoredLetter) => void;
   onDuplicateLetter:  (l: StoredLetter) => void;
+  onDeleteLetter:     (l: StoredLetter) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -147,10 +149,12 @@ function PatientCard({
                 <path d="M4 6l4 4 4-4"/>
               </svg>
             </button>
-            <button onClick={() => onStartNewLetter(patient)}
+            <button
+              onClick={() => letters.length > 0 ? onDuplicateLetter(letters[0]) : onStartNewLetter(patient)}
+              disabled={duplicatingId === letters[0]?.id}
               className="inline-flex items-center text-xs font-semibold px-3 py-2 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-sm"
-              style={{ backgroundColor: "#1A2B4A", color: "#fff" }}>
-              Create Update Letter
+              style={{ backgroundColor: "#1A2B4A", color: "#fff", opacity: duplicatingId === letters[0]?.id ? 0.6 : 1 }}>
+              {duplicatingId === letters[0]?.id ? "Creating…" : "Create Update Letter"}
             </button>
           </div>
         </div>
@@ -167,6 +171,7 @@ function PatientCard({
               {letters.map((letter, idx) => {
                 const c = STATUS_COLORS[letter.status] ?? { bg: "#F1F5F9", text: "#475569" };
                 const isDuplicating = duplicatingId === letter.id;
+                const isDeleting = deletingId === letter.id;
                 const isLatest = idx === 0;
                 return (
                   <div key={letter.id}
@@ -213,6 +218,18 @@ function PatientCard({
                         style={{ backgroundColor: "#1A2B4A", color: "#fff" }}>
                         {isLatest ? "Edit Latest" : "Continue"}
                       </button>
+                      <button
+                        onClick={() => onDeleteLetter(letter)}
+                        disabled={isDeleting}
+                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all"
+                        style={{
+                          borderColor: "#FECACA",
+                          color: isDeleting ? "#FCA5A5" : "#DC2626",
+                          background: isDeleting ? "#FEF2F2" : "white",
+                          cursor: isDeleting ? "default" : "pointer",
+                        }}>
+                        {isDeleting ? "Deleting…" : "Delete"}
+                      </button>
                     </div>
                   </div>
                 );
@@ -235,6 +252,8 @@ export default function AllLettersPage() {
   const [search,   setSearch]       = useState("");
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -306,6 +325,27 @@ export default function AllLettersPage() {
     router.push("/workspace/letter-preview");
   };
 
+  const handleDelete = async (letter: StoredLetter) => {
+    if (deletingId) return;
+    const confirmed = window.confirm(
+      `Delete the letter from ${letter.letterDate || "unknown date"} for ${letter.patientName}?\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeletingId(letter.id);
+    setDeleteError("");
+    try {
+      const supabase = createClient();
+      await deleteLetter(supabase, letter.id);
+      setLetters((prev) => prev.filter((l) => l.id !== letter.id));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delete letter.";
+      setDeleteError(msg);
+      setTimeout(() => setDeleteError(""), 5000);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleDuplicate = async (letter: StoredLetter) => {
     if (duplicatingId) return;
     setDuplicatingId(letter.id);
@@ -347,11 +387,11 @@ export default function AllLettersPage() {
       </div>
 
       <div className="px-6 sm:px-8">
-        {/* Duplicate error */}
-        {duplicateError && (
+        {/* Errors */}
+        {(duplicateError || deleteError) && (
           <div className="flex items-center gap-2 px-4 py-3 rounded-xl mb-4"
             style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
-            <p className="text-xs font-semibold" style={{ color: "#DC2626" }}>{duplicateError}</p>
+            <p className="text-xs font-semibold" style={{ color: "#DC2626" }}>{duplicateError || deleteError}</p>
           </div>
         )}
 
@@ -418,10 +458,12 @@ export default function AllLettersPage() {
                 patient={patient}
                 letters={lettersForPatient(patient)}
                 duplicatingId={duplicatingId}
+                deletingId={deletingId}
                 onStartNewLetter={startNewLetter}
                 onOpenLetter={openInEditor}
                 onPreviewLetter={openPreview}
                 onDuplicateLetter={handleDuplicate}
+                onDeleteLetter={handleDelete}
               />
 
             ))}

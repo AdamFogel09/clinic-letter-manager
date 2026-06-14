@@ -740,6 +740,44 @@ export async function cleanupOldLetterFiles(
   }
 }
 
+/**
+ * Permanently delete a single letter. Also removes its PDF from storage if present.
+ * Scoped to the logged-in user (cannot delete another user's letters).
+ */
+export async function deleteLetter(
+  supabase: SupabaseClient,
+  letterId: string,
+): Promise<void> {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error("Not authenticated.");
+
+  // Fetch the row first so we can clean up storage
+  const { data: row } = await supabase
+    .from("letters")
+    .select("id, final_pdf_url, created_by")
+    .eq("id", letterId)
+    .single();
+
+  if (!row) throw new Error("Letter not found.");
+  if (row.created_by !== user.id) throw new Error("Permission denied.");
+
+  // Delete PDF from storage if it exists
+  if (row.final_pdf_url) {
+    const { error: storageErr } = await supabase.storage
+      .from("clinic-letters")
+      .remove([row.final_pdf_url]);
+    if (storageErr) console.warn("[deleteLetter] Storage delete warning:", storageErr.message);
+  }
+
+  const { error } = await supabase
+    .from("letters")
+    .delete()
+    .eq("id", letterId)
+    .eq("created_by", user.id);
+
+  if (error) throw new Error(error.message || "Failed to delete letter.");
+}
+
 /** Count letters per status for dashboard cards. Scoped to the logged-in user. */
 export async function getLetterCounts(
   supabase: SupabaseClient
