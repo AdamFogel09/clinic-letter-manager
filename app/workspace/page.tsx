@@ -42,7 +42,7 @@ export default function WorkspacePage() {
 
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>("checking");
   const [counts, setCounts] = useState({
-    draft: 0, readyForReview: 0, waitingForAnat: 0,
+    draft: 0, waitingForAnat: 0,
     reviewed: 0, readyForPatient: 0,
   });
 
@@ -66,7 +66,6 @@ export default function WorkspacePage() {
       if (Object.keys(sc).length > 0) {
         setCounts({
           draft:           sc["Draft"]             || 0,
-          readyForReview:  sc["Ready for Review"]  || 0,
           waitingForAnat:  sc["Waiting for Anat"]  || 0,
           reviewed:        sc["Reviewed"]           || 0,
           readyForPatient: sc["Ready for Patient"]  || 0,
@@ -75,7 +74,6 @@ export default function WorkspacePage() {
         const letters = getLetters();
         setCounts({
           draft:           letters.filter((l) => l.status === "Draft").length,
-          readyForReview:  letters.filter((l) => l.status === "Ready for Review").length,
           waitingForAnat:  letters.filter((l) => l.status === "Waiting for Anat").length,
           reviewed:        letters.filter((l) => l.status === "Reviewed").length,
           readyForPatient: letters.filter((l) => l.status === "Ready for Patient").length,
@@ -163,7 +161,6 @@ export default function WorkspacePage() {
 
   const cards = [
     { status: "Draft",             badgeBg: "#EBF3FB", badgeText: "#4A90D9", title: "To Complete",       count: counts.draft,           buttonLabel: "Continue", buttonHref: "/workspace/drafts" },
-    { status: "Ready for Review",  badgeBg: "#FEF3C7", badgeText: "#D97706", title: "Ready for Anat",    count: counts.readyForReview,   buttonLabel: "Send",     buttonHref: "/workspace/review" },
     { status: "Waiting for Anat",  badgeBg: "#EDE9FE", badgeText: "#7C3AED", title: "Waiting for Anat",  count: counts.waitingForAnat,   buttonLabel: "View",     buttonHref: "/workspace/review" },
     { status: "Reviewed",          badgeBg: "#FFE4E6", badgeText: "#BE123C", title: "Needs Approval",    count: counts.reviewed,         buttonLabel: "Approve",  buttonHref: "/workspace/review" },
     { status: "Ready for Patient", badgeBg: "#CCFBF1", badgeText: "#0D9488", title: "Ready for Patient", count: counts.readyForPatient,  buttonLabel: "Export",   buttonHref: "/workspace/review" },
@@ -351,14 +348,9 @@ export default function WorkspacePage() {
 
       {/* Status cards */}
       <div className="px-6 sm:px-8">
-        <div className="grid grid-cols-1 sm:grid-cols-6 gap-4">
-          {cards.map((card, i) => (
-            <div
-              key={card.title}
-              className={i === 3 ? "sm:col-start-2 sm:col-span-2" : "sm:col-span-2"}
-            >
-              <StatusCard {...card} />
-            </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {cards.map((card) => (
+            <StatusCard key={card.title} {...card} />
           ))}
         </div>
       </div>
