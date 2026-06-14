@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getLettersByStatus } from "@/lib/supabase/letters";
-import { getLetters, type StoredLetter } from "@/lib/letterStore";
+import { type StoredLetter } from "@/lib/letterStore";
 
 function openInEditor(letter: StoredLetter, router: ReturnType<typeof useRouter>) {
   // Tell the editor to fetch fresh data from Supabase for this letter
@@ -31,14 +31,7 @@ export default function DraftsPage() {
     const load = async () => {
       const supabase = createClient();
       const supabaseDrafts = await getLettersByStatus(supabase, ["Draft"]);
-
-      if (supabaseDrafts.length > 0) {
-        setDrafts(supabaseDrafts);
-      } else {
-        // Fallback: show localStorage drafts while Supabase is empty or unavailable
-        const local = getLetters().filter((l) => l.status === "Draft");
-        setDrafts(local);
-      }
+      setDrafts(supabaseDrafts);
       setLoading(false);
     };
     load();

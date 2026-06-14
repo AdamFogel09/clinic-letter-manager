@@ -99,7 +99,7 @@ function PatientCard({
             <button onClick={() => onStartNewLetter(patient)}
               className="inline-flex items-center text-xs font-semibold px-3 py-2 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-sm"
               style={{ backgroundColor: "#1A2B4A", color: "#fff" }}>
-              Start New Letter
+              Create Update Letter
             </button>
           </div>
         </div>

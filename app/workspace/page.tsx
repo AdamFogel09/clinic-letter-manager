@@ -335,7 +335,7 @@ export default function WorkspacePage() {
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 hover:-translate-y-px hover:shadow-sm"
                               style={{ backgroundColor: "#1A2B4A", color: "#fff" }}
                             >
-                              New Letter
+                              Create Update Letter
                             </button>
                           </div>
                         </div>
