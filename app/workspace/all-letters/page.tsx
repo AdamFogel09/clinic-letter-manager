@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getAllPatients, patientToDraft, type Patient } from "@/lib/supabase/patients";
-import { getAllLetters, duplicateLetter, deleteLetter } from "@/lib/supabase/letters";
+import { getAllLetters, duplicateLetter } from "@/lib/supabase/letters";
 import { type StoredLetter, type LetterStatus } from "@/lib/letterStore";
 
 const STATUS_COLORS: Record<LetterStatus, { bg: string; text: string }> = {
@@ -334,8 +334,15 @@ export default function AllLettersPage() {
     setDeletingId(letter.id);
     setDeleteError("");
     try {
-      const supabase = createClient();
-      await deleteLetter(supabase, letter.id);
+      const res = await fetch("/api/delete-letter", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ letterId: letter.id }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { error?: string }).error || `Delete failed (${res.status})`);
+      }
       setLetters((prev) => prev.filter((l) => l.id !== letter.id));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to delete letter.";
