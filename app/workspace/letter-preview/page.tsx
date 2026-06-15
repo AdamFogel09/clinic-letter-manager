@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, updateLetterFileUrls, updateLetterFileSizes, getLetterById, cleanupOldLetterFiles, supabaseLetterToStoredLetter } from "@/lib/supabase/letters";
+import { saveLetter as saveLetterToSupabase, getLetterById, supabaseLetterToStoredLetter } from "@/lib/supabase/letters";
 import { triggerDownload, finalPdfFilename } from "@/lib/generateDocx";
 import LetterPageRenderer, { type LetterData } from "@/components/letter/LetterPageRenderer";
 
@@ -96,8 +96,6 @@ export default function LetterPreviewPage() {
   const [exportProgress, setExportProgress] = useState("");
   const [exportError, setExportError] = useState("");
   const [exportDone, setExportDone] = useState(false);
-  const [pdfUploadStatus, setPdfUploadStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
-  const [pdfUploadError, setPdfUploadError] = useState("");
   const [letterStatus, setLetterStatus] = useState("");
   const [editWarning, setEditWarning] = useState(false);
 
@@ -136,8 +134,6 @@ export default function LetterPreviewPage() {
     setExporting(true);
     setExportDone(false);
     setExportError("");
-    setPdfUploadStatus("idle");
-    setPdfUploadError("");
     try {
       const d = data as unknown as Record<string, unknown>;
       const patientName = (d?.name     as string) || "";
@@ -164,59 +160,10 @@ export default function LetterPreviewPage() {
       const filename = finalPdfFilename(patientId, patientName, location, date);
       const blob = new Blob([pdfArrayBuffer], { type: "application/pdf" });
 
-      const pdfSizeBytes = blob.size;
-      console.log(`[size] PDF size: ${Math.round(pdfSizeBytes / 1024)} KB`);
-
-      setExportProgress("Saving PDF…");
+      setExportProgress("Downloading PDF…");
       triggerDownload(blob, filename);
       setExportDone(true);
       setExportProgress("");
-
-      setPdfUploadStatus("uploading");
-      {
-        try {
-          const supabase = createClient();
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) throw new Error("Not authenticated");
-
-          const safePatId = (patientId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_");
-          const storagePath = `${user.id}/${safePatId}/${letterId}/${filename}`;
-
-          const { error: uploadErr } = await supabase.storage
-            .from("clinic-letters")
-            .upload(storagePath, blob, { contentType: "application/pdf", upsert: true });
-
-          if (uploadErr) throw new Error(uploadErr.message);
-
-          await updateLetterFileUrls(supabase, letterId, { finalPdfUrl: storagePath });
-          setPdfUploadStatus("done");
-
-          const pictures = (d?.pictures as string[]) || [];
-          const imagesTotalSizeBytes = pictures.reduce((total, pic) => {
-            const b64 = pic.split(",")[1] ?? "";
-            const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
-            return total + Math.floor(b64.length * 3 / 4) - pad;
-          }, 0);
-          console.log(`[size] PDF: ${Math.round(pdfSizeBytes / 1024)} KB · Images: ${pictures.length} = ${Math.round(imagesTotalSizeBytes / 1024)} KB`);
-
-          updateLetterFileSizes(supabase, letterId, {
-            finalPdfSizeBytes: pdfSizeBytes,
-            imagesSizeBytes:   imagesTotalSizeBytes,
-          }).catch((e) => console.warn("[preview] size update error:", e));
-
-          getLetterById(supabase, letterId).then((letter) => {
-            if (letter?.patient_id) {
-              cleanupOldLetterFiles(supabase, letterId, letter.patient_id).catch((e) =>
-                console.warn("[preview] Storage cleanup error:", e)
-              );
-            }
-          }).catch(() => { /* cleanup is best-effort */ });
-        } catch (uploadErr) {
-          console.warn("[preview] PDF upload error:", uploadErr);
-          setPdfUploadStatus("error");
-          setPdfUploadError(uploadErr instanceof Error ? uploadErr.message : "Upload failed");
-        }
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       console.error("[exportPdf] failed:", err);
@@ -399,7 +346,7 @@ export default function LetterPreviewPage() {
           {exportMode ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {exportDone && pdfUploadStatus === "idle" && (
+                {exportDone && (
                   <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488", display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12 }}><path d="M3 8l4 4 6-7"/></svg>
                     PDF downloaded
@@ -420,21 +367,9 @@ export default function LetterPreviewPage() {
                   Edit Letter
                 </button>
                 <button type="button" onClick={handleExportPdf} disabled={exporting} style={{ fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 20px", backgroundColor: exporting ? "#F4F6F9" : "#0D9488", color: exporting ? "#94A3B8" : "#fff", border: exporting ? "1px solid #E2E8F0" : "1px solid #0D9488", cursor: exporting ? "default" : "pointer", transition: "all 0.15s" }}>
-                  {exporting ? "Generating PDF…" : exportDone ? "Download Again" : "Download Final PDF"}
+                  {exporting ? "Generating PDF…" : exportDone ? "Download Again" : "Download PDF"}
                 </button>
               </div>
-              {pdfUploadStatus === "uploading" && (
-                <span style={{ fontSize: 11, color: "#94A3B8" }}>Uploading PDF to secure storage…</span>
-              )}
-              {pdfUploadStatus === "done" && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 11, height: 11 }}><path d="M3 8l4 4 6-7"/></svg>
-                  PDF saved to storage
-                </span>
-              )}
-              {pdfUploadStatus === "error" && (
-                <span style={{ fontSize: 11, color: "#BE123C" }}>Could not save to storage: {pdfUploadError}</span>
-              )}
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8 }}>

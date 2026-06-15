@@ -17,37 +17,6 @@ import {
   type StoredLetter,
   type LetterStatus,
 } from "@/lib/letterStore";
-import { finalPdfFilename } from "@/lib/generateDocx";
-
-// ─── Storage helpers ─────────────────────────────────────────────────────────
-
-function formatBytes(b: number | null | undefined): string | null {
-  if (!b) return null;
-  if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
-  return `${Math.round(b / 1024)} KB`;
-}
-
-const STORAGE_BUCKET = "clinic-letters";
-
-/** Sanitise a string for use as a Storage path segment. */
-function safePathSegment(s: string): string {
-  return (s || "unknown").replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_{2,}/g, "_").replace(/^_|_$/, "") || "unknown";
-}
-
-/** Create a 1-hour signed download URL and trigger the browser download. */
-async function downloadFromStorage(storagePath: string, downloadFilename: string): Promise<string | null> {
-  const { createClient } = await import("@/lib/supabase/client");
-  const supabase = createClient();
-  const { data, error } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .createSignedUrl(storagePath, 3600, { download: downloadFilename });
-  if (error || !data?.signedUrl) {
-    console.error("[downloadFromStorage]", error?.message);
-    return null;
-  }
-  return data.signedUrl;
-}
-
 // ─── Status colours ───────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<LetterStatus, { bg: string; text: string }> = {
@@ -302,31 +271,11 @@ function ReadyCard({
   const location     = (d.location as string) || "";
   const date         = letter.letterDate || "";
 
-  const [downloading,  setDownloading]  = useState(false);
-  const [downloadError, setDownloadError] = useState("");
   const [showModal,    setShowModal]    = useState(false);
   const [sending,      setSending]      = useState(false);
   const [sendSuccess,  setSendSuccess]  = useState(false);
   const [noEmailError, setNoEmailError] = useState(false);
   const [sendError,    setSendError]    = useState("");
-
-  const effectivePdfPath = letter.finalPdfPath || null;
-
-  const handleDownload = async (storagePath: string, filename: string) => {
-    if (downloading) return;
-    setDownloading(true);
-    setDownloadError("");
-    try {
-      const url = await downloadFromStorage(storagePath, filename);
-      if (!url) throw new Error("Could not generate download link.");
-      window.open(url, "_blank");
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Download failed");
-      setTimeout(() => setDownloadError(""), 5000);
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   const handleSendClick = () => {
     setSendError("");
@@ -396,54 +345,6 @@ function ReadyCard({
           </button>
         </div>
 
-        {/* Download saved PDF (only shown after export) */}
-        {effectivePdfPath && (
-          <div className="flex items-center gap-2 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: "1px dashed #F1F5F9" }}>
-            <span className="text-xs flex-shrink-0" style={{ color: "#94A3B8" }}>Saved:</span>
-            <button
-              onClick={() => handleDownload(effectivePdfPath, finalPdfFilename(patientId, patientName, location, date))}
-              disabled={downloading}
-              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
-              style={{ backgroundColor: "white", color: "#0D9488", borderColor: "#0D9488", cursor: downloading ? "default" : "pointer" }}
-              onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
-              onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
-              Download Saved PDF
-            </button>
-            {downloadError && <p className="text-xs w-full" style={{ color: "#BE123C" }}>{downloadError}</p>}
-          </div>
-        )}
-
-        {/* Storage sizes */}
-        {(letter.finalPdfSizeBytes || letter.imagesTotalSizeBytes || letter.totalStorageSizeBytes) && (
-          <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #F1F5F9" }}>
-            <p className="text-xs" style={{ color: "#94A3B8", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-              <span>Storage:</span>
-              {formatBytes(letter.finalPdfSizeBytes) && (
-                <span title="Exported PDF file saved in Supabase Storage. Includes embedded images, fonts, and full page layout — so it is larger than the image data alone.">
-                  PDF {formatBytes(letter.finalPdfSizeBytes)}
-                </span>
-              )}
-              {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span>·</span>}
-              {formatBytes(letter.imagesTotalSizeBytes) && (
-                <span title="Total size of compressed JPEG image data stored in the database (max 1200 px, 70% quality). These images are also embedded inside the exported PDF.">
-                  Images {formatBytes(letter.imagesTotalSizeBytes)}
-                </span>
-              )}
-              {formatBytes(letter.totalStorageSizeBytes) && (
-                <span style={{ fontWeight: 600 }} title="PDF file in Supabase Storage + image data in database.">
-                  · Total {formatBytes(letter.totalStorageSizeBytes)}
-                </span>
-              )}
-              <span
-                title="PDF = exported PDF file in Supabase Storage (includes images, fonts, layout). Images = compressed JPEG data stored in database (max 1200 px, JPEG 70%). Total = PDF Storage + Image DB data."
-                style={{ cursor: "default", fontSize: 11, color: "#CBD5E1", userSelect: "none" }}>
-                ⓘ
-              </span>
-            </p>
-          </div>
-        )}
-
         {/* Send PDF to patient */}
         <div className="flex items-center gap-3 mt-2.5 pt-2.5 flex-wrap" style={{ borderTop: "1px dashed #F1F5F9" }}>
           <div className="flex-1 min-w-0">
@@ -482,33 +383,7 @@ function ReadyCard({
 // ─── Sent to Patient card ─────────────────────────────────────────────────────
 
 function SentCard({ letter }: { letter: StoredLetter }) {
-  const colors       = STATUS_COLORS["Sent to Patient"];
-  const d            = (letter.data ?? {}) as Record<string, unknown>;
-  const patientId    = (d.patId    as string) || letter.patientId || "";
-  const patientName  = (d.name     as string) || letter.patientName || "";
-  const location     = (d.location as string) || "";
-  const date         = letter.letterDate || "";
-
-  const [downloading,   setDownloading]   = useState(false);
-  const [downloadError, setDownloadError] = useState("");
-
-  const hasPdf = !!letter.finalPdfPath;
-
-  const handleDownload = async (storagePath: string, filename: string) => {
-    if (downloading) return;
-    setDownloading(true);
-    setDownloadError("");
-    try {
-      const url = await downloadFromStorage(storagePath, filename);
-      if (!url) throw new Error("Could not generate download link.");
-      window.open(url, "_blank");
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Download failed");
-      setTimeout(() => setDownloadError(""), 5000);
-    } finally {
-      setDownloading(false);
-    }
-  };
+  const colors = STATUS_COLORS["Sent to Patient"];
 
   return (
     <div className="bg-white rounded-2xl border px-5 py-4"
@@ -539,53 +414,6 @@ function SentCard({ letter }: { letter: StoredLetter }) {
         </div>
       </div>
 
-      {/* Download saved PDF */}
-      {hasPdf && (
-        <div className="flex items-center gap-2 mt-3 pt-3 flex-wrap" style={{ borderTop: "1px dashed #F1F5F9" }}>
-          <span className="text-xs flex-shrink-0" style={{ color: "#94A3B8" }}>Saved:</span>
-          <button
-            onClick={() => handleDownload(letter.finalPdfPath!, finalPdfFilename(patientId, patientName, location, date))}
-            disabled={downloading}
-            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-150 inline-flex items-center gap-1"
-            style={{ backgroundColor: "white", color: "#0D9488", borderColor: "#0D9488", cursor: downloading ? "default" : "pointer" }}
-            onMouseEnter={e => { if (!downloading) (e.currentTarget.style.transform = "translateY(-1px)"); }}
-            onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M8 3v7M5 7l3 3 3-3"/><path d="M3 13h10"/></svg>
-            Download Saved PDF
-          </button>
-          {downloadError && <p className="text-xs w-full" style={{ color: "#BE123C" }}>{downloadError}</p>}
-        </div>
-      )}
-
-      {/* Storage sizes */}
-      {(letter.finalPdfSizeBytes || letter.imagesTotalSizeBytes || letter.totalStorageSizeBytes) && (
-        <div className="mt-2 pt-2" style={{ borderTop: "1px dashed #F1F5F9" }}>
-          <p className="text-xs" style={{ color: "#94A3B8", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-            <span>Storage:</span>
-            {formatBytes(letter.finalPdfSizeBytes) && (
-              <span title="Exported PDF file saved in Supabase Storage. Includes embedded images, fonts, and full page layout — so it is larger than the image data alone.">
-                PDF {formatBytes(letter.finalPdfSizeBytes)}
-              </span>
-            )}
-            {formatBytes(letter.finalPdfSizeBytes) && formatBytes(letter.imagesTotalSizeBytes) && <span>·</span>}
-            {formatBytes(letter.imagesTotalSizeBytes) && (
-              <span title="Total size of compressed JPEG image data stored in the database (max 1200 px, 70% quality). These images are also embedded inside the exported PDF.">
-                Images {formatBytes(letter.imagesTotalSizeBytes)}
-              </span>
-            )}
-            {formatBytes(letter.totalStorageSizeBytes) && (
-              <span style={{ fontWeight: 600 }} title="PDF file in Supabase Storage + image data in database.">
-                · Total {formatBytes(letter.totalStorageSizeBytes)}
-              </span>
-            )}
-            <span
-              title="PDF = exported PDF file in Supabase Storage (includes images, fonts, layout). Images = compressed JPEG data stored in database (max 1200 px, JPEG 70%). Total = PDF Storage + Image DB data."
-              style={{ cursor: "default", fontSize: 11, color: "#CBD5E1", userSelect: "none" }}>
-              ⓘ
-            </span>
-          </p>
-        </div>
-      )}
     </div>
   );
 }

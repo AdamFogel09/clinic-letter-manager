@@ -70,7 +70,7 @@ function DownloadPdfButton({ letter }: { letter: StoredLetter }) {
     }
   };
 
-  const label  = state === "loading" ? "Exporting…" : state === "done" ? "Saved ✓" : state === "error" ? "Failed" : "Save PDF";
+  const label  = state === "loading" ? "Exporting…" : state === "done" ? "Done ✓" : state === "error" ? "Failed" : "Download PDF";
   const bg     = state === "done" ? "#F0FDF4" : state === "error" ? "#FEF2F2" : "white";
   const color  = state === "done" ? "#16A34A" : state === "error" ? "#DC2626" : "#64748B";
   const border = state === "done" ? "#BBF7D0" : state === "error" ? "#FECACA" : "#E2E8F0";

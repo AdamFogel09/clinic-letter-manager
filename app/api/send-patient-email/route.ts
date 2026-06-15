@@ -6,8 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getLetterById, updateLetterStatus } from "@/lib/supabase/letters";
 import { getAuthenticatedClient, isGmailConnected } from "@/lib/gmail";
 
-const STORAGE_BUCKET = "clinic-letters";
-
 // Reproduces the [ID]_[SURNAME]_[LOCATION]_[DATE].pdf naming convention
 function buildPdfFilename(patientId: string, fullName: string, location: string, date: string): string {
   const safePart = (s: string) => (s || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 30) || "x";
@@ -110,31 +108,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Patient email is missing." }, { status: 400 });
   }
 
-  // ── PDF from Storage ──────────────────────────────────────────────────────────
-  const pdfPath = letter.final_pdf_url;
-  if (!pdfPath) {
-    return NextResponse.json(
-      { error: "No final PDF found. Please export the final PDF first." },
-      { status: 400 }
-    );
+  // ── Generate PDF on-the-fly ───────────────────────────────────────────────────
+  const origin = req.nextUrl.origin;
+  const pdfRes = await fetch(`${origin}/api/export-pdf`, {
+    method:  "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cookie":        req.headers.get("cookie") || "",
+    },
+    body: JSON.stringify({ letterId }),
+  });
+  if (!pdfRes.ok) {
+    const errJson = await pdfRes.json().catch(() => ({}));
+    const msg = (errJson as { error?: string }).error || `PDF generation failed (${pdfRes.status})`;
+    console.error("[send-patient-email] PDF generation error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-
-  const { data: fileData, error: fileError } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .download(pdfPath);
-
-  if (fileError || !fileData) {
-    console.error("[send-patient-email] Storage download error:", fileError?.message);
-    return NextResponse.json(
-      { error: "Could not retrieve the PDF from storage." },
-      { status: 500 }
-    );
-  }
-
-  const pdfBuffer    = Buffer.from(await fileData.arrayBuffer());
-  const pdfSizeBytes = pdfBuffer.length;
-  console.log(`[size] PDF size calculated: ${Math.round(pdfSizeBytes / 1024)} KB`);
-  const pdfBase64    = pdfBuffer.toString("base64");
+  const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
+  const pdfBase64 = pdfBuffer.toString("base64");
   const pdfFilename  = buildPdfFilename(
     letter.patients?.patient_id_number || "",
     letter.patients?.full_name         || "",
@@ -229,21 +220,6 @@ export async function POST(req: NextRequest) {
   await updateLetterStatus(supabase, letterId, "Sent to Patient", {
     sentToPatientAt: new Date().toISOString(),
   });
-
-  // ── Update PDF size if not already tracked ────────────────────────────────────
-  const { data: sizeRow } = await supabase
-    .from("letters")
-    .select("final_pdf_size_bytes, images_total_size_bytes")
-    .eq("id", letterId)
-    .single();
-  if (!sizeRow?.final_pdf_size_bytes) {
-    const imgBytes = (sizeRow as { images_total_size_bytes?: number } | null)?.images_total_size_bytes || 0;
-    await supabase.from("letters").update({
-      final_pdf_size_bytes:     pdfSizeBytes,
-      total_storage_size_bytes: pdfSizeBytes + imgBytes,
-    }).eq("id", letterId);
-    console.log(`[size] Storage size fields updated`);
-  }
 
   console.log(`[send-patient-email] letter sent | id: ${letterId}`);
 

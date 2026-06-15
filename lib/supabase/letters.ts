@@ -537,24 +537,6 @@ export async function updateLetterFileSizes(
 }
 
 /**
- * Save Supabase Storage paths back to the letters row after file upload.
- * Pass only the fields you want to update — undefined keys are skipped.
- * Paths are relative to the "clinic-letters" bucket root.
- */
-export async function updateLetterFileUrls(
-  supabase: SupabaseClient,
-  letterId: string,
-  updates: { finalPdfUrl?: string }
-): Promise<void> {
-  if (updates.finalPdfUrl === undefined) return;
-  const { error } = await supabase
-    .from("letters")
-    .update({ final_pdf_url: updates.finalPdfUrl })
-    .eq("id", letterId);
-  if (error) console.error("[updateLetterFileUrls]", error.message);
-}
-
-/**
  * Duplicate an existing letter into a new Draft for the same patient.
  * Copies all clinical content; sets status = Draft and letter_date = today.
  * The original letter is never modified.
@@ -648,9 +630,10 @@ export async function duplicateLetter(
 }
 
 /**
- * Delete previously-sent letters for a patient (status "Sent to Patient" only),
- * keeping the current letter intact. Cleans up both storage files and DB rows.
- * Returns the IDs of deleted letters so the caller can purge them from localStorage.
+ * Delete previous letters for a patient (status "Sent to Patient" or "Ready for Patient"),
+ * keeping the current (just-sent) letter intact.
+ * PDFs are no longer stored permanently — only the DB rows are deleted.
+ * Returns the IDs of deleted letters so the caller can purge them from local state.
  */
 export async function deleteOldLettersForPatient(
   supabase: SupabaseClient,
@@ -662,7 +645,7 @@ export async function deleteOldLettersForPatient(
 
   const { data, error } = await supabase
     .from("letters")
-    .select("id, final_pdf_url")
+    .select("id")
     .eq("patient_id", patientUuid)
     .eq("created_by", user.id)
     .neq("id", currentLetterId)
@@ -671,73 +654,20 @@ export async function deleteOldLettersForPatient(
   if (error) throw new Error(`Could not load old letters: ${error.message}`);
   if (!data || data.length === 0) return [];
 
-  type Row = { id: string; final_pdf_url: string | null };
-  const rows = data as Row[];
+  const oldIds = (data as { id: string }[]).map(r => r.id);
 
-  // Delete storage files first
-  const storagePaths = rows
-    .map(r => r.final_pdf_url)
-    .filter((p): p is string => !!p);
-  if (storagePaths.length > 0) {
-    const { error: storageErr } = await supabase.storage.from("clinic-letters").remove(storagePaths);
-    if (storageErr) console.warn("[deleteOldLettersForPatient] Storage delete warning:", storageErr.message);
-  }
-
-  // Delete the DB rows
-  const oldIds = rows.map(r => r.id);
-  const { error: deleteErr } = await supabase
+  const { data: deleted, error: deleteErr } = await supabase
     .from("letters")
     .delete()
     .in("id", oldIds)
-    .eq("created_by", user.id);
+    .eq("created_by", user.id)
+    .select("id");
 
   if (deleteErr) throw new Error(`Failed to delete old letters: ${deleteErr.message}`);
 
-  console.log(`[deleteOldLettersForPatient] Deleted ${oldIds.length} old letter(s) for patient ${patientUuid.slice(0, 8)}`);
-  return oldIds;
-}
-
-/**
- * After a new final PDF is successfully saved, delete old PDF and DOCX files from
- * Supabase Storage for every OTHER letter belonging to the same patient.
- * Safe: never touches the current letter. DB rows are only cleared after storage
- * deletion succeeds, so partial failures leave data consistent.
- */
-export async function cleanupOldLetterFiles(
-  supabase: SupabaseClient,
-  currentLetterId: string,
-  patientUuid: string
-): Promise<void> {
-  const { data, error } = await supabase
-    .from("letters")
-    .select("id, final_pdf_url")
-    .eq("patient_id", patientUuid)
-    .neq("id", currentLetterId);
-
-  if (error || !data) {
-    console.warn("[cleanupOldLetterFiles] Could not load old letters:", error?.message);
-    return;
-  }
-
-  for (const row of data as { id: string; final_pdf_url: string | null }[]) {
-    if (!row.final_pdf_url) continue;
-
-    const { error: deleteErr } = await supabase.storage.from("clinic-letters").remove([row.final_pdf_url]);
-    if (deleteErr) {
-      console.warn(`[cleanupOldLetterFiles] Storage delete failed for letter ${row.id.slice(0, 8)}:`, deleteErr.message);
-      continue;
-    }
-
-    const { error: updateErr } = await supabase
-      .from("letters")
-      .update({ final_pdf_url: null })
-      .eq("id", row.id);
-    if (updateErr) {
-      console.warn(`[cleanupOldLetterFiles] DB clear failed for letter ${row.id.slice(0, 8)}:`, updateErr.message);
-    } else {
-      console.log(`[cleanupOldLetterFiles] Cleared PDF path for letter ${row.id.slice(0, 8)}`);
-    }
-  }
+  const actuallyDeleted = (deleted || []).map((r: { id: string }) => r.id);
+  console.log(`[deleteOldLettersForPatient] Deleted ${actuallyDeleted.length}/${oldIds.length} old letter(s) for patient ${patientUuid.slice(0, 8)}`);
+  return actuallyDeleted;
 }
 
 /**
