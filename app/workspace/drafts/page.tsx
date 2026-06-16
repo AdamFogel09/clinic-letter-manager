@@ -5,7 +5,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getLettersByStatus } from "@/lib/supabase/letters";
 import { type StoredLetter } from "@/lib/letterStore";
@@ -46,13 +45,7 @@ export default function DraftsPage() {
           <h1 className="text-xl sm:text-2xl font-bold" style={{ color: "#1A2B4A" }}>Drafts</h1>
           <p className="text-sm mt-1" style={{ color: "#94A3B8" }}>Letters in progress</p>
         </div>
-        <div className="flex items-center justify-end pt-1">
-          <Link href="/workspace/new-letter"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl transition-all duration-150 hover:-translate-y-px"
-            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}>
-            New Letter
-          </Link>
-        </div>
+        <div />
       </div>
 
       <div className="px-6 sm:px-8">
@@ -89,11 +82,6 @@ export default function DraftsPage() {
             <p className="text-xs mb-4" style={{ color: "#CBD5E1" }}>
               Letters in progress will appear here
             </p>
-            <Link href="/workspace/new-letter"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px"
-              style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}>
-              Create New Letter
-            </Link>
           </div>
         )}
 

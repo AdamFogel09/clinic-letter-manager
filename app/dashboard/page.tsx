@@ -114,13 +114,6 @@ export default function DashboardPage() {
             New Patient
           </Link>
           <Link
-            href="/workspace/new-letter"
-            className="flex justify-center items-center text-sm font-semibold px-4 py-3.5 rounded-xl transition-all duration-150 active:scale-95"
-            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
-          >
-            New Letter
-          </Link>
-          <Link
             href="/workspace/anat-review"
             className="flex justify-center items-center text-sm font-semibold px-4 py-3.5 rounded-xl transition-all duration-150 active:scale-95"
             style={{ backgroundColor: "#EDE9FE", color: "#7C3AED" }}
@@ -148,13 +141,6 @@ export default function DashboardPage() {
             style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
           >
             New Patient
-          </Link>
-          <Link
-            href="/workspace/new-letter"
-            className="inline-flex items-center text-sm font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-md"
-            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}
-          >
-            New Letter
           </Link>
           <Link
             href="/workspace/anat-review"

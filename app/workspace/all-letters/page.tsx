@@ -5,7 +5,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getAllPatients, patientToDraft, type Patient } from "@/lib/supabase/patients";
 import { getAllLetters, duplicateLetter } from "@/lib/supabase/letters";
@@ -393,13 +392,7 @@ export default function AllLettersPage() {
           <h1 className="text-xl sm:text-2xl font-bold" style={{ color: "#1A2B4A" }}>All Letters</h1>
           <p className="text-sm mt-1" style={{ color: "#94A3B8" }}>All patients and their letter history</p>
         </div>
-        <div className="flex items-center justify-end pt-1">
-          <Link href="/workspace/new-letter"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl transition-all duration-150 hover:-translate-y-px"
-            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}>
-            New Letter
-          </Link>
-        </div>
+        <div />
       </div>
 
       <div className="px-6 sm:px-8">
