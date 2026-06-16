@@ -217,13 +217,12 @@ export default function WorkspacePage() {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: "85%",
-          maxWidth: 700,
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
           opacity: 0.055,
           pointerEvents: "none",
           userSelect: "none",
-          maskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 80%)",
-          WebkitMaskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 80%)",
         }}
       />
       {/* Top bar */}
