@@ -63,6 +63,17 @@ export function planStepsToHEArr(steps: PlanStep[]): string[] {
   return steps.map(s => s.textHE);
 }
 
+/** Image stored in Supabase Storage. Saved as metadata in the letters.pictures column. */
+export interface PictureMetadata {
+  id: string;           // unique image ID
+  path: string;         // storage path: "{userId}/{letterId}/{imageId}.jpg"
+  bucket: string;       // "letter-images"
+  sizeBytes: number;
+  width: number;
+  height: number;
+  contentType: string;  // "image/jpeg"
+}
+
 export interface SupabaseLetter {
   id: string;
   created_at: string;
@@ -85,12 +96,14 @@ export interface SupabaseLetter {
   examination: Record<string, string>;
   test_results: Record<string, unknown>;
   lung_function_tests: Record<string, unknown>[];
-  pictures: string[];
+  pictures: unknown[];  // PictureMetadata[] for new letters, string[] (base64) for legacy
   inhaler: { name: string; link: string; image_url?: string };
   sent_to_anat_at: string | null;
   reviewed_at: string | null;
   approved_at: string | null;
   sent_to_patient_at: string | null;
+  saved_internal_at: string | null;
+  source_letter_id: string | null;
   final_pdf_url: string | null;
   // File size tracking (bytes). Null until the relevant action has been performed.
   final_pdf_size_bytes:      number | null;
@@ -301,7 +314,7 @@ function editorDataToColumns(d: Record<string, unknown>, patientId?: string, sta
     },
     test_results:        (d.testResults        as Record<string, unknown>) || {},
     lung_function_tests: (d.lungRows           as Record<string, unknown>[]) || [],
-    pictures:            (d.pictures           as string[]) || [],
+    pictures:            (d.pictures           as unknown[]) || [],
     inhaler:             (d.inhalers           as unknown[]) || [],
   };
 }
@@ -319,8 +332,9 @@ export async function saveLetter(
     patientId?:    string;
     status:        LetterStatus;
     letterDate:    string;
-    letterData:    Record<string, unknown>;
-    sentToAnatAt?: string;
+    letterData:         Record<string, unknown>;
+    sentToAnatAt?:      string;
+    savedInternalAt?:   string;
   }
 ): Promise<{ id: string }> {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -335,7 +349,8 @@ export async function saveLetter(
       params.status,
       params.letterDate,
     ),
-    ...(params.sentToAnatAt ? { sent_to_anat_at: params.sentToAnatAt } : {}),
+    ...(params.sentToAnatAt    ? { sent_to_anat_at:    params.sentToAnatAt    } : {}),
+    ...(params.savedInternalAt ? { saved_internal_at: params.savedInternalAt } : {}),
   };
 
   if (params.letterId) {
@@ -420,10 +435,11 @@ export async function updateLetterStatus(
   id: string,
   status: LetterStatus,
   extra?: {
-    reviewedAt?:       string;
-    approvedAt?:       string;
-    sentToPatientAt?:  string;
-    reviewFileName?:   string;
+    reviewedAt?:        string;
+    approvedAt?:        string;
+    sentToPatientAt?:   string;
+    savedInternalAt?:   string;
+    reviewFileName?:    string;
   }
 ): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -434,9 +450,10 @@ export async function updateLetterStatus(
   }
 
   const payload: Record<string, unknown> = { status };
-  if (extra?.reviewedAt)      payload.reviewed_at        = extra.reviewedAt;
-  if (extra?.approvedAt)      payload.approved_at        = extra.approvedAt;
-  if (extra?.sentToPatientAt) payload.sent_to_patient_at = extra.sentToPatientAt;
+  if (extra?.reviewedAt)       payload.reviewed_at        = extra.reviewedAt;
+  if (extra?.approvedAt)       payload.approved_at        = extra.approvedAt;
+  if (extra?.sentToPatientAt)  payload.sent_to_patient_at = extra.sentToPatientAt;
+  if (extra?.savedInternalAt)  payload.saved_internal_at  = extra.savedInternalAt;
 
   const { data, error } = await supabase
     .from("letters")
@@ -602,6 +619,7 @@ export async function duplicateLetter(
       created_by:          user.id,
       status:              "Draft" as LetterStatus,
       letter_date:         todayDate,
+      source_letter_id:    sourceId,
       diagnosis_english:   newDiagEN,
       diagnosis_hebrew:    newDiagHE,
       diagnosis_items:     copiedDiagItems,
@@ -649,7 +667,7 @@ export async function deleteOldLettersForPatient(
     .eq("patient_id", patientUuid)
     .eq("created_by", user.id)
     .neq("id", currentLetterId)
-    .in("status", ["Sent to Patient", "Ready for Patient"]);
+    .in("status", ["Sent to Patient", "Ready for Patient", "saved_internal"]);
 
   if (error) throw new Error(`Could not load old letters: ${error.message}`);
   if (!data || data.length === 0) return [];
@@ -669,6 +687,65 @@ export async function deleteOldLettersForPatient(
   console.log(`[deleteOldLettersForPatient] Deleted ${actuallyDeleted.length}/${oldIds.length} old letter(s) for patient ${patientUuid.slice(0, 8)}`);
   return actuallyDeleted;
 }
+
+// ─── Image Storage ────────────────────────────────────────────────────────────
+
+const IMAGE_BUCKET = "letter-images";
+
+/**
+ * Upload a compressed JPEG blob to Supabase Storage.
+ * Path structure: {userId}/{letterId}/{imageId}.jpg
+ */
+export async function uploadLetterImage(
+  supabase: SupabaseClient,
+  userId: string,
+  letterId: string,
+  imageId: string,
+  blob: Blob,
+  width: number,
+  height: number,
+): Promise<PictureMetadata> {
+  const path = `${userId}/${letterId}/${imageId}.jpg`;
+  const { error } = await supabase.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+  if (error) throw new Error(`Image upload failed: ${error.message}`);
+  return { id: imageId, path, bucket: IMAGE_BUCKET, sizeBytes: blob.size, width, height, contentType: "image/jpeg" };
+}
+
+/** Remove an image from Supabase Storage. Best-effort — does not throw. */
+export async function deleteLetterImage(
+  supabase: SupabaseClient,
+  path: string,
+): Promise<void> {
+  await supabase.storage.from(IMAGE_BUCKET).remove([path]);
+}
+
+/**
+ * Resolve the pictures array from the DB into displayable URL strings.
+ * - PictureMetadata objects → 1-hour signed URL from Storage
+ * - Legacy base64 / data:image strings → passed through unchanged
+ */
+export async function resolvePictureUrls(
+  supabase: SupabaseClient,
+  pictures: unknown[],
+): Promise<string[]> {
+  const results: string[] = [];
+  for (const p of pictures) {
+    if (typeof p === "string") {
+      results.push(p);
+    } else if (p && typeof p === "object" && "path" in p && "bucket" in p) {
+      const meta = p as PictureMetadata;
+      const { data } = await supabase.storage
+        .from(meta.bucket)
+        .createSignedUrl(meta.path, 3600);
+      if (data?.signedUrl) results.push(data.signedUrl);
+    }
+  }
+  return results;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 /**
  * Permanently delete a single letter. Also removes its PDF from storage if present.

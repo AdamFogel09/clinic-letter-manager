@@ -6,7 +6,8 @@ export type LetterStatus =
   | "Waiting for Anat"
   | "Reviewed"
   | "Ready for Patient"
-  | "Sent to Patient";
+  | "Sent to Patient"
+  | "saved_internal";
 
 export interface StoredLetter {
   id: string;

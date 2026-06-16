@@ -25,29 +25,30 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "letterId is required." }, { status: 400 });
   }
 
-  // Verify the user owns this letter before deleting (always uses user session for this check)
-  const { data: row, error: fetchError } = await userClient
-    .from("letters")
-    .select("id, final_pdf_url, created_by")
-    .eq("id", letterId)
-    .single();
-
-  if (fetchError || !row) {
-    return NextResponse.json({ error: "Letter not found." }, { status: 404 });
-  }
-
-  if (row.created_by !== user.id) {
-    return NextResponse.json({ error: "Permission denied." }, { status: 403 });
-  }
-
-  // Use service role client if available (bypasses RLS — safe here because we
-  // already verified ownership above). Falls back to user session client.
+  // Use service role client if available so the ownership lookup bypasses RLS.
+  // The manual created_by check below is what enforces authorization — relying on
+  // the session-based client's RLS for this SELECT is fragile on the server side.
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const adminClient = serviceKey
     ? createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
         auth: { autoRefreshToken: false, persistSession: false },
       })
     : userClient;
+
+  const { data: row, error: fetchError } = await adminClient
+    .from("letters")
+    .select("id, final_pdf_url, created_by")
+    .eq("id", letterId)
+    .single();
+
+  if (fetchError || !row) {
+    console.error("[delete-letter] Letter not found:", letterId, fetchError?.message);
+    return NextResponse.json({ error: "Letter not found." }, { status: 404 });
+  }
+
+  if (row.created_by !== user.id) {
+    return NextResponse.json({ error: "Permission denied." }, { status: 403 });
+  }
 
   // Delete PDF from storage if one exists
   if (row.final_pdf_url) {

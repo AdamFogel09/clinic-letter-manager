@@ -7,7 +7,7 @@ import StatusCard from "@/components/dashboard/StatusCard";
 import { getLetters } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
 import { getAllPatients, patientToDraft, updatePatient, type Patient } from "@/lib/supabase/patients";
-import { getLetterCounts } from "@/lib/supabase/letters";
+import { getLetterCounts, duplicateLetter } from "@/lib/supabase/letters";
 
 function calcAge(day: string, month: string, year: string): string {
   const dy = parseInt(day), mo = parseInt(month), yr = parseInt(year);
@@ -51,6 +51,10 @@ export default function WorkspacePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen,  setSearchOpen]  = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // Create Update Letter loading/error state
+  const [duplicatingPatientId, setDuplicatingPatientId] = useState<string | null>(null);
+  const [duplicateError, setDuplicateError] = useState("");
 
   // Edit patient modal
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
@@ -115,12 +119,48 @@ export default function WorkspacePage() {
       .slice(0, 6);
   }, [patients, searchQuery]);
 
-  const startNewLetter = (p: Patient) => {
-    sessionStorage.setItem("draft_patient", JSON.stringify(patientToDraft(p)));
-    sessionStorage.removeItem("letter_draft");
-    sessionStorage.removeItem("letter_draft_id");
-    sessionStorage.removeItem("letter_supabase_id");
-    router.push("/workspace/letter-editor");
+  const handleCreateUpdateLetter = async (p: Patient) => {
+    if (duplicatingPatientId) return;
+    setDuplicatingPatientId(p.id);
+    setDuplicateError("");
+    setSearchOpen(false);
+
+    try {
+      const supabase = createClient();
+      // Find the most recent letter for this patient
+      const { data: latestRows } = await supabase
+        .from("letters")
+        .select("id")
+        .eq("patient_id", p.id)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      const latestId = latestRows?.[0]?.id as string | undefined;
+
+      if (latestId) {
+        // Duplicate the latest letter — same flow as All Letters page
+        const { id: newId } = await duplicateLetter(supabase, latestId);
+        sessionStorage.setItem("letter_supabase_id", newId);
+        sessionStorage.setItem("load_from_supabase", "1");
+        sessionStorage.setItem("is_update_mode", "1");
+        sessionStorage.removeItem("draft_patient");
+        sessionStorage.removeItem("letter_draft");
+        localStorage.setItem("letter_current_supabase_id", newId);
+        router.push("/workspace/letter-editor");
+      } else {
+        // No existing letters — start a fresh blank letter for this patient
+        sessionStorage.setItem("draft_patient", JSON.stringify(patientToDraft(p)));
+        sessionStorage.removeItem("letter_draft");
+        sessionStorage.removeItem("letter_draft_id");
+        sessionStorage.removeItem("letter_supabase_id");
+        router.push("/workspace/letter-editor");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to create update letter.";
+      setDuplicateError(msg);
+      setDuplicatingPatientId(null);
+      setTimeout(() => setDuplicateError(""), 5000);
+    }
   };
 
   const viewHistory = (p: Patient) => {
@@ -328,11 +368,12 @@ export default function WorkspacePage() {
                               History
                             </button>
                             <button
-                              onClick={() => startNewLetter(p)}
+                              onClick={() => handleCreateUpdateLetter(p)}
+                              disabled={duplicatingPatientId === p.id}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 hover:-translate-y-px hover:shadow-sm"
-                              style={{ backgroundColor: "#1A2B4A", color: "#fff" }}
+                              style={{ backgroundColor: "#1A2B4A", color: "#fff", opacity: duplicatingPatientId === p.id ? 0.6 : 1 }}
                             >
-                              Create Update Letter
+                              {duplicatingPatientId === p.id ? "Creating…" : "Create Update Letter"}
                             </button>
                           </div>
                         </div>
@@ -345,6 +386,16 @@ export default function WorkspacePage() {
           )}
         </div>
       </div>
+
+      {/* Duplicate error */}
+      {duplicateError && (
+        <div className="px-6 sm:px-8 mb-4">
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl"
+            style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
+            <p className="text-xs font-semibold" style={{ color: "#DC2626" }}>{duplicateError}</p>
+          </div>
+        </div>
+      )}
 
       {/* Status cards */}
       <div className="px-6 sm:px-8">

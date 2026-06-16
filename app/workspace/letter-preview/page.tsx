@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { saveLetter as saveLetterToSupabase, getLetterById, supabaseLetterToStoredLetter } from "@/lib/supabase/letters";
+import { saveLetter as saveLetterToSupabase, getLetterById, supabaseLetterToStoredLetter, resolvePictureUrls } from "@/lib/supabase/letters";
 import { triggerDownload, finalPdfFilename } from "@/lib/generateDocx";
 import LetterPageRenderer, { type LetterData } from "@/components/letter/LetterPageRenderer";
 
@@ -251,9 +251,8 @@ export default function LetterPreviewPage() {
         }
       }
 
-      // Supplement missing pictures from Supabase (covers the case where
-      // localStorage data was stored without pictures to avoid quota issues)
-      if (supabaseId && (!parsed?.pictures || (parsed.pictures as string[]).length === 0)) {
+      // Supplement missing pictures from Supabase
+      if (supabaseId && (!parsed?.pictures || (parsed.pictures as unknown[]).length === 0)) {
         try {
           const supabase = createClient();
           const letter = await getLetterById(supabase, supabaseId);
@@ -262,6 +261,14 @@ export default function LetterPreviewPage() {
             parsed.pictures = letter.pictures;
           }
         } catch { /* Supabase unavailable — proceed without pictures */ }
+      }
+
+      // Resolve PictureMetadata objects → signed URLs so LetterPageRenderer receives string[]
+      if (parsed?.pictures && Array.isArray(parsed.pictures) && parsed.pictures.length > 0) {
+        try {
+          const supabase = createClient();
+          parsed.pictures = await resolvePictureUrls(supabase, parsed.pictures as unknown[]);
+        } catch { /* non-critical — images may not display */ }
       }
 
       if (parsed) setData(parsed as unknown as LetterData);

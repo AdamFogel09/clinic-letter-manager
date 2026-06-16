@@ -26,16 +26,59 @@ const STATUS_COLORS: Record<LetterStatus, { bg: string; text: string }> = {
   Reviewed:            { bg: "#FFE4E6",  text: "#BE123C" },
   "Ready for Patient": { bg: "#CCFBF1",  text: "#0D9488" },
   "Sent to Patient":   { bg: "#F0FDF4",  text: "#16A34A" },
+  saved_internal:      { bg: "#F1F5F9",  text: "#475569" },
 };
+
+// ─── Shared "Save to All Letters" button ─────────────────────────────────────
+
+function SaveInternalButton({ onSaveInternal, busy }: {
+  onSaveInternal: () => Promise<void>;
+  busy: boolean;
+}) {
+  const [saving, setSaving]   = useState(false);
+  const [done,   setDone]     = useState(false);
+  const [error,  setError]    = useState("");
+
+  const handle = async () => {
+    if (saving || busy) return;
+    setSaving(true);
+    setError("");
+    try {
+      await onSaveInternal();
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {done  && <span className="text-[11px] font-semibold" style={{ color: "#0D9488" }}>Saved to All Letters ✓</span>}
+      {error && <span className="text-[11px] font-semibold" style={{ color: "#BE123C" }}>{error}</span>}
+      <button onClick={handle} disabled={saving || busy}
+        className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
+        style={{ backgroundColor: "white", color: "#475569", borderColor: "#94A3B8",
+          opacity: (saving || busy) ? 0.6 : 1, cursor: (saving || busy) ? "default" : "pointer" }}
+        onMouseEnter={e => { if (!saving && !busy) e.currentTarget.style.transform = "translateY(-1px)"; }}
+        onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
+        {saving ? "Saving…" : "Save to All Letters"}
+      </button>
+    </div>
+  );
+}
 
 // ─── Waiting for Anat card ────────────────────────────────────────────────────
 
 function WaitingCard({
   letter,
   onMarkReviewed,
+  onSaveInternal,
 }: {
   letter: StoredLetter;
   onMarkReviewed: (filename: string) => Promise<void>;
+  onSaveInternal: () => Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const colors  = STATUS_COLORS["Waiting for Anat"];
@@ -63,6 +106,7 @@ function WaitingCard({
         <p className="text-xs flex-1 min-w-0" style={{ color: "#94A3B8" }}>
           {uploading ? "Marking as reviewed…" : "Waiting for Anat to return the reviewed file"}
         </p>
+        <SaveInternalButton onSaveInternal={onSaveInternal} busy={uploading} />
         <input ref={fileRef} type="file" accept=".docx,.pages,.doc" className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -98,13 +142,13 @@ function WaitingCard({
 // ─── Reviewed card ────────────────────────────────────────────────────────────
 
 function ReviewedCard({
-  letter, onPreview, onApprove,
+  letter, onPreview, onApprove, onSaveInternal,
 }: {
   letter: StoredLetter;
-  onPreview: () => void; onApprove: () => Promise<void>;
+  onPreview: () => void; onApprove: () => Promise<void>; onSaveInternal: () => Promise<void>;
 }) {
   const colors = STATUS_COLORS["Reviewed"];
-  const [approving,   setApproving]   = useState(false);
+  const [approving,    setApproving]    = useState(false);
   const [approveError, setApproveError] = useState("");
 
   const handleApproveClick = async () => {
@@ -152,6 +196,7 @@ function ReviewedCard({
             <p className="text-xs font-semibold" style={{ color: "#BE123C" }}>{approveError}</p>
           )}
         </div>
+        <SaveInternalButton onSaveInternal={onSaveInternal} busy={approving} />
         <button onClick={onPreview}
           className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
           style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#E2E8F0" }}
@@ -256,12 +301,13 @@ function ConfirmSendModal({
 // ─── Ready for Patient card ───────────────────────────────────────────────────
 
 function ReadyCard({
-  letter, onPreview, onExportPdf, onMarkSent,
+  letter, onPreview, onExportPdf, onMarkSent, onSaveInternal,
 }: {
   letter: StoredLetter;
   onPreview: () => void;
   onExportPdf: () => void;
   onMarkSent: () => Promise<void>;
+  onSaveInternal: () => Promise<void>;
 }) {
   const colors       = STATUS_COLORS["Ready for Patient"];
   const d            = (letter.data ?? {}) as Record<string, unknown>;
@@ -343,6 +389,7 @@ function ReadyCard({
             onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
             Export Final PDF
           </button>
+          <SaveInternalButton onSaveInternal={onSaveInternal} busy={sending} />
         </div>
 
         {/* Send PDF to patient */}
@@ -475,6 +522,17 @@ export default function ReviewPage() {
     await loadAll();
   };
 
+  const handleSaveInternal = async (letter: StoredLetter) => {
+    const supabase = createClient();
+    await updateLetterStatus(supabase, letter.id, "saved_internal", {
+      savedInternalAt: new Date().toISOString(),
+    });
+    if (letter.patientDbId) {
+      await deleteOldLettersForPatient(supabase, letter.id, letter.patientDbId);
+    }
+    await loadAll();
+  };
+
   const handleMarkSent = async (letter: StoredLetter) => {
     const supabase = createClient();
     setDeleteError("");
@@ -573,7 +631,8 @@ export default function ReviewPage() {
         badge={{ bg: "#EDE9FE", text: "#7C3AED" }} empty="No letters waiting for review">
         {waiting.map((l) => (
           <WaitingCard key={l.id} letter={l}
-            onMarkReviewed={(filename) => handleUploadReviewed(l, filename)} />
+            onMarkReviewed={(filename) => handleUploadReviewed(l, filename)}
+            onSaveInternal={() => handleSaveInternal(l)} />
         ))}
       </Section>
 
@@ -582,7 +641,8 @@ export default function ReviewPage() {
         {reviewed.map((l) => (
           <ReviewedCard key={l.id} letter={l}
             onPreview={() => navigateToPreview(l, false)}
-            onApprove={() => handleApprove(l)} />
+            onApprove={() => handleApprove(l)}
+            onSaveInternal={() => handleSaveInternal(l)} />
         ))}
       </Section>
 
@@ -593,7 +653,8 @@ export default function ReviewPage() {
           <ReadyCard key={l.id} letter={l}
             onPreview={() => navigateToPreview(l, false)}
             onExportPdf={() => navigateToPreview(l, true)}
-            onMarkSent={() => handleMarkSent(l)} />
+            onMarkSent={() => handleMarkSent(l)}
+            onSaveInternal={() => handleSaveInternal(l)} />
         ))}
       </Section>
 

@@ -11,6 +11,7 @@ import {
   getLetterById,
   updateLetterHebrew,
   updateLetterStatus,
+  deleteOldLettersForPatient,
   type SummarySection,
   type DiagnosisItem,
   type PlanStep,
@@ -74,10 +75,15 @@ export default function AnatReviewLetterPage() {
   const [patId,     setPatId]     = useState("");
   const [letterDate, setLetterDate] = useState("");
 
-  const [saving,      setSaving]      = useState(false);
-  const [finishing,   setFinishing]   = useState(false);
-  const [savedMsg,    setSavedMsg]    = useState(false);
-  const [finishError, setFinishError] = useState("");
+  const [sourceLetterIdState, setSourceLetterIdState] = useState<string | null>(null);
+  const [patientUuid,         setPatientUuid]         = useState<string | null>(null);
+  const [saving,              setSaving]              = useState(false);
+  const [finishing,           setFinishing]           = useState(false);
+  const [savedMsg,            setSavedMsg]            = useState(false);
+  const [finishError,         setFinishError]         = useState("");
+  const [savingInternal,      setSavingInternal]      = useState(false);
+  const [saveInternalDone,    setSaveInternalDone]    = useState(false);
+  const [saveInternalError,   setSaveInternalError]   = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -91,6 +97,8 @@ export default function AnatReviewLetterPage() {
         setPatId(p?.patient_id_number    || "");
         setLetterDate(letter.letter_date || "");
         setGender(p?.gender              || "");
+        if (letter.source_letter_id) setSourceLetterIdState(letter.source_letter_id);
+        if (letter.patient_id)       setPatientUuid(letter.patient_id);
         setDiagEN(letter.diagnosis_english || "");
         setPlanEN((letter.plan_english || []).filter(Boolean));
         // Structured diagnosis items
@@ -263,6 +271,37 @@ export default function AnatReviewLetterPage() {
   };
 
 
+  const handleSaveInternal = async () => {
+    if (savingInternal) return;
+    setSavingInternal(true);
+    setSaveInternalError("");
+    try {
+      const supabase = createClient();
+      // Save current Hebrew edits first
+      await updateLetterHebrew(supabase, id, { diagHE, sumHE, planHE, summarySections, diagItems, planSteps });
+      // Mark as saved_internal
+      await updateLetterStatus(supabase, id, "saved_internal", {
+        savedInternalAt: new Date().toISOString(),
+      });
+
+      // Delete all previous completed letters for this patient now that the new one is saved.
+      if (patientUuid) {
+        try {
+          await deleteOldLettersForPatient(supabase, id, patientUuid);
+        } catch (e) {
+          console.warn("[saveInternal] old letter cleanup failed:", e);
+        }
+      }
+
+      setSaveInternalDone(true);
+      setTimeout(() => setSaveInternalDone(false), 5000);
+    } catch (err) {
+      setSaveInternalError(err instanceof Error ? err.message : "Failed to save. Please try again.");
+    } finally {
+      setSavingInternal(false);
+    }
+  };
+
   // ─── Not found / loading ──────────────────────────────────────────────────
 
   if (loading) {
@@ -308,20 +347,26 @@ export default function AnatReviewLetterPage() {
           <h1 className="text-sm font-bold truncate" style={{ color: "#1A2B4A" }}>{patName}</h1>
         </div>
         <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
-          {savedMsg && <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>Draft saved ✓</span>}
-          {finishError && (
+          {savedMsg       && <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>Draft saved ✓</span>}
+          {saveInternalDone && <span className="text-xs font-semibold" style={{ color: "#0D9488" }}>Saved to All Letters ✓</span>}
+          {(finishError || saveInternalError) && (
             <span className="text-xs font-semibold max-w-xs text-right" style={{ color: "#BE123C" }}>
-              {finishError}
+              {finishError || saveInternalError}
             </span>
           )}
-          <button onClick={handleSaveDraft} disabled={saving}
+          <button onClick={handleSaveDraft} disabled={saving || savingInternal || finishing}
             className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 hover:-translate-y-px"
-            style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#E2E8F0", opacity: saving ? 0.7 : 1 }}>
+            style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#E2E8F0", opacity: (saving||savingInternal||finishing) ? 0.7 : 1 }}>
             {saving ? "Saving…" : "Save Draft"}
           </button>
-          <button onClick={handleFinishReview} disabled={finishing}
+          <button onClick={handleSaveInternal} disabled={savingInternal || saving || finishing}
             className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 hover:-translate-y-px"
-            style={{ backgroundColor: "#7C3AED", color: "#fff", borderColor: "#7C3AED", opacity: finishing ? 0.7 : 1 }}>
+            style={{ backgroundColor: "white", color: "#475569", borderColor: "#94A3B8", opacity: (savingInternal||saving||finishing) ? 0.7 : 1 }}>
+            {savingInternal ? "Saving…" : "Save to All Letters"}
+          </button>
+          <button onClick={handleFinishReview} disabled={finishing || savingInternal}
+            className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 hover:-translate-y-px"
+            style={{ backgroundColor: "#7C3AED", color: "#fff", borderColor: "#7C3AED", opacity: (finishing||savingInternal) ? 0.7 : 1 }}>
             {finishing ? "Finishing…" : "Finish Review"}
           </button>
         </div>
@@ -594,30 +639,33 @@ export default function AnatReviewLetterPage() {
       <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white px-4 pt-3"
         style={{ borderTop: "1px solid #E2E8F0", boxShadow: "0 -4px 24px rgb(0 0 0/0.08)",
           paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))" }}>
-        {savedMsg && (
-          <p className="text-sm font-semibold text-center mb-2.5" style={{ color: "#0D9488" }}>
-            Draft saved ✓
-          </p>
-        )}
-        {finishError && (
+        {savedMsg        && <p className="text-sm font-semibold text-center mb-2.5" style={{ color: "#0D9488" }}>Draft saved ✓</p>}
+        {saveInternalDone && <p className="text-sm font-semibold text-center mb-2.5" style={{ color: "#0D9488" }}>Saved to All Letters ✓</p>}
+        {(finishError || saveInternalError) && (
           <p className="text-xs font-semibold text-center mb-2" style={{ color: "#BE123C" }}>
-            {finishError}
+            {finishError || saveInternalError}
           </p>
         )}
-        <div className="flex gap-3">
-          <button onClick={handleSaveDraft} disabled={saving}
-            className="flex-1 py-3.5 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
+        <div className="flex gap-2 mb-2">
+          <button onClick={handleSaveDraft} disabled={saving || savingInternal || finishing}
+            className="flex-1 py-3 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
             style={{ backgroundColor: "white", color: "#1A2B4A", borderColor: "#E2E8F0",
-              opacity: saving ? 0.7 : 1 }}>
+              opacity: (saving||savingInternal||finishing) ? 0.7 : 1 }}>
             {saving ? "Saving…" : "Save Draft"}
           </button>
-          <button onClick={handleFinishReview} disabled={finishing}
-            className="flex-[2] py-3.5 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
+          <button onClick={handleFinishReview} disabled={finishing || savingInternal}
+            className="flex-[2] py-3 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
             style={{ backgroundColor: "#7C3AED", color: "#fff", borderColor: "#7C3AED",
-              opacity: finishing ? 0.7 : 1 }}>
+              opacity: (finishing||savingInternal) ? 0.7 : 1 }}>
             {finishing ? "Finishing…" : "Finish Review"}
           </button>
         </div>
+        <button onClick={handleSaveInternal} disabled={savingInternal || saving || finishing}
+          className="w-full py-3 rounded-xl text-sm font-semibold border transition-all duration-150 active:scale-95"
+          style={{ backgroundColor: "white", color: "#475569", borderColor: "#94A3B8",
+            opacity: (savingInternal||saving||finishing) ? 0.7 : 1 }}>
+          {savingInternal ? "Saving…" : "Save Letter to All Letters"}
+        </button>
       </div>
     </div>
   );

@@ -18,7 +18,16 @@ const STATUS_COLORS: Record<LetterStatus, { bg: string; text: string }> = {
   "Reviewed":          { bg: "#FFE4E6", text: "#BE123C" },
   "Ready for Patient": { bg: "#CCFBF1", text: "#0D9488" },
   "Sent to Patient":   { bg: "#F0FDF4", text: "#16A34A" },
+  "saved_internal":    { bg: "#F1F5F9", text: "#475569" },
 };
+
+const STATUS_LABELS: Partial<Record<LetterStatus, string>> = {
+  "saved_internal": "Saved Internally",
+};
+
+function statusLabel(s: LetterStatus): string {
+  return STATUS_LABELS[s] ?? s;
+}
 
 function calcAge(day: string, month: string, year: string): string {
   const dy = parseInt(day), mo = parseInt(month), yr = parseInt(year);
@@ -190,7 +199,7 @@ function PatientCard({
                         )}
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
                           style={{ backgroundColor: c.bg, color: c.text }}>
-                          {letter.status}
+                          {statusLabel(letter.status)}
                         </span>
                       </div>
                     </div>

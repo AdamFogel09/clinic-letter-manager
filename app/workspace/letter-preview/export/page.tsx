@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getLetterById, supabaseLetterToStoredLetter } from "@/lib/supabase/letters";
+import { getLetterById, supabaseLetterToStoredLetter, resolvePictureUrls } from "@/lib/supabase/letters";
 import ExportClient from "./ExportClient";
 import type { LetterData } from "@/components/letter/LetterPageRenderer";
 
@@ -17,7 +17,12 @@ export default async function ExportPage({
   if (!letter) notFound();
 
   const stored = supabaseLetterToStoredLetter(letter);
-  const data = (stored.data ?? {}) as unknown as LetterData;
+  const data = (stored.data ?? {}) as Record<string, unknown> & LetterData;
 
-  return <ExportClient data={data} />;
+  // Resolve PictureMetadata objects → signed URLs so Puppeteer can fetch them
+  if (Array.isArray(data.pictures) && data.pictures.length > 0) {
+    data.pictures = await resolvePictureUrls(supabase, data.pictures as unknown[]);
+  }
+
+  return <ExportClient data={data as unknown as LetterData} />;
 }

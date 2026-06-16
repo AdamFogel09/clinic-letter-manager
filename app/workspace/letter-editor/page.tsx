@@ -7,8 +7,9 @@ import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
 import {
   saveLetter as saveLetterToSupabase, updateLetterStatus, getLetterById, supabaseLetterToStoredLetter,
-  updateLetterFileSizes,
-  type SummarySection, type DiagnosisItem, type PlanStep,
+  updateLetterFileSizes, deleteOldLettersForPatient,
+  uploadLetterImage, deleteLetterImage,
+  type SummarySection, type DiagnosisItem, type PlanStep, type PictureMetadata,
   sectionsToSumEN, sectionsToSumHE,
   diagItemsToEN, diagItemsToHE,
   planStepsToENArr, planStepsToHEArr,
@@ -520,8 +521,9 @@ export default function LetterEditorPage() {
   // Lung function
   const [lungRows, setLungRows] = useState<LungRow[]>([]);
 
-  // Pictures
-  const [pictures, setPictures] = useState<string[]>([]);
+  // Pictures — metadata stored in DB; pictureUrls holds blob/signed URLs for local display only
+  const [pictures, setPictures] = useState<PictureMetadata[]>([]);
+  const [pictureUrls, setPictureUrls] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
   const [pictureError, setPictureError] = useState<string>("");
   const [pictureProcessing, setPictureProcessing] = useState(false);
@@ -556,17 +558,21 @@ export default function LetterEditorPage() {
     | { type: "planStep";  stepId: string }
     | null
   >(null);
-  const [sendingToAnat, setSendingToAnat] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [draftSaved, setDraftSaved] = useState(false);
-  const [saveDraftError, setSaveDraftError] = useState("");
+  const [sendingToAnat,     setSendingToAnat]     = useState(false);
+  const [isSaving,          setIsSaving]          = useState(false);
+  const [draftSaved,        setDraftSaved]        = useState(false);
+  const [saveDraftError,    setSaveDraftError]    = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [savingInternal,    setSavingInternal]    = useState(false);
+  const [saveInternalDone,  setSaveInternalDone]  = useState(false);
+  const [saveInternalError, setSaveInternalError] = useState("");
 
   // Supabase IDs — stored as refs to avoid triggering re-renders / auto-save
-  const supabasePatientIdRef = useRef<string | null>(null);
-  const supabaseLetterIdRef  = useRef<string | null>(null);
+  const supabasePatientIdRef  = useRef<string | null>(null);
+  const supabaseLetterIdRef   = useRef<string | null>(null);
+  const sourceLetterIdRef     = useRef<string | null>(null);
   // Tracks whether the auto-save effect has fired at least once after initialization
-  const isInitialRenderRef   = useRef(false);
+  const isInitialRenderRef    = useRef(false);
 
   // ── Restore draft on mount ────────────────────────────────────────────────
   // Supabase is now the source of truth for patients and letters.
@@ -633,7 +639,8 @@ export default function LetterEditorPage() {
             const supabase = createClient();
             const letter = await getLetterById(supabase, supabaseId);
             if (letter) {
-              if (letter.patient_id) supabasePatientIdRef.current = letter.patient_id;
+              if (letter.patient_id)    supabasePatientIdRef.current = letter.patient_id;
+              if (letter.source_letter_id) sourceLetterIdRef.current = letter.source_letter_id;
               const stored = supabaseLetterToStoredLetter(letter);
               if (stored.data) {
                 // Write into sessionStorage so the restoration block below can use it.
@@ -721,7 +728,35 @@ export default function LetterEditorPage() {
           if (d.otherFindings) setOtherFindings(d.otherFindings);
           if (d.testResults) setTestResults(migrateTestResults(d.testResults));
           if (d.lungRows?.length) setLungRows(d.lungRows);
-          if (d.pictures?.length) setPictures(d.pictures);
+          if (d.pictures?.length) {
+            const pics = d.pictures as unknown[];
+            if (typeof pics[0] === "string") {
+              // Legacy: base64 strings — wrap in minimal metadata so state type matches
+              const legacyMeta: PictureMetadata[] = [];
+              const legacyUrls: Record<string, string> = {};
+              (pics as string[]).forEach((src, i) => {
+                const id = `legacy-${i}-${Date.now()}`;
+                legacyMeta.push({ id, path: "", bucket: "", sizeBytes: 0, width: 0, height: 0, contentType: "image/jpeg" });
+                legacyUrls[id] = src;
+              });
+              setPictures(legacyMeta);
+              setPictureUrls(legacyUrls);
+            } else {
+              // New metadata format — restore metadata then resolve signed URLs
+              const metadata = pics as PictureMetadata[];
+              setPictures(metadata);
+              try {
+                const supabase = createClient();
+                const urls: Record<string, string> = {};
+                for (const pic of metadata) {
+                  if (!pic.path) continue;
+                  const { data } = await supabase.storage.from(pic.bucket).createSignedUrl(pic.path, 3600);
+                  if (data?.signedUrl) urls[pic.id] = data.signedUrl;
+                }
+                setPictureUrls(urls);
+              } catch { /* non-critical — images will re-fetch on next load */ }
+            }
+          }
           if (d.inhalerSearch)   setInhalerSearch(d.inhalerSearch);
           if (Array.isArray(d.inhalers)) setInhalers(d.inhalers);
           else if (d.inhalerName) setInhalers([{ id: newInhalerId(), name: d.inhalerName as string, link: (d.inhalerLink as string) || "", imageUrl: (d.inhalerImageUrl as string) || "" }]);
@@ -839,15 +874,14 @@ export default function LetterEditorPage() {
   const ALLOWED_IMG_EXTS = /\.(jpe?g|png|webp|heic|heif)$/i;
   const ALLOWED_IMG_TYPES = new Set(["image/jpeg","image/jpg","image/png","image/webp","image/heic","image/heif"]);
   const MAX_IMG_BYTES  = 10 * 1024 * 1024; // 10 MB input limit
-  const MAX_IMG_DIM    = 1200;              // pixels on longest side after resize
-  const JPEG_QUALITY   = 0.70;             // target ~200-700 KB output
+  const MAX_IMG_DIM    = 600;               // pixels on longest side after resize
+  const JPEG_QUALITY   = 0.65;             // target ~50-100 KB output
 
   interface ImgCompressResult {
-    dataUrl:        string;
-    width:          number;
-    height:         number;
-    originalBytes:  number;
-    compressedBytes: number;
+    blob:          Blob;
+    width:         number;
+    height:        number;
+    originalBytes: number;
   }
 
   const fileToJpeg = async (file: File): Promise<ImgCompressResult> => {
@@ -864,11 +898,14 @@ export default function LetterEditorPage() {
     if (!ctx) { bitmap.close(); throw new Error("Canvas unavailable"); }
     ctx.drawImage(bitmap, 0, 0, width, height);
     bitmap.close();
-    const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-    // Estimate compressed bytes from base64 length
-    const b64 = dataUrl.split(",")[1] ?? "";
-    const compressedBytes = Math.round((b64.length * 3) / 4);
-    return { dataUrl, width, height, originalBytes: file.size, compressedBytes };
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        b => b ? resolve(b) : reject(new Error("Canvas toBlob returned null")),
+        "image/jpeg",
+        JPEG_QUALITY,
+      );
+    });
+    return { blob, width, height, originalBytes: file.size };
   };
 
   const handleFiles = async (files: FileList | null) => {
@@ -879,6 +916,24 @@ export default function LetterEditorPage() {
     const errors: string[] = [];
     const infos:  string[] = [];
     if (fileInputRef.current) fileInputRef.current.value = "";
+
+    // Ensure the letter has a Supabase ID so we can build the storage path
+    if (!supabaseLetterIdRef.current) {
+      const saveResult = await handleSaveDraft();
+      if (!saveResult.success || !supabaseLetterIdRef.current) {
+        setPictureError("Please save the letter before adding images.");
+        setPictureProcessing(false);
+        return;
+      }
+    }
+
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setPictureError("Not authenticated. Please refresh and try again.");
+      setPictureProcessing(false);
+      return;
+    }
 
     for (const file of Array.from(files)) {
       const isHeic = /\.(heic|heif)$/i.test(file.name) || ["image/heic","image/heif"].includes(file.type);
@@ -895,19 +950,24 @@ export default function LetterEditorPage() {
       }
       try {
         const result = await fileToJpeg(file);
-        setPictures(prev => [...prev, result.dataUrl]);
-        const origKB = (result.originalBytes  / 1024).toFixed(0);
-        const compKB = (result.compressedBytes / 1024).toFixed(0);
+        const imageId = `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const metadata = await uploadLetterImage(
+          supabase, user.id, supabaseLetterIdRef.current!, imageId,
+          result.blob, result.width, result.height,
+        );
+        const previewUrl = URL.createObjectURL(result.blob);
+        setPictures(prev => [...prev, metadata]);
+        setPictureUrls(prev => ({ ...prev, [imageId]: previewUrl }));
         const origLabel = result.originalBytes >= 1024 * 1024
           ? `${(result.originalBytes / 1024 / 1024).toFixed(1)} MB`
-          : `${origKB} KB`;
-        infos.push(`Image compressed: ${origLabel} → ${compKB} KB`);
+          : `${(result.originalBytes / 1024).toFixed(0)} KB`;
+        infos.push(`Image uploaded: ${origLabel} → ${(result.blob.size / 1024).toFixed(0)} KB`);
       } catch (err) {
-        console.error("[pictures] conversion failed:", { name: file.name, type: file.type, size: file.size, err });
+        console.error("[pictures] upload failed:", { name: file.name, type: file.type, size: file.size, err });
         if (isHeic) {
           errors.push(`Could not process this HEIC image. Please upload JPG or PNG.`);
         } else {
-          errors.push(`Could not process "${file.name}". Please try JPG or PNG.`);
+          errors.push(`Could not upload "${file.name}". Please try again.`);
         }
       }
     }
@@ -960,9 +1020,7 @@ export default function LetterEditorPage() {
     const _planEN = planStepsToENArr(planSteps);
     const _planHE = planStepsToHEArr(planSteps);
     // Write preview data to localStorage so the preview page can render immediately.
-    // Safari's 5 MB localStorage quota can be exceeded by base64 images, so we
-    // try the full payload first; on failure, retry without pictures (the preview
-    // page will fetch them from Supabase using letter_current_supabase_id).
+    // Pictures are now small metadata objects (not base64), so no quota issues.
     const _previewPayload = {
       name, patId, bDay, bMonth, bYear, gender,
       email, phone, smoking, pets, occupation, referredBy, location,
@@ -979,12 +1037,7 @@ export default function LetterEditorPage() {
     };
     try {
       localStorage.setItem("letter_preview", JSON.stringify(_previewPayload));
-    } catch {
-      // QuotaExceededError — retry without pictures; preview page loads them from Supabase
-      try {
-        localStorage.setItem("letter_preview", JSON.stringify({ ..._previewPayload, pictures: [] }));
-      } catch { /* ignore — preview page will fetch from Supabase */ }
-    }
+    } catch { /* ignore — preview page will fetch from Supabase */ }
     if (supabaseLetterIdRef.current) {
       localStorage.setItem("letter_current_supabase_id", supabaseLetterIdRef.current);
     }
@@ -1018,8 +1071,7 @@ export default function LetterEditorPage() {
     };
 
     // localStorage fallback — silent backup, always runs.
-    // Wrapped in try/catch: Safari's 5 MB quota throws QuotaExceededError on
-    // large payloads (base64 images). Supabase is the source of truth, so a
+    // Wrapped in try/catch: Supabase is the source of truth, so a
     // failed local write must never crash the save or block the Supabase call.
     let draftId = sessionStorage.getItem("letter_draft_id");
     if (!draftId) {
@@ -1084,16 +1136,10 @@ export default function LetterEditorPage() {
       setHasUnsavedChanges(false);
       setTimeout(() => setDraftSaved(false), 2500);
 
-      // Fire-and-forget: update images_total_size_bytes based on current pictures.
-      // Images are stored as compressed JPEG base64 in the DB pictures[] column
-      // (max 1200px, JPEG 0.70). The exact byte count strips base64 padding chars.
+      // Fire-and-forget: update images_total_size_bytes from storage metadata.
       if (pictures.length > 0) {
-        const imgBytes = pictures.reduce((total, pic) => {
-          const b64 = pic.split(",")[1] ?? "";
-          const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
-          return total + Math.floor(b64.length * 3 / 4) - pad;
-        }, 0);
-        console.log(`[size] Images DB size: ${pictures.length} image(s) = ${Math.round(imgBytes / 1024)} KB (compressed JPEG in pictures column)`);
+        const imgBytes = pictures.reduce((total, pic) => total + (pic.sizeBytes || 0), 0);
+        console.log(`[size] Images Storage size: ${pictures.length} image(s) = ${Math.round(imgBytes / 1024)} KB`);
         updateLetterFileSizes(supabase, saved.id, { imagesSizeBytes: imgBytes })
           .catch((e) => console.warn("[editor] size update failed:", e));
       }
@@ -1197,6 +1243,82 @@ export default function LetterEditorPage() {
     localStorage.setItem("letter_just_sent", "1");
     setSendingToAnat(false);
     router.push("/workspace/anat-review");
+  };
+
+  const handleSaveInternal = async () => {
+    if (savingInternal) return;
+    setSavingInternal(true);
+    setSaveInternalError("");
+
+    const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
+    const letterData = {
+      name, patId, bDay, bMonth, bYear, gender,
+      email, phone, smoking, pets, occupation, referredBy, location,
+      dateDay, dateMonth, dateYear,
+      diagItems,
+      diagEN: diagItemsToEN(diagItems),
+      diagHE: diagItemsToHE(diagItems),
+      summarySections,
+      sumEN: sectionsToSumEN(summarySections),
+      sumHE: sectionsToSumHE(summarySections),
+      planSteps,
+      planStepsEN: planStepsToENArr(planSteps),
+      planStepsHE: planStepsToHEArr(planSteps),
+      medHistory, famHistory,
+      medications, allergies, vaccinations,
+      appearance, clubbing, lymph, bp, pulse, rr, spo2,
+      heartSounds, heartOther, lungAusc, lungOther, otherFindings,
+      testResults, lungRows,
+      pictures, inhalers,
+    };
+
+    let resolvedPatientId = supabasePatientIdRef.current;
+    if (!resolvedPatientId) {
+      const urlPatId = new URLSearchParams(window.location.search).get("patientId");
+      if (urlPatId) { resolvedPatientId = urlPatId; supabasePatientIdRef.current = urlPatId; }
+    }
+
+    if (!resolvedPatientId && !supabaseLetterIdRef.current) {
+      setSaveInternalError("Patient is missing. Please go back and select a patient.");
+      setTimeout(() => setSaveInternalError(""), 8000);
+      setSavingInternal(false);
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const saved = await saveLetterToSupabase(supabase, {
+        letterId:         supabaseLetterIdRef.current  ?? undefined,
+        patientId:        resolvedPatientId             ?? undefined,
+        status:           "saved_internal",
+        letterDate,
+        letterData:       letterData as Record<string, unknown>,
+        savedInternalAt:  new Date().toISOString(),
+      });
+      supabaseLetterIdRef.current = saved.id;
+      sessionStorage.setItem("letter_supabase_id", saved.id);
+      localStorage.setItem("letter_current_supabase_id", saved.id);
+
+      // Delete all previous completed letters for this patient now that the new one is saved.
+      const patientUuid = supabasePatientIdRef.current;
+      if (patientUuid) {
+        try {
+          await deleteOldLettersForPatient(supabase, saved.id, patientUuid);
+        } catch (e) {
+          console.warn("[saveInternal] old letter cleanup failed:", e);
+        }
+      }
+
+      setHasUnsavedChanges(false);
+      setSaveInternalDone(true);
+      setTimeout(() => setSaveInternalDone(false), 5000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSaveInternalError(`Save failed: ${msg}`);
+      setTimeout(() => setSaveInternalError(""), 8000);
+    } finally {
+      setSavingInternal(false);
+    }
   };
 
   const toggleTRSubField = (
@@ -2292,13 +2414,24 @@ export default function LetterEditorPage() {
           {/* Image previews */}
           {pictures.length > 0 && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 20 }}>
-              {pictures.map((src, i) => (
-                <div key={i} style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: "1px solid #E2E8F0", aspectRatio: "4/3", backgroundColor: "#F4F6F9" }}>
+              {pictures.map((pic, i) => (
+                <div key={pic.id} style={{ position: "relative", borderRadius: 12, overflow: "hidden", border: "1px solid #E2E8F0", aspectRatio: "4/3", backgroundColor: "#F4F6F9" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`Image ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  <img src={pictureUrls[pic.id] || ""} alt={`Image ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                   <button
                     type="button"
-                    onClick={e => { e.stopPropagation(); setPictures(prev => prev.filter((_, idx) => idx !== i)); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      // Revoke blob URL to free memory
+                      if (pictureUrls[pic.id]?.startsWith("blob:")) URL.revokeObjectURL(pictureUrls[pic.id]);
+                      setPictureUrls(prev => { const n = { ...prev }; delete n[pic.id]; return n; });
+                      setPictures(prev => prev.filter((_, idx) => idx !== i));
+                      // Delete from Storage (best-effort, fire-and-forget)
+                      if (pic.path) {
+                        const sb = createClient();
+                        deleteLetterImage(sb, pic.path).catch(() => {});
+                      }
+                    }}
                     style={{
                       position: "absolute", top: 6, right: 6,
                       width: 22, height: 22, borderRadius: "50%",
@@ -2478,6 +2611,16 @@ export default function LetterEditorPage() {
       case "review": return (
         <SectionCard title="Review">
           <p className="text-sm mb-6" style={{color:"#64748B"}}>Review the completed letter before sending.</p>
+          {saveInternalDone && (
+            <p className="text-sm font-semibold mb-4" style={{color:"#0D9488"}}>
+              Letter saved to All Letters successfully.
+            </p>
+          )}
+          {saveInternalError && (
+            <p className="text-sm font-semibold mb-4" style={{color:"#BE123C"}}>
+              {saveInternalError}
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <button onClick={handlePreview} type="button"
               className="flex flex-col items-start text-left px-5 py-4 rounded-xl border transition-all duration-150 hover:-translate-y-px"
@@ -2493,6 +2636,16 @@ export default function LetterEditorPage() {
               </span>
               <span className="text-xs mt-1" style={{color:"#64748B"}}>
                 Downloads editable .docx for Anat to review
+              </span>
+            </button>
+            <button onClick={handleSaveInternal} type="button" disabled={savingInternal}
+              className="flex flex-col items-start text-left px-5 py-4 rounded-xl border transition-all duration-150 hover:-translate-y-px sm:col-span-2"
+              style={{borderColor:"#94A3B8",backgroundColor:"white",opacity:savingInternal?0.7:1,cursor:savingInternal?"default":"pointer"}}>
+              <span className="text-sm font-semibold" style={{color:"#475569"}}>
+                {savingInternal ? "Saving…" : "Save Letter to All Letters"}
+              </span>
+              <span className="text-xs mt-1" style={{color:"#64748B"}}>
+                Mark as complete for internal records — no email sent, no PDF generated
               </span>
             </button>
           </div>
@@ -2625,25 +2778,35 @@ export default function LetterEditorPage() {
                 Draft saved ✓
               </p>
             )}
-            {saveDraftError && (
-              <p className="text-xs font-semibold text-center" style={{color:"#BE123C"}}>
-                {saveDraftError}
+            {saveInternalDone && (
+              <p className="text-xs font-semibold text-center" style={{color:"#0D9488"}}>
+                Saved to All Letters ✓
               </p>
             )}
-            <button type="button" onClick={handleSaveDraft} disabled={isSaving}
+            {(saveDraftError || saveInternalError) && (
+              <p className="text-xs font-semibold text-center" style={{color:"#BE123C"}}>
+                {saveDraftError || saveInternalError}
+              </p>
+            )}
+            <button type="button" onClick={handleSaveDraft} disabled={isSaving || savingInternal}
               className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
-              style={{backgroundColor:"#1A2B4A",color:"#fff",borderColor:"#1A2B4A",opacity:isSaving?0.7:1,cursor:isSaving?"default":"pointer"}}>
+              style={{backgroundColor:"#1A2B4A",color:"#fff",borderColor:"#1A2B4A",opacity:(isSaving||savingInternal)?0.7:1,cursor:(isSaving||savingInternal)?"default":"pointer"}}>
               {isSaving ? "Saving…" : "Save Draft"}
             </button>
-            <button type="button" onClick={handlePreview} disabled={isSaving}
+            <button type="button" onClick={handlePreview} disabled={isSaving || savingInternal}
               className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
-              style={{borderColor:"#0D9488",color:"#0D9488",backgroundColor:"white",opacity:isSaving?0.7:1,cursor:isSaving?"default":"pointer"}}>
+              style={{borderColor:"#0D9488",color:"#0D9488",backgroundColor:"white",opacity:(isSaving||savingInternal)?0.7:1,cursor:(isSaving||savingInternal)?"default":"pointer"}}>
               Preview Letter
             </button>
-            <button type="button" onClick={handleSendToAnat} disabled={sendingToAnat || isSaving}
+            <button type="button" onClick={handleSendToAnat} disabled={sendingToAnat || isSaving || savingInternal}
               className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
-              style={{borderColor:"#7C3AED",color:"#7C3AED",backgroundColor:"white",opacity:(sendingToAnat||isSaving)?0.7:1,cursor:(sendingToAnat||isSaving)?"default":"pointer"}}>
+              style={{borderColor:"#7C3AED",color:"#7C3AED",backgroundColor:"white",opacity:(sendingToAnat||isSaving||savingInternal)?0.7:1,cursor:(sendingToAnat||isSaving||savingInternal)?"default":"pointer"}}>
               {sendingToAnat ? "Preparing file…" : "Send to Anat"}
+            </button>
+            <button type="button" onClick={handleSaveInternal} disabled={savingInternal || isSaving || sendingToAnat}
+              className="w-full py-2.5 rounded-xl text-xs font-semibold border transition-all duration-150 hover:-translate-y-px"
+              style={{borderColor:"#475569",color:"#475569",backgroundColor:"white",opacity:(savingInternal||isSaving||sendingToAnat)?0.7:1,cursor:(savingInternal||isSaving||sendingToAnat)?"default":"pointer"}}>
+              {savingInternal ? "Saving…" : "Save to All Letters"}
             </button>
           </div>
 
