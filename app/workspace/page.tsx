@@ -214,15 +214,16 @@ export default function WorkspacePage() {
         aria-hidden="true"
         style={{
           position: "absolute",
-          bottom: "-5%",
-          right: "-5%",
-          width: "55%",
-          maxWidth: 520,
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "85%",
+          maxWidth: 700,
           opacity: 0.055,
           pointerEvents: "none",
           userSelect: "none",
-          maskImage: "radial-gradient(ellipse 70% 70% at 60% 60%, black 20%, transparent 75%)",
-          WebkitMaskImage: "radial-gradient(ellipse 70% 70% at 60% 60%, black 20%, transparent 75%)",
+          maskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 80%)",
+          WebkitMaskImage: "radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 80%)",
         }}
       />
       {/* Top bar */}
