@@ -419,7 +419,7 @@ export default function LetterPageRenderer({
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
             <div className="lungistitute-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block" }} />
+              <img src="/updatedLogo.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block" }} />
             </div>
           </div>
           <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
