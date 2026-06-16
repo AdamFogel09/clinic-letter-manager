@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import StatusCard from "@/components/dashboard/StatusCard";
 import { getLetters } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
@@ -217,18 +216,7 @@ export default function WorkspacePage() {
           </h1>
           <p className="text-sm mt-1" style={{ color: "#94A3B8" }}>Clinic letter workspace</p>
         </div>
-        <div className="flex items-center justify-end gap-2 pt-1">
-          <Link href="/workspace/new-patient"
-            className="inline-flex items-center text-sm font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-md"
-            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}>
-            New Patient
-          </Link>
-          <Link href="/workspace/new-letter"
-            className="inline-flex items-center text-sm font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-md"
-            style={{ backgroundColor: "#1A2B4A", color: "#ffffff" }}>
-            New Letter
-          </Link>
-        </div>
+        <div />
       </div>
 
       {/* Gmail status button */}
