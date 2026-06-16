@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { PictureMetadata } from "@/lib/supabase/letters";
+import sharp from "sharp";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -25,9 +26,6 @@ export async function POST(_req: NextRequest): Promise<NextResponse> {
     if (!user || user.email !== "lungdrsumit@gmail.com") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const sharp = require("sharp") as typeof import("sharp");
 
     const { data: letters, error: fetchErr } = await supabase
       .from("letters")
