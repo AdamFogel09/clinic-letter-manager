@@ -432,7 +432,7 @@ export default function LetterPageRenderer({
               <LV label="Email"         value={d.email} />
               <LV label="Phone"         value={formatPhone(d.phone)} />
             </div>
-            <div style={{ flex: 1, paddingLeft: 32 }}>
+            <div style={{ flex: 1, paddingLeft: 20 }}>
               <LV label="Smoking / Vaping" value={d.smoking} />
               <LV label="Pets"             value={d.pets} />
               <LV label="Occupation"       value={d.occupation} />
