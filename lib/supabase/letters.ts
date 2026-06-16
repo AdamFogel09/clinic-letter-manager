@@ -68,7 +68,8 @@ export interface PictureMetadata {
   id: string;           // unique image ID
   path: string;         // storage path: "{userId}/{letterId}/{imageId}.jpg"
   bucket: string;       // "letter-images"
-  sizeBytes: number;
+  sizeBytes: number;    // compressed size (bytes)
+  originalBytes?: number; // original file size before compression (bytes)
   width: number;
   height: number;
   contentType: string;  // "image/jpeg"

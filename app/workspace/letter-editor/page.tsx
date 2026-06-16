@@ -156,6 +156,11 @@ interface LungRow {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
+function fmtBytes(b: number): string {
+  if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.round(b / 1024)} KB`;
+}
+
 function calcAge(d: string, m: string, y: string): string {
   const day = parseInt(d), mon = parseInt(m), yr = parseInt(y);
   if (!day || !mon || !yr || yr < 1900 || yr > new Date().getFullYear()) return "";
@@ -956,7 +961,7 @@ export default function LetterEditorPage() {
           result.blob, result.width, result.height,
         );
         const previewUrl = URL.createObjectURL(result.blob);
-        setPictures(prev => [...prev, metadata]);
+        setPictures(prev => [...prev, { ...metadata, originalBytes: result.originalBytes }]);
         setPictureUrls(prev => ({ ...prev, [imageId]: previewUrl }));
         const origLabel = result.originalBytes >= 1024 * 1024
           ? `${(result.originalBytes / 1024 / 1024).toFixed(1)} MB`
@@ -2449,11 +2454,22 @@ export default function LetterEditorPage() {
             </div>
           )}
 
-          {pictures.length > 0 && (
-            <p className="text-xs mt-3" style={{ color: "#94A3B8" }}>
-              {pictures.length} image{pictures.length !== 1 ? "s" : ""} added · Images will appear in the letter preview
-            </p>
-          )}
+          {pictures.length > 0 && (() => {
+            const totalComp = pictures.reduce((t, p) => t + (p.sizeBytes || 0), 0);
+            const totalOrig = pictures.reduce((t, p) => t + (p.originalBytes || 0), 0);
+            return (
+              <div className="flex items-center justify-between mt-3">
+                <p className="text-xs" style={{ color: "#94A3B8" }}>
+                  {pictures.length} image{pictures.length !== 1 ? "s" : ""} added · Images will appear in the letter preview
+                </p>
+                {totalComp > 0 && (
+                  <span className="text-xs font-semibold tabular-nums" style={{ color: "#4A90D9" }}>
+                    {totalOrig > 0 ? `${fmtBytes(totalOrig)} → ${fmtBytes(totalComp)}` : fmtBytes(totalComp)}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
         </SectionCard>
       );
 
