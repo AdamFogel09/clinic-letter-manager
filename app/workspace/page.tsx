@@ -206,7 +206,25 @@ export default function WorkspacePage() {
   ];
 
   return (
-    <div className="flex-1 pb-10">
+    <div className="flex-1 pb-10" style={{ position: "relative", overflow: "hidden" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/lung.png"
+        alt=""
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          bottom: "-5%",
+          right: "-5%",
+          width: "55%",
+          maxWidth: 520,
+          opacity: 0.055,
+          pointerEvents: "none",
+          userSelect: "none",
+          maskImage: "radial-gradient(ellipse 70% 70% at 60% 60%, black 20%, transparent 75%)",
+          WebkitMaskImage: "radial-gradient(ellipse 70% 70% at 60% 60%, black 20%, transparent 75%)",
+        }}
+      />
       {/* Top bar */}
       <div className="grid grid-cols-3 items-start px-6 sm:px-8 pt-8 pb-4">
         <div />
