@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { PictureMetadata } from "@/lib/supabase/letters";
-import sharp from "sharp";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const IMAGE_BUCKET = "letter-images";
-const MAX_DIM = 600;
-const JPEG_QUALITY = 65;
 
 /**
  * POST /api/admin/migrate-images
  *
  * One-time admin migration: finds all letters where pictures[] contains
- * base64 / data:image strings, re-compresses each image to 600px/q65,
- * uploads to Supabase Storage, and replaces the DB field with PictureMetadata.
+ * base64 / data:image strings, uploads each to Supabase Storage as-is,
+ * and replaces the DB field with PictureMetadata objects.
  *
  * Only lungdrsumit@gmail.com may call this endpoint.
  */
@@ -61,27 +58,14 @@ export async function POST(_req: NextRequest): Promise<NextResponse> {
         }
 
         try {
-          const rawBuffer = Buffer.from((p as string).slice(commaIdx + 1), "base64");
-
-          // Re-compress: resize to max 600px, JPEG quality 65
-          const sharpMeta = await sharp(rawBuffer).metadata();
-          const origW = sharpMeta.width ?? 0;
-          const origH = sharpMeta.height ?? 0;
-
-          let pipeline = sharp(rawBuffer).rotate(); // auto-correct EXIF orientation
-          if (Math.max(origW, origH) > MAX_DIM) {
-            pipeline = pipeline.resize(MAX_DIM, MAX_DIM, { fit: "inside", withoutEnlargement: true });
-          }
-          const { data: compressedBuffer, info } = await pipeline
-            .jpeg({ quality: JPEG_QUALITY })
-            .toBuffer({ resolveWithObject: true });
+          const buffer = Buffer.from((p as string).slice(commaIdx + 1), "base64");
 
           const imageId = `migrated-${i}-${Date.now().toString(36)}`;
           const storagePath = `${letter.created_by}/${letter.id}/${imageId}.jpg`;
 
           const { error: uploadErr } = await supabase.storage
             .from(IMAGE_BUCKET)
-            .upload(storagePath, compressedBuffer, { contentType: "image/jpeg", upsert: true });
+            .upload(storagePath, buffer, { contentType: "image/jpeg", upsert: true });
 
           if (uploadErr) throw new Error(uploadErr.message);
 
@@ -89,13 +73,13 @@ export async function POST(_req: NextRequest): Promise<NextResponse> {
             id: imageId,
             path: storagePath,
             bucket: IMAGE_BUCKET,
-            sizeBytes: compressedBuffer.length,
-            width: info.width,
-            height: info.height,
+            sizeBytes: buffer.length,
+            width: 0,
+            height: 0,
             contentType: "image/jpeg",
           };
           newPictures.push(meta);
-          results.details.push(`letter ${letter.id} image ${i}: ${Math.round(rawBuffer.length / 1024)}KB → ${Math.round(compressedBuffer.length / 1024)}KB`);
+          results.details.push(`letter ${letter.id} image ${i}: ${Math.round(buffer.length / 1024)}KB moved to Storage`);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           results.details.push(`letter ${letter.id} image ${i}: FAILED — ${msg}`);
