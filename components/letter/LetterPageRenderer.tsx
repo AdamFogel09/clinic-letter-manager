@@ -840,7 +840,7 @@ export default function LetterPageRenderer({
       id: "pictures",
       estimate: Math.ceil(d.pictures.length / 2) * 300 + 40,
       render: () => (
-        <DocSection title="" titleHe="תמונות" heOnly>
+        <DocSection title="תמונות">
           <div style={{ display: "grid", gridTemplateColumns: d.pictures.length === 1 ? "1fr" : "1fr 1fr", gap: 16 }}>
             {d.pictures.map((src, i) => (
               <div key={i} style={{ overflow: "hidden", border: "2px solid #000000", backgroundColor: "#ffffff" }}>
