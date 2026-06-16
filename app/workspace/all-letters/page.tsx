@@ -221,23 +221,6 @@ function PatientCard({
                         }}>
                         {isDuplicating ? "Creating…" : "Create Update"}
                       </button>
-                      <button onClick={() => onOpenLetter(letter)}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all"
-                        style={{ backgroundColor: "#1A2B4A", color: "#fff" }}>
-                        {isLatest ? "Edit Latest" : "Continue"}
-                      </button>
-                      <button
-                        onClick={() => onDeleteLetter(letter)}
-                        disabled={isDeleting}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all"
-                        style={{
-                          borderColor: "#FECACA",
-                          color: isDeleting ? "#FCA5A5" : "#DC2626",
-                          background: isDeleting ? "#FEF2F2" : "white",
-                          cursor: isDeleting ? "default" : "pointer",
-                        }}>
-                        {isDeleting ? "Deleting…" : "Delete"}
-                      </button>
                     </div>
                   </div>
                 );
