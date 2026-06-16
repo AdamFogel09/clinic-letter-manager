@@ -417,9 +417,9 @@ export default function LetterPageRenderer({
       render: () => (
         <div>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
-            <div className="lungistitute-wrap" style={{ backgroundColor: "#1E106E", isolation: "isolate" }}>
+            <div className="lungistitute-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block", mixBlendMode: "screen" }} />
+              <img src="/lungistitute.png" alt="מרפאת ריאות" style={{ maxHeight: 52, objectFit: "contain", display: "block" }} />
             </div>
           </div>
           <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
