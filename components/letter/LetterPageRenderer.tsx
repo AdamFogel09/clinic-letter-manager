@@ -416,14 +416,6 @@ export default function LetterPageRenderer({
       id: "patient-header", estimate: 190,
       render: () => (
         <div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 0 }}>
-            <div className="lungistitute-wrap">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/updatedLogo.png" alt="" style={{ maxHeight: 52, objectFit: "contain", display: "block" }} />
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/mirpaat.png" alt="מרפאת ריאות" style={{ maxHeight: 28, objectFit: "contain", display: "block", marginTop: 6 }} />
-          </div>
           <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
           <div className="pdf-patient-cols" style={{ display: "flex" }}>
             <div style={{ flex: 1 }}>
