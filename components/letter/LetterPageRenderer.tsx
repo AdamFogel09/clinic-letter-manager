@@ -418,7 +418,7 @@ export default function LetterPageRenderer({
         <div>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/mirpaat.png" alt="מרפאת ריאות" style={{ maxHeight: 32, objectFit: "contain", display: "block" }} />
+            <img src="/mirpaat.png" alt="מרפאת ריאות" style={{ maxHeight: 56, objectFit: "contain", display: "block" }} />
           </div>
           <div style={{ borderBottom: "1px solid #160B5C", marginBottom: 10 }} />
           <div className="pdf-patient-cols" style={{ display: "flex" }}>
