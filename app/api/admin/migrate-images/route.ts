@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { PictureMetadata } from "@/lib/supabase/letters";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const sharp = require("sharp");
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -15,126 +13,118 @@ const JPEG_QUALITY = 65;
  * POST /api/admin/migrate-images
  *
  * One-time admin migration: finds all letters where pictures[] contains
- * base64 / data:image strings, uploads each image to Supabase Storage,
- * and replaces the DB field with PictureMetadata objects.
+ * base64 / data:image strings, re-compresses each image to 600px/q65,
+ * uploads to Supabase Storage, and replaces the DB field with PictureMetadata.
  *
  * Only lungdrsumit@gmail.com may call this endpoint.
  */
 export async function POST(_req: NextRequest): Promise<NextResponse> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user || user.email !== "lungdrsumit@gmail.com") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Fetch all letters that have a non-empty pictures column
-  const { data: letters, error: fetchErr } = await supabase
-    .from("letters")
-    .select("id, pictures, created_by");
-
-  if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
-
-  const results = { migrated: 0, skipped: 0, errors: 0, details: [] as string[] };
-
-  for (const letter of letters ?? []) {
-    const pics: unknown[] = Array.isArray(letter.pictures) ? letter.pictures : [];
-    if (pics.length === 0) { results.skipped++; continue; }
-
-    // Check if any entry is a legacy base64 string
-    const needsMigration = pics.some(p => typeof p === "string");
-    if (!needsMigration) { results.skipped++; continue; }
-
-    const newPictures: (PictureMetadata | unknown)[] = [];
-    let failed = false;
-
-    for (let i = 0; i < pics.length; i++) {
-      const p = pics[i];
-
-      if (typeof p !== "string") {
-        // Already metadata — keep as-is
-        newPictures.push(p);
-        continue;
-      }
-
-      // Parse data URL: "data:image/jpeg;base64,<data>"
-      const dataUrl = p as string;
-      const commaIdx = dataUrl.indexOf(",");
-      if (commaIdx < 0) {
-        results.details.push(`letter ${letter.id} image ${i}: not a valid data URL — skipped`);
-        newPictures.push(p); // keep unchanged
-        continue;
-      }
-      const base64 = dataUrl.slice(commaIdx + 1);
-
-      try {
-        const rawBuffer = Buffer.from(base64, "base64");
-
-        // Re-compress: resize to max 600px and re-encode at quality 65
-        const sharpInstance = sharp(rawBuffer).rotate(); // .rotate() auto-corrects EXIF orientation
-        const metadata = await sharpInstance.metadata();
-        const origW = metadata.width ?? 0;
-        const origH = metadata.height ?? 0;
-        const longestSide = Math.max(origW, origH);
-        if (longestSide > MAX_DIM) {
-          sharpInstance.resize(
-            origW >= origH ? MAX_DIM : null,
-            origH > origW  ? MAX_DIM : null,
-            { withoutEnlargement: true },
-          );
-        }
-        const compressedBuffer: Buffer = await sharpInstance
-          .jpeg({ quality: JPEG_QUALITY, mozjpeg: false })
-          .toBuffer();
-
-        const { info } = await sharp(compressedBuffer).jpeg().toBuffer({ resolveWithObject: true });
-        const finalW = info.width as number;
-        const finalH = info.height as number;
-
-        const imageId = `migrated-${i}-${Date.now().toString(36)}`;
-        const path = `${letter.created_by}/${letter.id}/${imageId}.jpg`;
-
-        const { error: uploadErr } = await supabase.storage
-          .from(IMAGE_BUCKET)
-          .upload(path, compressedBuffer, { contentType: "image/jpeg", upsert: true });
-
-        if (uploadErr) throw uploadErr;
-
-        const meta: PictureMetadata = {
-          id: imageId,
-          path,
-          bucket: IMAGE_BUCKET,
-          sizeBytes: compressedBuffer.length,
-          width: finalW,
-          height: finalH,
-          contentType: "image/jpeg",
-        };
-        newPictures.push(meta);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        results.details.push(`letter ${letter.id} image ${i}: upload failed — ${msg}`);
-        failed = true;
-        break; // stop processing this letter on first failure
-      }
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || user.email !== "lungdrsumit@gmail.com") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (failed) {
-      results.errors++;
-      continue;
-    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const sharp = require("sharp") as typeof import("sharp");
 
-    // Update the letter row with the migrated pictures
-    const { error: updateErr } = await supabase
+    const { data: letters, error: fetchErr } = await supabase
       .from("letters")
-      .update({ pictures: newPictures })
-      .eq("id", letter.id);
+      .select("id, pictures, created_by");
 
-    if (updateErr) {
-      results.details.push(`letter ${letter.id}: DB update failed — ${updateErr.message}`);
-      results.errors++;
-    } else {
-      results.migrated++;
+    if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+
+    const results = { migrated: 0, skipped: 0, errors: 0, details: [] as string[] };
+
+    for (const letter of letters ?? []) {
+      const pics: unknown[] = Array.isArray(letter.pictures) ? letter.pictures : [];
+      if (pics.length === 0) { results.skipped++; continue; }
+
+      const needsMigration = pics.some(p => typeof p === "string");
+      if (!needsMigration) { results.skipped++; continue; }
+
+      const newPictures: unknown[] = [];
+      let failed = false;
+
+      for (let i = 0; i < pics.length; i++) {
+        const p = pics[i];
+
+        if (typeof p !== "string") {
+          newPictures.push(p); // already metadata — keep as-is
+          continue;
+        }
+
+        const commaIdx = (p as string).indexOf(",");
+        if (commaIdx < 0) {
+          results.details.push(`letter ${letter.id} image ${i}: not a valid data URL — skipped`);
+          newPictures.push(p);
+          continue;
+        }
+
+        try {
+          const rawBuffer = Buffer.from((p as string).slice(commaIdx + 1), "base64");
+
+          // Re-compress: resize to max 600px, JPEG quality 65
+          const sharpMeta = await sharp(rawBuffer).metadata();
+          const origW = sharpMeta.width ?? 0;
+          const origH = sharpMeta.height ?? 0;
+
+          let pipeline = sharp(rawBuffer).rotate(); // auto-correct EXIF orientation
+          if (Math.max(origW, origH) > MAX_DIM) {
+            pipeline = pipeline.resize(MAX_DIM, MAX_DIM, { fit: "inside", withoutEnlargement: true });
+          }
+          const { data: compressedBuffer, info } = await pipeline
+            .jpeg({ quality: JPEG_QUALITY })
+            .toBuffer({ resolveWithObject: true });
+
+          const imageId = `migrated-${i}-${Date.now().toString(36)}`;
+          const storagePath = `${letter.created_by}/${letter.id}/${imageId}.jpg`;
+
+          const { error: uploadErr } = await supabase.storage
+            .from(IMAGE_BUCKET)
+            .upload(storagePath, compressedBuffer, { contentType: "image/jpeg", upsert: true });
+
+          if (uploadErr) throw new Error(uploadErr.message);
+
+          const meta: PictureMetadata = {
+            id: imageId,
+            path: storagePath,
+            bucket: IMAGE_BUCKET,
+            sizeBytes: compressedBuffer.length,
+            width: info.width,
+            height: info.height,
+            contentType: "image/jpeg",
+          };
+          newPictures.push(meta);
+          results.details.push(`letter ${letter.id} image ${i}: ${Math.round(rawBuffer.length / 1024)}KB → ${Math.round(compressedBuffer.length / 1024)}KB`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          results.details.push(`letter ${letter.id} image ${i}: FAILED — ${msg}`);
+          failed = true;
+          break;
+        }
+      }
+
+      if (failed) { results.errors++; continue; }
+
+      const { error: updateErr } = await supabase
+        .from("letters")
+        .update({ pictures: newPictures })
+        .eq("id", letter.id);
+
+      if (updateErr) {
+        results.details.push(`letter ${letter.id}: DB update failed — ${updateErr.message}`);
+        results.errors++;
+      } else {
+        results.migrated++;
+      }
     }
-  }
 
-  return NextResponse.json(results);
+    return NextResponse.json(results);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[migrate-images] fatal:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
