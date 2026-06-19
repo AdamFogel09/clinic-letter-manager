@@ -531,14 +531,10 @@ export default function LetterPageRenderer({
         id: "medications", estimate: 50,
         render: () => (
           <DocSection title="Medications">
-            <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {d.medications[0]}</p>
+            <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>{d.medications.join(", ")}</p>
           </DocSection>
         ),
       });
-      d.medications.slice(1).forEach((m, idx) => arr.push({
-        id: `medications-${idx + 1}`, estimate: 26, isContinuation: true,
-        render: () => <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {m}</p>,
-      }));
     }
 
     // ── 10. Allergies ────────────────────────────────────────────────────────
