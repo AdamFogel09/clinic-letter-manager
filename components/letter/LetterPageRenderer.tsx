@@ -531,7 +531,7 @@ export default function LetterPageRenderer({
         id: "medications", estimate: 50,
         render: () => (
           <DocSection title="Medications">
-            <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>{d.medications.join(", ")}</p>
+            <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>{d.medications.map((m: string) => m.replace(/\.+$/, "")).join(", ")}</p>
           </DocSection>
         ),
       });
