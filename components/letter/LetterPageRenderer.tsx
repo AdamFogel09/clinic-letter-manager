@@ -320,10 +320,9 @@ function PageBuilder({ sections, onReady }: { sections: SectionDef[]; onReady?: 
       sections.forEach((sec, i) => {
         const h   = heights[i] ?? 0;
         const gap = curPage.length > 0 ? (sec.isContinuation ? 5 : SECTION_GAP) : 0;
-        if (sec.forceNewPage && curPage.length > 0) {
-          packed.push(curPage);
-          curPage = [sec];
-          curH    = h;
+        if (sec.forceNewPage) {
+          if (curPage.length > 0) { packed.push(curPage); curPage = []; curH = 0; }
+          return; // spacer consumed — not placed on any page, next section starts fresh
         } else if (curPage.length === 0 || curH + gap + h <= SAFE_H) {
           curPage.push(sec);
           curH += gap + h;
