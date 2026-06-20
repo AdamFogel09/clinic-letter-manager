@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOAuth2Client, saveTokens } from "@/lib/gmail";
 
+// Always send users back to the stable production alias, regardless of which
+// deployment URL Google's OAuth redirect landed on.
+const DASHBOARD_URL = "https://clinic-letter-manager.vercel.app/dashboard";
+
 export async function GET(req: NextRequest) {
   const code  = req.nextUrl.searchParams.get("code");
   const error = req.nextUrl.searchParams.get("error");
@@ -10,7 +14,7 @@ export async function GET(req: NextRequest) {
       `<html><body style="font-family:sans-serif;padding:40px;text-align:center">
         <h2 style="color:#BE123C">Gmail connection cancelled</h2>
         <p>${error}</p>
-        <a href="/dashboard">Back to Dashboard</a>
+        <a href="${DASHBOARD_URL}">Back to Dashboard</a>
       </body></html>`,
       { headers: { "Content-Type": "text/html" } },
     );
@@ -40,7 +44,7 @@ export async function GET(req: NextRequest) {
         <p>Please visit
         <a href="https://myaccount.google.com/permissions" target="_blank">myaccount.google.com/permissions</a>,
         remove <strong>Clinic Letter Manager</strong>, then try connecting again.</p>
-        <a href="/api/gmail/oauth/start"
+        <a href="https://clinic-letter-manager.vercel.app/api/gmail/oauth/start"
           style="display:inline-block;margin-top:16px;padding:10px 24px;
           background:#1A2B4A;color:white;border-radius:10px;text-decoration:none;font-size:14px">
           Try again
@@ -63,7 +67,7 @@ export async function GET(req: NextRequest) {
       <h2 style="color:#0D9488">&#10003; Gmail connected successfully.</h2>
       <p>lungdrsumit@gmail.com is now connected.<br>
       You can send clinic letters directly from the Review page.</p>
-      <a href="/dashboard"
+      <a href="${DASHBOARD_URL}"
         style="display:inline-block;margin-top:16px;padding:10px 24px;
         background:#1A2B4A;color:white;border-radius:10px;text-decoration:none;font-size:14px">
         Back to Dashboard

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { upsertLetter } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
@@ -98,6 +98,9 @@ export default function LetterPreviewPage() {
   const [exportDone, setExportDone] = useState(false);
   const [letterStatus, setLetterStatus] = useState("");
   const [editWarning, setEditWarning] = useState(false);
+  const [mobileScale, setMobileScale] = useState(1);
+  const [letterScaledHeight, setLetterScaledHeight] = useState(0);
+  const letterScaleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const rt = localStorage.getItem("letter_return_to");
@@ -276,6 +279,25 @@ export default function LetterPreviewPage() {
     run();
   }, []);
 
+  useEffect(() => {
+    const update = () => {
+      const vw = window.innerWidth;
+      // 32px = 2 × 16px horizontal padding of the preview-wrapper
+      setMobileScale(vw < 860 ? Math.max(0.3, (vw - 32) / 820) : 1);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
+    const el = letterScaleRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setLetterScaledHeight(el.scrollHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [data]);
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -336,7 +358,7 @@ export default function LetterPreviewPage() {
       }}>
 
         {/* Toolbar */}
-        <div className="preview-toolbar" style={{ width: "100%", maxWidth: 820, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="preview-toolbar" style={{ width: "100%", maxWidth: 820, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <button
             onClick={() => {
               localStorage.removeItem("letter_export_mode");
@@ -352,7 +374,7 @@ export default function LetterPreviewPage() {
 
           {exportMode ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 {exportDone && (
                   <span style={{ fontSize: 11, fontWeight: 600, color: "#0D9488", display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ width: 12, height: 12 }}><path d="M3 8l4 4 6-7"/></svg>
@@ -379,7 +401,7 @@ export default function LetterPreviewPage() {
               </div>
             </div>
           ) : (
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <button type="button" onClick={handleEditLetter} style={{ fontSize: 12, fontWeight: 600, borderRadius: 10, padding: "8px 16px", backgroundColor: "white", color: "#64748B", border: "1px solid #E2E8F0", cursor: "pointer", transition: "all 0.15s" }}>
                 Edit Letter
               </button>
@@ -392,10 +414,27 @@ export default function LetterPreviewPage() {
           )}
         </div>
 
-        <div id="letter-preview-export-source">
-          {data ? <LetterPageRenderer data={data} /> : (
-            <div style={{ color: "#94A3B8", fontSize: 13, padding: 40 }}>Loading letter…</div>
-          )}
+        <div id="letter-preview-export-source"
+          style={mobileScale < 1 ? {
+            position: "relative",
+            width: "100%",
+            height: letterScaledHeight > 0 ? letterScaledHeight * mobileScale : "auto",
+          } : {}}>
+          <div
+            ref={letterScaleRef}
+            style={mobileScale < 1 ? {
+              position: "absolute",
+              top: 0,
+              left: `calc(50% - 410px)`,
+              width: 820,
+              transform: `scale(${mobileScale})`,
+              transformOrigin: "top center",
+            } : {}}
+          >
+            {data ? <LetterPageRenderer data={data} /> : (
+              <div style={{ color: "#94A3B8", fontSize: 13, padding: 40 }}>Loading letter…</div>
+            )}
+          </div>
         </div>
 
       </div>

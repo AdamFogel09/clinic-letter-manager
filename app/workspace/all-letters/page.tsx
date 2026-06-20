@@ -47,7 +47,7 @@ function formatDOB(day: string, month: string, year: string): string {
 
 // ── Patient card with expandable letter history ───────────────────────────────
 
-function DownloadPdfButton({ letter }: { letter: StoredLetter }) {
+function DownloadPdfButton({ letter, fullWidth }: { letter: StoredLetter; fullWidth?: boolean }) {
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
 
   const handleClick = async () => {
@@ -85,7 +85,7 @@ function DownloadPdfButton({ letter }: { letter: StoredLetter }) {
 
   return (
     <button onClick={handleClick} disabled={state === "loading"}
-      className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all inline-flex items-center gap-1"
+      className={`text-xs font-semibold px-3 py-2 rounded-lg border transition-all inline-flex items-center justify-center gap-1${fullWidth ? " w-full" : ""}`}
       style={{ backgroundColor: bg, color, borderColor: border, cursor: state === "loading" ? "default" : "pointer" }}>
       {state === "idle" && (
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.75}
@@ -140,9 +140,9 @@ function PatientCard({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:flex-shrink-0 w-full sm:w-auto">
             <button onClick={() => setExpanded((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 hover:-translate-y-px"
+              className="inline-flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2.5 rounded-xl border transition-all duration-150 hover:-translate-y-px w-full sm:w-auto"
               style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}>
               View History
               {letters.length > 0 && (
@@ -160,7 +160,7 @@ function PatientCard({
             <button
               onClick={() => letters.length > 0 ? onDuplicateLetter(letters[0]) : onStartNewLetter(patient)}
               disabled={duplicatingId === letters[0]?.id}
-              className="inline-flex items-center text-xs font-semibold px-3 py-2 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-sm"
+              className="inline-flex items-center justify-center text-xs font-semibold px-3 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-sm w-full sm:w-auto"
               style={{ backgroundColor: "#1A2B4A", color: "#fff", opacity: duplicatingId === letters[0]?.id ? 0.6 : 1 }}>
               {duplicatingId === letters[0]?.id ? "Creating…" : "Create Update Letter"}
             </button>
@@ -183,36 +183,36 @@ function PatientCard({
                 const isLatest = idx === 0;
                 return (
                   <div key={letter.id}
-                    className="flex items-center justify-between gap-3 py-2.5 px-4 rounded-xl bg-white border"
+                    className="flex flex-col gap-2.5 py-3 px-4 rounded-xl bg-white border"
                     style={{ borderColor: isLatest ? "#0D9488" : "#E2E8F0" }}>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {isLatest && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                            style={{ backgroundColor: "#CCFBF1", color: "#0D9488" }}>
-                            Latest
-                          </span>
-                        )}
-                        {letter.letterDate && (
-                          <span className="text-xs font-medium" style={{ color: "#1A2B4A" }}>{letter.letterDate}</span>
-                        )}
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                          style={{ backgroundColor: c.bg, color: c.text }}>
-                          {statusLabel(letter.status)}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isLatest && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "#CCFBF1", color: "#0D9488" }}>
+                          Latest
                         </span>
-                      </div>
+                      )}
+                      {letter.letterDate && (
+                        <span className="text-xs font-medium" style={{ color: "#1A2B4A" }}>{letter.letterDate}</span>
+                      )}
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: c.bg, color: c.text }}>
+                        {statusLabel(letter.status)}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button onClick={() => onPreviewLetter(letter)}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all"
+                        className="flex-1 sm:flex-none text-xs font-semibold px-3 py-2 rounded-lg border transition-all text-center"
                         style={{ borderColor: "#E2E8F0", color: "#64748B", background: "white" }}>
                         Preview
                       </button>
-                      <DownloadPdfButton letter={letter} />
+                      <div className="flex-1 sm:flex-none">
+                        <DownloadPdfButton letter={letter} fullWidth />
+                      </div>
                       <button
                         onClick={() => onDuplicateLetter(letter)}
                         disabled={isDuplicating}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-all"
+                        className="flex-1 sm:flex-none text-xs font-semibold px-3 py-2 rounded-lg border transition-all text-center"
                         style={{
                           borderColor: "#DDD6FE",
                           color: isDuplicating ? "#A78BFA" : "#7C3AED",

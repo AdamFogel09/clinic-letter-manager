@@ -73,17 +73,23 @@ function SaveInternalButton({ onSaveInternal, busy }: {
 
 function WaitingCard({
   letter,
-  onMarkReviewed,
+  onPreview,
+  onEditLetter,
   onSaveInternal,
 }: {
   letter: StoredLetter;
-  onMarkReviewed: (filename: string) => Promise<void>;
+  onPreview: () => void;
+  onEditLetter: () => Promise<void>;
   onSaveInternal: () => Promise<void>;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const colors  = STATUS_COLORS["Waiting for Anat"];
-  const [uploading,   setUploading]   = useState(false);
-  const [uploadError, setUploadError] = useState("");
+  const [recalling, setRecalling] = useState(false);
+
+  const handleEdit = async () => {
+    if (recalling) return;
+    setRecalling(true);
+    try { await onEditLetter(); } finally { setRecalling(false); }
+  };
 
   return (
     <div className="bg-white rounded-2xl border px-5 py-4"
@@ -104,37 +110,25 @@ function WaitingCard({
       </div>
       <div className="flex items-center gap-3 mt-3 pt-3 flex-wrap" style={{ borderTop: "1px solid #F1F5F9" }}>
         <p className="text-xs flex-1 min-w-0" style={{ color: "#94A3B8" }}>
-          {uploading ? "Marking as reviewed…" : "Waiting for Anat to return the reviewed file"}
+          Waiting for Anat to return the reviewed file
         </p>
-        <SaveInternalButton onSaveInternal={onSaveInternal} busy={uploading} />
-        <input ref={fileRef} type="file" accept=".docx,.pages,.doc" className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            setUploading(true);
-            setUploadError("");
-            onMarkReviewed(file.name)
-              .catch(err => setUploadError(err instanceof Error ? err.message : "Failed to mark as reviewed."))
-              .finally(() => setUploading(false));
-            e.target.value = "";
-          }} />
-        <button onClick={() => !uploading && fileRef.current?.click()} disabled={uploading}
-          className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
-          style={{ backgroundColor: uploading ? "#F4F6F9" : "#1A2B4A", color: uploading ? "#94A3B8" : "#fff",
-            borderColor: uploading ? "#E2E8F0" : "#1A2B4A", cursor: uploading ? "default" : "pointer" }}
-          onMouseEnter={e => { if (!uploading) e.currentTarget.style.transform = "translateY(-1px)"; }}
+        <SaveInternalButton onSaveInternal={onSaveInternal} busy={recalling} />
+        <button onClick={onPreview}
+          className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
+          style={{ backgroundColor: "white", color: "#475569", borderColor: "#94A3B8", cursor: "pointer" }}
+          onMouseEnter={e => (e.currentTarget.style.transform = "translateY(-1px)")}
           onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
-          {uploading ? "Updating…" : "Upload Reviewed File"}
+          Preview
+        </button>
+        <button onClick={handleEdit} disabled={recalling}
+          className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
+          style={{ backgroundColor: recalling ? "#F4F6F9" : "#1A2B4A", color: recalling ? "#94A3B8" : "#fff",
+            borderColor: recalling ? "#E2E8F0" : "#1A2B4A", cursor: recalling ? "default" : "pointer" }}
+          onMouseEnter={e => { if (!recalling) e.currentTarget.style.transform = "translateY(-1px)"; }}
+          onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
+          {recalling ? "Recalling…" : "Edit Letter"}
         </button>
       </div>
-      {uploadError && (
-        <p className="text-xs mt-1.5 text-right font-semibold" style={{ color: "#BE123C" }}>{uploadError}</p>
-      )}
-      {!uploadError && (
-        <p className="text-[10px] mt-1.5 text-right" style={{ color: "#CBD5E1" }}>
-          Accepts .docx · .pages · .doc
-        </p>
-      )}
     </div>
   );
 }
@@ -533,6 +527,17 @@ export default function ReviewPage() {
     await loadAll();
   };
 
+  const handleRecallForEdit = async (letter: StoredLetter) => {
+    const supabase = createClient();
+    await updateLetterStatus(supabase, letter.id, "Draft");
+    localStorage.setItem("letter_current_id",          letter.id);
+    localStorage.setItem("letter_current_supabase_id", letter.id);
+    sessionStorage.setItem("letter_supabase_id",  letter.id);
+    sessionStorage.setItem("load_from_supabase",  "1");
+    sessionStorage.removeItem("letter_draft");
+    router.push("/workspace/letter-editor");
+  };
+
   const handleMarkSent = async (letter: StoredLetter) => {
     const supabase = createClient();
     setDeleteError("");
@@ -631,7 +636,8 @@ export default function ReviewPage() {
         badge={{ bg: "#EDE9FE", text: "#7C3AED" }} empty="No letters waiting for review">
         {waiting.map((l) => (
           <WaitingCard key={l.id} letter={l}
-            onMarkReviewed={(filename) => handleUploadReviewed(l, filename)}
+            onPreview={() => navigateToPreview(l, false)}
+            onEditLetter={() => handleRecallForEdit(l)}
             onSaveInternal={() => handleSaveInternal(l)} />
         ))}
       </Section>

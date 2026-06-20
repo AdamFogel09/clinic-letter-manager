@@ -543,13 +543,13 @@ export default function LetterPageRenderer({
         id: "allergies", estimate: 50,
         render: () => (
           <DocSection title="Allergies">
-            <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {d.allergies[0]}</p>
+            <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>{d.allergies[0]}</p>
           </DocSection>
         ),
       });
       d.allergies.slice(1).forEach((a, idx) => arr.push({
         id: `allergies-${idx + 1}`, estimate: 26, isContinuation: true,
-        render: () => <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>• {a}</p>,
+        render: () => <p data-atomic="1" style={{ fontSize: 13, color: "#1A2B4A", lineHeight: 1.8, margin: "0 0 2px" }}>{a}</p>,
       }));
     }
 
