@@ -422,12 +422,10 @@ export async function getLettersByStatus(
 export async function getAllLetters(
   supabase: SupabaseClient
 ): Promise<StoredLetter[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  const baseQuery = supabase
+  const { data, error } = await supabase
     .from("letters")
     .select("*, patients(*)")
     .order("updated_at", { ascending: false });
-  const { data, error } = await (user ? baseQuery.eq("created_by", user.id) : baseQuery);
   if (error || !data) return [];
   return (data as SupabaseLetter[]).map(supabaseLetterToStoredLetter);
 }
@@ -761,29 +759,29 @@ export async function deleteLetter(
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Not authenticated.");
 
-  // Fetch the row first so we can clean up storage
+  // Fetch the row for PDF cleanup (no ownership filter — auth check above is the gate)
   const { data: row } = await supabase
     .from("letters")
-    .select("id, final_pdf_url")
+    .select("id, final_pdf_url, created_by")
     .eq("id", letterId)
-    .eq("created_by", user.id)
-    .single();
+    .maybeSingle();
 
-  if (!row) throw new Error("Letter not found.");
+  // Reject if the letter explicitly belongs to a different user
+  if (row?.created_by && row.created_by !== user.id) throw new Error("Permission denied.");
 
-  // Delete PDF from storage if it exists
-  if (row.final_pdf_url) {
-    const { error: storageErr } = await supabase.storage
+  // Delete PDF from storage (best effort)
+  if (row?.final_pdf_url) {
+    await supabase.storage
       .from("clinic-letters")
-      .remove([row.final_pdf_url]);
-    if (storageErr) console.warn("[deleteLetter] Storage delete warning:", storageErr.message);
+      .remove([row.final_pdf_url])
+      .catch(() => {});
   }
 
+  // Delete the letter by ID — no created_by filter so null-created_by letters are also removed
   const { error } = await supabase
     .from("letters")
     .delete()
-    .eq("id", letterId)
-    .eq("created_by", user.id);
+    .eq("id", letterId);
 
   if (error) throw new Error(error.message || "Failed to delete letter.");
 }
