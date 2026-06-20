@@ -75,20 +75,33 @@ function WaitingCard({
   letter,
   onPreview,
   onEditLetter,
+  onDeleteLetter,
   onSaveInternal,
 }: {
   letter: StoredLetter;
   onPreview: () => void;
   onEditLetter: () => Promise<void>;
+  onDeleteLetter: () => Promise<void>;
   onSaveInternal: () => Promise<void>;
 }) {
   const colors  = STATUS_COLORS["Waiting for Anat"];
   const [recalling, setRecalling] = useState(false);
+  const [deleting,  setDeleting]  = useState(false);
 
   const handleEdit = async () => {
     if (recalling) return;
     setRecalling(true);
     try { await onEditLetter(); } finally { setRecalling(false); }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    const confirmed = window.confirm(
+      `Delete the letter for ${letter.patientName}?\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    try { await onDeleteLetter(); } finally { setDeleting(false); }
   };
 
   return (
@@ -120,13 +133,21 @@ function WaitingCard({
           onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
           Preview
         </button>
-        <button onClick={handleEdit} disabled={recalling}
+        <button onClick={handleEdit} disabled={recalling || deleting}
           className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
           style={{ backgroundColor: recalling ? "#F4F6F9" : "#1A2B4A", color: recalling ? "#94A3B8" : "#fff",
-            borderColor: recalling ? "#E2E8F0" : "#1A2B4A", cursor: recalling ? "default" : "pointer" }}
-          onMouseEnter={e => { if (!recalling) e.currentTarget.style.transform = "translateY(-1px)"; }}
+            borderColor: recalling ? "#E2E8F0" : "#1A2B4A", cursor: (recalling || deleting) ? "default" : "pointer" }}
+          onMouseEnter={e => { if (!recalling && !deleting) e.currentTarget.style.transform = "translateY(-1px)"; }}
           onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
           {recalling ? "Recalling…" : "Edit Letter"}
+        </button>
+        <button onClick={handleDelete} disabled={deleting || recalling}
+          className="text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 flex-shrink-0"
+          style={{ backgroundColor: deleting ? "#F4F6F9" : "#FEF2F2", color: deleting ? "#94A3B8" : "#DC2626",
+            borderColor: deleting ? "#E2E8F0" : "#FECACA", cursor: (deleting || recalling) ? "default" : "pointer" }}
+          onMouseEnter={e => { if (!deleting && !recalling) e.currentTarget.style.transform = "translateY(-1px)"; }}
+          onMouseLeave={e => (e.currentTarget.style.transform = "none")}>
+          {deleting ? "Deleting…" : "Delete Letter"}
         </button>
       </div>
     </div>
@@ -527,6 +548,19 @@ export default function ReviewPage() {
     await loadAll();
   };
 
+  const handleDeleteLetter = async (letter: StoredLetter) => {
+    const res = await fetch("/api/delete-letter", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ letterId: letter.id }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error((j as { error?: string }).error || `Delete failed (${res.status})`);
+    }
+    await loadAll();
+  };
+
   const handleRecallForEdit = async (letter: StoredLetter) => {
     const supabase = createClient();
     await updateLetterStatus(supabase, letter.id, "Draft");
@@ -638,6 +672,7 @@ export default function ReviewPage() {
           <WaitingCard key={l.id} letter={l}
             onPreview={() => navigateToPreview(l, false)}
             onEditLetter={() => handleRecallForEdit(l)}
+            onDeleteLetter={() => handleDeleteLetter(l)}
             onSaveInternal={() => handleSaveInternal(l)} />
         ))}
       </Section>

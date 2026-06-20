@@ -221,6 +221,18 @@ function PatientCard({
                         }}>
                         {isDuplicating ? "Creating…" : "Create Update"}
                       </button>
+                      <button
+                        onClick={() => onDeleteLetter(letter)}
+                        disabled={isDeleting}
+                        className="flex-1 sm:flex-none text-xs font-semibold px-3 py-2 rounded-lg border transition-all text-center"
+                        style={{
+                          borderColor: isDeleting ? "#E2E8F0" : "#FECACA",
+                          color: isDeleting ? "#94A3B8" : "#DC2626",
+                          background: isDeleting ? "#F4F6F9" : "#FEF2F2",
+                          cursor: isDeleting ? "default" : "pointer",
+                        }}>
+                        {isDeleting ? "Deleting…" : "Delete Letter"}
+                      </button>
                     </div>
                   </div>
                 );
