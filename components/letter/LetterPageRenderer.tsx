@@ -251,6 +251,7 @@ interface SectionDef {
   estimate: number;
   render: () => React.ReactNode;
   isContinuation?: boolean;
+  forceNewPage?: boolean;
 }
 
 function A4Page({ children }: { children: React.ReactNode }) {
@@ -319,7 +320,11 @@ function PageBuilder({ sections, onReady }: { sections: SectionDef[]; onReady?: 
       sections.forEach((sec, i) => {
         const h   = heights[i] ?? 0;
         const gap = curPage.length > 0 ? (sec.isContinuation ? 5 : SECTION_GAP) : 0;
-        if (curPage.length === 0 || curH + gap + h <= SAFE_H) {
+        if (sec.forceNewPage && curPage.length > 0) {
+          packed.push(curPage);
+          curPage = [sec];
+          curH    = h;
+        } else if (curPage.length === 0 || curH + gap + h <= SAFE_H) {
           curPage.push(sec);
           curH += gap + h;
         } else {
@@ -487,6 +492,11 @@ export default function LetterPageRenderer({
           </div>
         ),
       }));
+    }
+
+    // ── He→En hard page break ────────────────────────────────────────────────
+    if (d.diagHE?.trim() || d.sumHE?.trim() || d.planStepsHE?.some(s => s.trim())) {
+      arr.push({ id: "he-en-break", estimate: 0, forceNewPage: true, render: () => <div style={{ height: 0 }} /> });
     }
 
     // ── 5. English diagnosis ─────────────────────────────────────────────────
@@ -768,13 +778,15 @@ export default function LetterPageRenderer({
         );
       };
       arr.push({
-        id: "lung-function", estimate: 100,
+        id: "lung-function", estimate: 170,
         render: () => (
-          <DocSection title="" titleHe="תפקוד ריאות">
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {renderLungRow(d.lungRows[0])}
-            </div>
-          </DocSection>
+          <div style={{ paddingTop: 70 }}>
+            <DocSection title="" titleHe="תפקוד ריאות">
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {renderLungRow(d.lungRows[0])}
+              </div>
+            </DocSection>
+          </div>
         ),
       });
       d.lungRows.slice(1).forEach((row, idx) => arr.push({
@@ -814,13 +826,15 @@ export default function LetterPageRenderer({
         </div>
       );
       arr.push({
-        id: "inhalers", estimate: 100,
+        id: "inhalers", estimate: 170,
         render: () => (
-          <DocSection title="" titleHe="סרטון המסביר איך להשתמש במשאף שלך">
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {renderInhaler(activeInhalers[0], activeInhalers[0].id ?? 0)}
-            </div>
-          </DocSection>
+          <div style={{ paddingTop: 70 }}>
+            <DocSection title="" titleHe="סרטון המסביר איך להשתמש במשאף שלך">
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {renderInhaler(activeInhalers[0], activeInhalers[0].id ?? 0)}
+              </div>
+            </DocSection>
+          </div>
         ),
       });
       activeInhalers.slice(1).forEach((inh, idx) => arr.push({
