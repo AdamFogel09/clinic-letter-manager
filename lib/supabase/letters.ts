@@ -764,12 +764,12 @@ export async function deleteLetter(
   // Fetch the row first so we can clean up storage
   const { data: row } = await supabase
     .from("letters")
-    .select("id, final_pdf_url, created_by")
+    .select("id, final_pdf_url")
     .eq("id", letterId)
+    .eq("created_by", user.id)
     .single();
 
   if (!row) throw new Error("Letter not found.");
-  if (row.created_by !== user.id) throw new Error("Permission denied.");
 
   // Delete PDF from storage if it exists
   if (row.final_pdf_url) {

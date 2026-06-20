@@ -3,13 +3,14 @@
 // Supabase is now the source of truth for patients and letters.
 // Temporary storage should only be used as a fallback during development.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   getLettersByStatus,
   updateLetterStatus,
   deleteOldLettersForPatient,
+  deleteLetter,
 } from "@/lib/supabase/letters";
 import {
   markAsPreviewed,
@@ -85,8 +86,9 @@ function WaitingCard({
   onSaveInternal: () => Promise<void>;
 }) {
   const colors  = STATUS_COLORS["Waiting for Anat"];
-  const [recalling, setRecalling] = useState(false);
-  const [deleting,  setDeleting]  = useState(false);
+  const [recalling,    setRecalling]    = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
+  const [deleteError,  setDeleteError]  = useState("");
 
   const handleEdit = async () => {
     if (recalling) return;
@@ -101,7 +103,14 @@ function WaitingCard({
     );
     if (!confirmed) return;
     setDeleting(true);
-    try { await onDeleteLetter(); } finally { setDeleting(false); }
+    setDeleteError("");
+    try {
+      await onDeleteLetter();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -150,6 +159,9 @@ function WaitingCard({
           {deleting ? "Deleting…" : "Delete Letter"}
         </button>
       </div>
+      {deleteError && (
+        <p className="text-xs mt-2 font-semibold text-right" style={{ color: "#DC2626" }}>{deleteError}</p>
+      )}
     </div>
   );
 }
@@ -549,15 +561,8 @@ export default function ReviewPage() {
   };
 
   const handleDeleteLetter = async (letter: StoredLetter) => {
-    const res = await fetch("/api/delete-letter", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ letterId: letter.id }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      throw new Error((j as { error?: string }).error || `Delete failed (${res.status})`);
-    }
+    const supabase = createClient();
+    await deleteLetter(supabase, letter.id);
     await loadAll();
   };
 
