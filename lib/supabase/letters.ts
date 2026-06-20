@@ -422,10 +422,12 @@ export async function getLettersByStatus(
 export async function getAllLetters(
   supabase: SupabaseClient
 ): Promise<StoredLetter[]> {
-  const { data, error } = await supabase
+  const { data: { user } } = await supabase.auth.getUser();
+  const baseQuery = supabase
     .from("letters")
     .select("*, patients(*)")
     .order("updated_at", { ascending: false });
+  const { data, error } = await (user ? baseQuery.eq("created_by", user.id) : baseQuery);
   if (error || !data) return [];
   return (data as SupabaseLetter[]).map(supabaseLetterToStoredLetter);
 }

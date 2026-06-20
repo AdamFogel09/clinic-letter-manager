@@ -335,7 +335,7 @@ export default function AllLettersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ letterId: letter.id }),
       });
-      if (!res.ok) {
+      if (!res.ok && res.status !== 404) {
         const j = await res.json().catch(() => ({}));
         throw new Error((j as { error?: string }).error || `Delete failed (${res.status})`);
       }
