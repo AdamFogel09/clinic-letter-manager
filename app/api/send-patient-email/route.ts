@@ -136,10 +136,10 @@ export async function POST(req: NextRequest) {
   // ── Load logo from project files ──────────────────────────────────────────────
   let logoBase64: string;
   try {
-    const logoPath = path.join(process.cwd(), "logo1.png");
+    const logoPath = path.join(process.cwd(), "updatedLogo.png");
     logoBase64 = fs.readFileSync(logoPath).toString("base64");
   } catch {
-    console.error("[send-patient-email] Could not load logo1.png");
+    console.error("[send-patient-email] Could not load updatedLogo.png");
     return NextResponse.json(
       { error: "Could not load clinic logo file." },
       { status: 500 }

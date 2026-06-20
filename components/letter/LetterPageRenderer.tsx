@@ -777,21 +777,17 @@ export default function LetterPageRenderer({
         );
       };
       arr.push({
-        id: "lung-function", estimate: 170,
+        id: "lung-function", estimate: 170 + 107 * (d.lungRows.length - 1),
         render: () => (
           <div style={{ paddingTop: 70 }}>
             <DocSection title="" titleHe="תפקוד ריאות">
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {renderLungRow(d.lungRows[0])}
+                {d.lungRows.map(row => renderLungRow(row))}
               </div>
             </DocSection>
           </div>
         ),
       });
-      d.lungRows.slice(1).forEach((row, idx) => arr.push({
-        id: `lung-function-${idx + 1}`, estimate: 95, isContinuation: true,
-        render: () => renderLungRow(row),
-      }));
     }
 
     // ── 16. Inhalers ─────────────────────────────────────────────────────────
@@ -825,21 +821,17 @@ export default function LetterPageRenderer({
         </div>
       );
       arr.push({
-        id: "inhalers", estimate: 170,
+        id: "inhalers", estimate: 170 + 98 * (activeInhalers.length - 1),
         render: () => (
           <div style={{ paddingTop: 70 }}>
             <DocSection title="" titleHe="סרטון המסביר איך להשתמש במשאף שלך">
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {renderInhaler(activeInhalers[0], activeInhalers[0].id ?? 0)}
+                {activeInhalers.map((inh, idx) => renderInhaler(inh, inh.id ?? idx))}
               </div>
             </DocSection>
           </div>
         ),
       });
-      activeInhalers.slice(1).forEach((inh, idx) => arr.push({
-        id: `inhalers-${idx + 1}`, estimate: 90, isContinuation: true,
-        render: () => renderInhaler(inh, inh.id ?? idx + 1),
-      }));
     }
 
     // ── 17. Pictures ─────────────────────────────────────────────────────────
