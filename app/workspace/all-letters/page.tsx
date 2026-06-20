@@ -157,13 +157,6 @@ function PatientCard({
                 <path d="M4 6l4 4 4-4"/>
               </svg>
             </button>
-            <button
-              onClick={() => letters.length > 0 ? onDuplicateLetter(letters[0]) : onStartNewLetter(patient)}
-              disabled={duplicatingId === letters[0]?.id}
-              className="inline-flex items-center justify-center text-xs font-semibold px-3 py-2.5 rounded-xl transition-all duration-150 hover:-translate-y-px hover:shadow-sm w-full sm:w-auto"
-              style={{ backgroundColor: "#1A2B4A", color: "#fff", opacity: duplicatingId === letters[0]?.id ? 0.6 : 1 }}>
-              {duplicatingId === letters[0]?.id ? "Creating…" : "Create Update Letter"}
-            </button>
           </div>
         </div>
       </div>
