@@ -170,6 +170,7 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
     imagesTotalSizeBytes:  letter.images_total_size_bytes  ?? null,
     totalStorageSizeBytes: letter.total_storage_size_bytes ?? null,
     sentToEmail: undefined,
+    sentAt:      letter.sent_to_patient_at || undefined,
     data: {
       // Patient fields (from joined patient record)
       name:       p?.full_name         || "",

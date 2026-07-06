@@ -527,7 +527,12 @@ export default function ReviewPage() {
   const loadAll = async () => {
     const supabase = createClient();
     const statuses: LetterStatus[] = ["Waiting for Anat", "Reviewed", "Ready for Patient", "Sent to Patient"];
-    setLetters(await getLettersByStatus(supabase, statuses));
+    const all = await getLettersByStatus(supabase, statuses);
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    setLetters(all.filter((l) =>
+      l.status !== "Sent to Patient" ||
+      (l.sentAt ? new Date(l.sentAt).getTime() > cutoff : true)
+    ));
   };
 
   useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps

@@ -309,17 +309,23 @@ function PageBuilder({ sections, onReady }: { sections: SectionDef[]; onReady?: 
         await new Promise<void>(r => requestAnimationFrame(() => r()));
       }
 
+      // Measured inside the same flex column (with the same `gap` + isContinuation
+      // margin trick) used on the real page, so rect deltas capture the true
+      // rendered spacing instead of a guessed constant.
       const sectionEls = Array.from(container.querySelectorAll<HTMLElement>(":scope > [data-sid]"));
-      const heights = sectionEls.map(el => el.getBoundingClientRect().height);
+      const rects = sectionEls.map(el => el.getBoundingClientRect());
 
-      const SAFE_H = CONTENT_H - 10;
+      const SAFE_H = CONTENT_H - 20;
       const packed: SectionDef[][] = [];
       let curPage: SectionDef[] = [];
       let curH = 0;
 
       sections.forEach((sec, i) => {
-        const h   = heights[i] ?? 0;
-        const gap = curPage.length > 0 ? (sec.isContinuation ? 5 : SECTION_GAP) : 0;
+        const rect = rects[i];
+        const h    = rect ? rect.height : 0;
+        const gap  = (curPage.length > 0 && i > 0 && rects[i - 1])
+          ? Math.max(0, rect.top - rects[i - 1].bottom)
+          : 0;
         if (sec.forceNewPage) {
           if (curPage.length > 0) { packed.push(curPage); curPage = []; curH = 0; }
           return; // spacer consumed — not placed on any page, next section starts fresh
@@ -354,10 +360,13 @@ function PageBuilder({ sections, onReady }: { sections: SectionDef[]; onReady?: 
       {measuring && (
         <div
           ref={measureRef}
+          className="a4-page"
           aria-hidden="true"
           style={{
             position: "fixed", top: 0, left: "-9999px", width: 740,
+            height: "auto", maxWidth: "none", boxShadow: "none", overflow: "visible",
             visibility: "hidden", pointerEvents: "none", zIndex: -1,
+            display: "flex", flexDirection: "column", gap: SECTION_GAP,
           }}
         >
           {sections.map(s => (

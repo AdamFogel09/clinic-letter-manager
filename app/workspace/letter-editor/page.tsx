@@ -15,6 +15,7 @@ import {
   planStepsToENArr, planStepsToHEArr,
 } from "@/lib/supabase/letters";
 import { updatePatientIdNumber } from "@/lib/supabase/patients";
+import PlanStepInput from "./PlanStepInput";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1384,7 +1385,6 @@ export default function LetterEditorPage() {
   const doTranslateDiagItem = async (id: string) => {
     const item = diagItems.find(i => i.id === id);
     if (!item?.textEN.trim()) return;
-    if (item.source === "copied") return;
     setTranslatingDiag(id);
     setDiagTxErrors(prev => ({ ...prev, [id]: "" }));
     try {
@@ -1437,7 +1437,6 @@ export default function LetterEditorPage() {
   const translateDiagItem = (id: string) => {
     const item = diagItems.find(i => i.id === id);
     if (!item?.textEN.trim()) return;
-    if (item.source === "copied") return;
     if (item.textHE.trim()) { setTxConfirm({ type: "diagItem", itemId: id }); return; }
     doTranslateDiagItem(id);
   };
@@ -1488,6 +1487,8 @@ export default function LetterEditorPage() {
   ));
   const removePlanStep = (id: string) => setPlanSteps(prev => prev.filter(s => s.id !== id));
   const addPlanStep    = () => setPlanSteps(prev => [...prev, { id: newStepId(), textEN: "", textHE: "", source: "new" }]);
+  const handlePlanPresetSelect = (id: string, textEN: string, textHE: string) =>
+    setPlanSteps(prev => prev.map(s => s.id === id ? { ...s, textEN, textHE, source: "copied" as const } : s));
 
   const addMed = () => { if (medInput.trim()) { setMedications(m => [...m, medInput.trim()]); setMedInput(""); } };
   const removeMed = (i: number) => setMedications(m => m.filter((_, idx) => idx !== i));
@@ -1645,69 +1646,48 @@ export default function LetterEditorPage() {
                             : { backgroundColor: "#EDE9FE", color: "#7C3AED" }}>
                           {isCopied ? "Previous" : "New Diagnosis"}
                         </span>
-                        {!isCopied && (
-                          <button type="button" onClick={() => removeDiagItem(item.id)}
-                            className="ml-auto text-xs transition-colors duration-150"
-                            style={{ color: "#CBD5E1" }}
-                            onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                            onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
-                            Remove
-                          </button>
-                        )}
+                        <button type="button" onClick={() => removeDiagItem(item.id)}
+                          className="ml-auto text-xs transition-colors duration-150"
+                          style={{ color: "#CBD5E1" }}
+                          onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                          onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                          Remove
+                        </button>
                       </div>
                     )}
                     {/* English */}
-                    {isCopied ? (
-                      <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
-                          {item.textEN || "—"}
-                        </p>
-                      </div>
-                    ) : (
-                      <textarea className={ta} style={is} rows={5}
-                        value={item.textEN}
-                        onChange={e => updateDiagItemEN(item.id, e.target.value)}
-                        placeholder="Enter full diagnosis in English" />
-                    )}
+                    <textarea className={ta} style={is} rows={5}
+                      value={item.textEN}
+                      onChange={e => updateDiagItemEN(item.id, e.target.value)}
+                      placeholder="Enter full diagnosis in English" />
                     {/* Translate button */}
-                    {!isCopied && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <TranslateBtn
-                          onClick={() => translateDiagItem(item.id)}
-                          disabled={!item.textEN.trim()}
-                          loading={translatingDiag === item.id}
-                          label={item.textHE.trim() ? "Retranslate to Hebrew" : "Translate to Hebrew"}
-                        />
-                        {item.textHE.trim() && translatingDiag !== item.id && (
-                          <span className="text-xs font-medium px-2 py-0.5 rounded-full"
-                            style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
-                            Hebrew exists — will ask before replacing
-                          </span>
-                        )}
-                        {diagTxErrors[item.id] && (
-                          <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{diagTxErrors[item.id]}</p>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <TranslateBtn
+                        onClick={() => translateDiagItem(item.id)}
+                        disabled={!item.textEN.trim()}
+                        loading={translatingDiag === item.id}
+                        label={item.textHE.trim() ? "Retranslate to Hebrew" : "Translate to Hebrew"}
+                      />
+                      {item.textHE.trim() && translatingDiag !== item.id && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "#FEF9C3", color: "#92400E" }}>
+                          Hebrew exists — will ask before replacing
+                        </span>
+                      )}
+                      {diagTxErrors[item.id] && (
+                        <p className="text-xs font-medium" style={{ color: "#BE123C" }}>{diagTxErrors[item.id]}</p>
+                      )}
+                    </div>
                     {/* Hebrew */}
-                    {isCopied ? (
-                      <div className="rounded-xl px-4 py-3" style={{ backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap"
-                          style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
-                          {item.textHE || "—"}
-                        </p>
-                      </div>
-                    ) : (
-                      <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
-                        value={item.textHE}
-                        onChange={e => updateDiagItemHE(item.id, e.target.value)}
-                        placeholder="אבחנה בעברית — לאחר תרגום" />
-                    )}
+                    <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
+                      value={item.textHE}
+                      onChange={e => updateDiagItemHE(item.id, e.target.value)}
+                      placeholder="אבחנה בעברית — לאחר תרגום" />
                   </div>
                 );
               })}
-              {/* Add Diagnosis — only when all current items are copied (update mode) */}
-              {diagItems.every(i => i.source === "copied") && (
+              {/* Add Diagnosis — only when no item is currently "new" (update mode) */}
+              {diagItems.every(i => i.source !== "new") && (
                 <button type="button" onClick={addDiagItem}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all duration-150 hover:-translate-y-px"
                   style={{ borderColor: "#1A2B4A", color: "#1A2B4A" }}>
@@ -1858,10 +1838,12 @@ export default function LetterEditorPage() {
                         onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
                         onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>Remove</button>
                     </div>
-                    <input className={`w-full ${ic}`} style={is}
+                    <PlanStepInput
                       value={step.textEN}
-                      onChange={e => updatePlanStepEN(step.id, e.target.value)}
-                      placeholder={`Plan step ${idx + 1}`} />
+                      placeholder={`Plan step ${idx + 1}`}
+                      onChange={val => updatePlanStepEN(step.id, val)}
+                      onPresetSelect={(en, he) => handlePlanPresetSelect(step.id, en, he)}
+                    />
                     {step.source !== "copied" && (
                       <div className="flex items-center gap-2 flex-wrap">
                         <TranslateBtn
