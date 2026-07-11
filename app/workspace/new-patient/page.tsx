@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { savePatient } from "@/lib/supabase/patients";
+import { savePatient, type ContactEntry } from "@/lib/supabase/patients";
+import { ContactListField } from "@/components/patient/ContactListField";
 
 const inputClass =
   "w-full px-4 py-2.5 rounded-xl border bg-white text-sm transition-colors duration-150 focus:outline-none";
@@ -135,8 +136,6 @@ export default function NewPatientPage() {
     gender: "",
     smoking: "",
     pets: "",
-    email: "",
-    phone: "",
     occupation: "",
     referredBy: "",
     location: "",
@@ -144,12 +143,13 @@ export default function NewPatientPage() {
     dateMonth: String(new Date().getMonth() + 1).padStart(2, "0"),
     dateYear: String(new Date().getFullYear()),
   });
+  const [emails, setEmails] = useState<ContactEntry[]>([{ value: "", label: "" }]);
+  const [phones, setPhones] = useState<ContactEntry[]>([{ value: "", label: "" }]);
 
   const monthRef      = useRef<HTMLInputElement>(null);
   const yearRef       = useRef<HTMLInputElement>(null);
   const dateMonthRef  = useRef<HTMLInputElement>(null);
   const dateYearRef   = useRef<HTMLInputElement>(null);
-  const phoneRestRef  = useRef<HTMLInputElement>(null);
 
   const set = (key: string) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -197,6 +197,9 @@ export default function NewPatientPage() {
     setSaving(true);
     setSaveError("");
 
+    const cleanEmails = emails.filter((e) => e.value.trim());
+    const cleanPhones = phones.filter((e) => e.value.trim());
+
     const supabase = createClient();
     const { patient, error } = await savePatient(supabase, {
       full_name:          form.name,
@@ -206,8 +209,8 @@ export default function NewPatientPage() {
       birthdate_year:     form.year,
       calculated_age:     age,
       gender:             form.gender,
-      email:              form.email,
-      phone:              form.phone,
+      emails:             cleanEmails,
+      phones:             cleanPhones,
       smoking_vaping:     form.smoking,
       pets:               form.pets,
       occupation:         form.occupation,
@@ -224,6 +227,8 @@ export default function NewPatientPage() {
     // Pass patient data + Supabase UUID to the letter editor so the letter is linked to this patient.
     sessionStorage.setItem("draft_patient", JSON.stringify({
       ...form,
+      emails: cleanEmails,
+      phones: cleanPhones,
       age,
       ...(patient ? { supabase_patient_id: patient.id } : {}),
     }));
@@ -349,60 +354,15 @@ export default function NewPatientPage() {
               </div>
             </Field>
 
-            {/* Email */}
-            <Field label="Email">
-              <input type="email" className={inputClass} style={inputStyle}
-                value={form.email} onChange={set("email")}
-                placeholder="Patient email address" />
-            </Field>
+            {/* Emails */}
+            <div className="col-span-1 sm:col-span-2">
+              <ContactListField type="email" label="Email" entries={emails} onChange={setEmails} />
+            </div>
 
-            {/* Phone — 05X-XXXXXXX structure */}
-            <Field label="Phone">
-              <div className="flex items-center rounded-xl border overflow-hidden" style={{ borderColor: "#E2E8F0" }}>
-                {/* Fixed prefix */}
-                <span className="px-3 py-2.5 bg-white text-sm font-semibold flex-shrink-0"
-                  style={{ color: "#94A3B8", borderRight: "1px solid #F4F6F9" }}>
-                  05
-                </span>
-                {/* 3rd digit — operator code (1 char, auto-advances) */}
-                <input
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={form.phone.replace(/\D/g, "").slice(2, 3)}
-                  onChange={e => {
-                    const d1 = e.target.value.replace(/\D/g, "").slice(0, 1);
-                    const d2 = form.phone.replace(/\D/g, "").slice(3, 10);
-                    setForm(f => ({ ...f, phone: d1 ? ("05" + d1 + (d2 ? "-" + d2 : "")) : "" }));
-                    if (d1) phoneRestRef.current?.focus();
-                  }}
-                  className="w-9 py-2.5 bg-white text-sm focus:outline-none text-center"
-                  style={{ color: "#1A2B4A" }}
-                  placeholder="0"
-                />
-                {/* Visual dash */}
-                <span className="text-sm select-none" style={{ color: "#94A3B8" }}>-</span>
-                {/* Remaining 7 digits */}
-                <input
-                  ref={phoneRestRef}
-                  inputMode="numeric"
-                  maxLength={7}
-                  value={form.phone.replace(/\D/g, "").slice(3, 10)}
-                  onChange={e => {
-                    const d2 = e.target.value.replace(/\D/g, "").slice(0, 7);
-                    const d1 = form.phone.replace(/\D/g, "").slice(2, 3);
-                    setForm(f => ({ ...f, phone: d1 ? ("05" + d1 + "-" + d2) : ("05" + d2) }));
-                  }}
-                  className="flex-1 px-2 py-2.5 bg-white text-sm focus:outline-none"
-                  style={{ color: "#1A2B4A" }}
-                  placeholder="0000000"
-                />
-              </div>
-              {form.phone.replace(/\D/g, "").length > 2 && form.phone.replace(/\D/g, "").length < 10 && (
-                <p className="text-xs mt-1.5 font-medium" style={{ color: "#BE123C" }}>
-                  Phone must be 10 digits (e.g. 050-5004009).
-                </p>
-              )}
-            </Field>
+            {/* Phones — 05X-XXXXXXX structure */}
+            <div className="col-span-1 sm:col-span-2">
+              <ContactListField type="phone" label="Phone" entries={phones} onChange={setPhones} />
+            </div>
 
             {/* Smoking / Vaping */}
             <Field label="Smoking / Vaping">

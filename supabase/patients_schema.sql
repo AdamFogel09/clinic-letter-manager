@@ -18,8 +18,8 @@ CREATE TABLE IF NOT EXISTS patients (
 
   -- Demographics
   gender              text,
-  email               text,
-  phone               text,
+  emails              jsonb NOT NULL DEFAULT '[]'::jsonb,  -- [{ value, label }], index 0 = primary
+  phones              jsonb NOT NULL DEFAULT '[]'::jsonb,  -- [{ value, label }], index 0 = primary
   smoking_vaping      text,
   pets                text,
   occupation          text,

@@ -3,6 +3,12 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// An ordered contact entry — index 0 in a Patient's emails/phones array is always the primary.
+export interface ContactEntry {
+  value: string;   // email address or phone number
+  label: string;   // optional free-text tag, e.g. "Son" — empty string if none
+}
+
 export interface Patient {
   id: string;
   created_at: string;
@@ -14,8 +20,8 @@ export interface Patient {
   birthdate_year: string;
   calculated_age: string;
   gender: string;
-  email: string;
-  phone: string;
+  emails: ContactEntry[];
+  phones: ContactEntry[];
   smoking_vaping: string;
   pets: string;
   occupation: string;
@@ -24,11 +30,19 @@ export interface Patient {
   created_by: string;
 }
 
+export function getPrimaryEmail(entries: ContactEntry[] | undefined | null): string {
+  return entries?.[0]?.value || "";
+}
+
+export function getPrimaryPhone(entries: ContactEntry[] | undefined | null): string {
+  return entries?.[0]?.value || "";
+}
+
 export type NewPatientData = Omit<Patient, "id" | "created_at" | "updated_at" | "created_by">;
 
 // Convert a Supabase Patient into the sessionStorage shape the Letter Editor expects.
 // supabase_patient_id carries the DB UUID so the editor can link the new letter on save.
-export function patientToDraft(p: Patient): Record<string, string> {
+export function patientToDraft(p: Patient): Record<string, unknown> {
   return {
     supabase_patient_id: p.id,
     name:       p.full_name,
@@ -37,8 +51,8 @@ export function patientToDraft(p: Patient): Record<string, string> {
     month:      p.birthdate_month,
     year:       p.birthdate_year,
     gender:     p.gender,
-    email:      p.email,
-    phone:      p.phone,
+    emails:     p.emails,
+    phones:     p.phones,
     smoking:    p.smoking_vaping,
     pets:       p.pets,
     occupation: p.occupation,

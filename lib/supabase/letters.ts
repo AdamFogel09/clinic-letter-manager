@@ -3,6 +3,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StoredLetter, LetterStatus } from "@/lib/letterStore";
+import type { ContactEntry } from "@/lib/supabase/patients";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,8 +118,8 @@ export interface SupabaseLetter {
   patients?: {
     full_name: string;
     patient_id_number: string;
-    email: string;
-    phone: string;
+    emails: ContactEntry[];
+    phones: ContactEntry[];
     gender: string;
     birthdate_day: string;
     birthdate_month: string;
@@ -179,8 +180,8 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
       bMonth:     p?.birthdate_month   || "",
       bYear:      p?.birthdate_year    || "",
       gender:     p?.gender            || "",
-      email:      p?.email             || "",
-      phone:      p?.phone             || "",
+      emails:     p?.emails            || [],
+      phones:     p?.phones            || [],
       smoking:    p?.smoking_vaping    || "",
       pets:       p?.pets              || "",
       occupation: p?.occupation        || "",

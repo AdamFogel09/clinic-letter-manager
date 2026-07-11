@@ -84,13 +84,16 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Parse body ────────────────────────────────────────────────────────────────
-  let body: { letterId?: string };
+  let body: { letterId?: string; recipientEmails?: string[] };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 }); }
 
-  const { letterId } = body;
+  const { letterId, recipientEmails } = body;
   if (!letterId) {
     return NextResponse.json({ error: "letterId is required." }, { status: 400 });
+  }
+  if (!recipientEmails || recipientEmails.length === 0) {
+    return NextResponse.json({ error: "recipientEmails is required." }, { status: 400 });
   }
 
   // ── Fetch letter + patient ────────────────────────────────────────────────────
@@ -103,9 +106,15 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Patient email ─────────────────────────────────────────────────────────────
-  const patientEmail = letter.patients?.email?.trim();
-  if (!patientEmail) {
-    return NextResponse.json({ error: "Patient email is missing." }, { status: 400 });
+  // Only allow sending to addresses that are actually on file for this patient —
+  // defense in depth against a client bug/tamper submitting arbitrary addresses.
+  const knownEmails = new Set(
+    (letter.patients?.emails || []).map((e) => e.value.trim().toLowerCase())
+  );
+  const validEmails = [...new Set(recipientEmails.map((e) => e.trim()))]
+    .filter((e) => knownEmails.has(e.toLowerCase()));
+  if (validEmails.length === 0) {
+    return NextResponse.json({ error: "No valid recipient email(s)." }, { status: 400 });
   }
 
   // ── Generate PDF on-the-fly ───────────────────────────────────────────────────
@@ -185,7 +194,7 @@ export async function POST(req: NextRequest) {
 
   const rawMessage = buildRawEmail({
     from:        process.env.GMAIL_SENDER_EMAIL!,
-    to:          patientEmail,
+    to:          validEmails.join(", "),
     subject:     "Clinic Letter from Dr. Sumit Chatterji",
     bodyHtml:    emailBodyHtml,
     pdfBase64,
@@ -225,7 +234,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    sentTo:  patientEmail,
+    sentTo:  validEmails,
     sentAt:  new Date().toISOString(),
   });
 }

@@ -18,6 +18,7 @@ import {
   type StoredLetter,
   type LetterStatus,
 } from "@/lib/letterStore";
+import type { ContactEntry } from "@/lib/supabase/patients";
 // ─── Status colours ───────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<LetterStatus, { bg: string; text: string }> = {
@@ -249,11 +250,23 @@ function ReviewedCard({
 // ─── Send confirmation modal ──────────────────────────────────────────────────
 
 function ConfirmSendModal({
-  patientName, patientEmail, sending, success, onCancel, onConfirm,
+  patientName, emails, sending, success, onCancel, onConfirm,
 }: {
-  patientName: string; patientEmail: string;
-  sending: boolean; success: boolean; onCancel: () => void; onConfirm: () => void;
+  patientName: string; emails: ContactEntry[];
+  sending: boolean; success: boolean; onCancel: () => void; onConfirm: (recipientEmails: string[]) => void;
 }) {
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(emails[0]?.value ? [emails[0].value] : [])
+  );
+
+  const toggle = (value: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  };
+
   if (success) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center"
@@ -286,13 +299,25 @@ function ConfirmSendModal({
           Please confirm before sending. The patient will receive the final clinic letter.
         </p>
         <div className="rounded-xl px-4 py-3 mb-5" style={{ backgroundColor: "#F8FAFC", border: "1px solid #E2E8F0" }}>
-          <div className="flex items-baseline gap-3 mb-2">
+          <div className="flex items-baseline gap-3 mb-3">
             <span className="text-xs font-semibold w-14 flex-shrink-0" style={{ color: "#64748B" }}>Patient</span>
             <span className="text-sm font-semibold" style={{ color: "#1A2B4A" }}>{patientName}</span>
           </div>
-          <div className="flex items-baseline gap-3">
-            <span className="text-xs font-semibold w-14 flex-shrink-0" style={{ color: "#64748B" }}>Email</span>
-            <span className="text-sm" style={{ color: "#1A2B4A", wordBreak: "break-all" }}>{patientEmail}</span>
+          <span className="text-xs font-semibold block mb-1.5" style={{ color: "#64748B" }}>Send to</span>
+          <div className="space-y-1.5">
+            {emails.map((entry, i) => (
+              <label key={entry.value} className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={selected.has(entry.value)}
+                  onChange={() => toggle(entry.value)} className="flex-shrink-0" />
+                <span className="text-sm" style={{ color: "#1A2B4A", wordBreak: "break-all" }}>{entry.value}</span>
+                {i === 0 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: "#FEF3C7", color: "#92400E" }}>PRIMARY</span>
+                )}
+                {entry.label && (
+                  <span className="text-xs flex-shrink-0" style={{ color: "#94A3B8" }}>({entry.label})</span>
+                )}
+              </label>
+            ))}
           </div>
         </div>
         <div className="rounded-xl px-3 py-2 mb-5 flex items-start gap-2"
@@ -311,12 +336,12 @@ function ConfirmSendModal({
             style={{ backgroundColor: "white", color: "#64748B", borderColor: "#E2E8F0" }}>
             Cancel
           </button>
-          <button onClick={onConfirm} disabled={sending}
+          <button onClick={() => onConfirm(Array.from(selected))} disabled={sending || selected.size === 0}
             className="text-xs font-semibold px-4 py-2 rounded-xl border transition-all duration-150"
-            style={{ backgroundColor: sending ? "#F4F6F9" : "#1A2B4A",
-              color: sending ? "#94A3B8" : "#fff",
-              borderColor: sending ? "#E2E8F0" : "#1A2B4A",
-              cursor: sending ? "default" : "pointer" }}>
+            style={{ backgroundColor: sending || selected.size === 0 ? "#F4F6F9" : "#1A2B4A",
+              color: sending || selected.size === 0 ? "#94A3B8" : "#fff",
+              borderColor: sending || selected.size === 0 ? "#E2E8F0" : "#1A2B4A",
+              cursor: sending || selected.size === 0 ? "default" : "pointer" }}>
             {sending ? "Sending…" : "Send PDF"}
           </button>
         </div>
@@ -338,7 +363,7 @@ function ReadyCard({
 }) {
   const colors       = STATUS_COLORS["Ready for Patient"];
   const d            = (letter.data ?? {}) as Record<string, unknown>;
-  const patientEmail = (d.email    as string) || "";
+  const emails       = (d.emails   as ContactEntry[]) || [];
   const patientName  = (d.name     as string) || letter.patientName || "";
   const patientId    = (d.patId    as string) || letter.patientId   || "";
   const location     = (d.location as string) || "";
@@ -352,18 +377,18 @@ function ReadyCard({
 
   const handleSendClick = () => {
     setSendError("");
-    if (!patientEmail) { setNoEmailError(true); setTimeout(() => setNoEmailError(false), 4000); return; }
+    if (emails.length === 0) { setNoEmailError(true); setTimeout(() => setNoEmailError(false), 4000); return; }
     setShowModal(true);
   };
 
-  const confirmSend = async () => {
+  const confirmSend = async (recipientEmails: string[]) => {
     setSending(true);
     setSendError("");
     try {
       const res = await fetch("/api/send-patient-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ letterId: letter.id }),
+        body: JSON.stringify({ letterId: letter.id, recipientEmails }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Send failed.");
@@ -382,7 +407,7 @@ function ReadyCard({
   return (
     <>
       {showModal && (
-        <ConfirmSendModal patientName={patientName} patientEmail={patientEmail}
+        <ConfirmSendModal patientName={patientName} emails={emails}
           sending={sending} success={sendSuccess} onCancel={() => { if (!sending && !sendSuccess) setShowModal(false); }} onConfirm={confirmSend} />
       )}
       <div className="bg-white rounded-2xl border px-5 py-4"
@@ -430,10 +455,13 @@ function ReadyCard({
               Patient email is missing. Add it in Patient Details.
             </p>}
             {sendError && <p className="text-xs" style={{ color: "#BE123C" }}>{sendError}</p>}
-            {!noEmailError && !sendError && patientEmail && (
-              <p className="text-xs truncate" style={{ color: "#94A3B8" }}>Will send to: {patientEmail}</p>
+            {!noEmailError && !sendError && emails.length > 0 && (
+              <p className="text-xs truncate" style={{ color: "#94A3B8" }}>
+                Will send to: {emails[0].value}
+                {emails.length > 1 && ` (+${emails.length - 1} more available)`}
+              </p>
             )}
-            {!noEmailError && !sendError && !patientEmail && (
+            {!noEmailError && !sendError && emails.length === 0 && (
               <p className="text-xs" style={{ color: "#CBD5E1" }}>No patient email on file</p>
             )}
           </div>

@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { getAllPatients, patientToDraft, type Patient } from "@/lib/supabase/patients";
+import { getAllPatients, patientToDraft, getPrimaryEmail, getPrimaryPhone, type Patient } from "@/lib/supabase/patients";
 import { getAllLetters, duplicateLetter, deleteLetter } from "@/lib/supabase/letters";
 import { type StoredLetter, type LetterStatus } from "@/lib/letterStore";
 
@@ -135,8 +135,8 @@ function PatientCard({
               {ageLine && <span className="text-xs" style={{ color: "#64748B" }}>{ageLine}</span>}
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
-              {patient.phone && <span className="text-xs" style={{ color: "#94A3B8" }}>{patient.phone}</span>}
-              {patient.email && <span className="text-xs" style={{ color: "#94A3B8" }}>{patient.email}</span>}
+              {getPrimaryPhone(patient.phones) && <span className="text-xs" style={{ color: "#94A3B8" }}>{getPrimaryPhone(patient.phones)}</span>}
+              {getPrimaryEmail(patient.emails) && <span className="text-xs" style={{ color: "#94A3B8" }}>{getPrimaryEmail(patient.emails)}</span>}
             </div>
           </div>
 

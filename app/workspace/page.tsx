@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import StatusCard from "@/components/dashboard/StatusCard";
 import { getLetters } from "@/lib/letterStore";
 import { createClient } from "@/lib/supabase/client";
-import { getAllPatients, patientToDraft, updatePatient, type Patient } from "@/lib/supabase/patients";
+import { getAllPatients, patientToDraft, updatePatient, getPrimaryEmail, getPrimaryPhone, type Patient } from "@/lib/supabase/patients";
+import { ContactListField } from "@/components/patient/ContactListField";
 import { getLetterCounts, duplicateLetter } from "@/lib/supabase/letters";
 
 function calcAge(day: string, month: string, year: string): string {
@@ -172,7 +173,7 @@ export default function WorkspacePage() {
     setEditFields({
       full_name: p.full_name, patient_id_number: p.patient_id_number,
       birthdate_day: p.birthdate_day, birthdate_month: p.birthdate_month, birthdate_year: p.birthdate_year,
-      gender: p.gender, email: p.email, phone: p.phone,
+      gender: p.gender, emails: p.emails, phones: p.phones,
       smoking_vaping: p.smoking_vaping, pets: p.pets,
       occupation: p.occupation, referred_by: p.referred_by, location: p.location,
     });
@@ -349,11 +350,11 @@ export default function WorkspacePage() {
                               {meta && (
                                 <span className="text-xs" style={{ color: "#64748B" }}>{meta}</span>
                               )}
-                              {p.phone && (
-                                <span className="text-xs" style={{ color: "#94A3B8" }}>{p.phone}</span>
+                              {getPrimaryPhone(p.phones) && (
+                                <span className="text-xs" style={{ color: "#94A3B8" }}>{getPrimaryPhone(p.phones)}</span>
                               )}
-                              {p.email && (
-                                <span className="text-xs" style={{ color: "#94A3B8" }}>{p.email}</span>
+                              {getPrimaryEmail(p.emails) && (
+                                <span className="text-xs" style={{ color: "#94A3B8" }}>{getPrimaryEmail(p.emails)}</span>
                               )}
                             </div>
                           </div>
@@ -436,8 +437,6 @@ export default function WorkspacePage() {
               {[
                 { label: "Full Name",      key: "full_name",          colSpan: true },
                 { label: "Patient ID",     key: "patient_id_number",  colSpan: false },
-                { label: "Email",          key: "email",              colSpan: true },
-                { label: "Phone",          key: "phone",              colSpan: false },
                 { label: "Day (DD)",       key: "birthdate_day",      colSpan: false },
                 { label: "Month (MM)",     key: "birthdate_month",    colSpan: false },
                 { label: "Year (YYYY)",    key: "birthdate_year",     colSpan: false },
@@ -458,6 +457,14 @@ export default function WorkspacePage() {
                   />
                 </div>
               ))}
+              <div className="col-span-2">
+                <ContactListField type="email" label="Email" entries={editFields.emails ?? []}
+                  onChange={emails => setEditFields(prev => ({ ...prev, emails }))} />
+              </div>
+              <div className="col-span-2">
+                <ContactListField type="phone" label="Phone" entries={editFields.phones ?? []}
+                  onChange={phones => setEditFields(prev => ({ ...prev, phones }))} />
+              </div>
             </div>
             {editError && (
               <p className="px-6 pb-2 text-xs" style={{ color: "#DC2626" }}>{editError}</p>

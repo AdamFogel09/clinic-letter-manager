@@ -14,7 +14,8 @@ import {
   diagItemsToEN, diagItemsToHE,
   planStepsToENArr, planStepsToHEArr,
 } from "@/lib/supabase/letters";
-import { updatePatientIdNumber } from "@/lib/supabase/patients";
+import { updatePatientIdNumber, updatePatient, type ContactEntry } from "@/lib/supabase/patients";
+import { ContactListField } from "@/components/patient/ContactListField";
 import PlanStepInput from "./PlanStepInput";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -482,7 +483,8 @@ export default function LetterEditorPage() {
   const [patId, setPatId] = useState("");
   const [bDay, setBDay] = useState(""); const [bMonth, setBMonth] = useState(""); const [bYear, setBYear] = useState("");
   const [gender, setGender] = useState("");
-  const [email, setEmail] = useState(""); const [phone, setPhone] = useState("");
+  const [emails, setEmails] = useState<ContactEntry[]>([{ value: "", label: "" }]);
+  const [phones, setPhones] = useState<ContactEntry[]>([{ value: "", label: "" }]);
   const [smoking, setSmoking] = useState(""); const [pets, setPets] = useState("");
   const [occupation, setOccupation] = useState(""); const [referredBy, setReferredBy] = useState("");
   const [location, setLocation] = useState("");
@@ -619,8 +621,8 @@ export default function LetterEditorPage() {
         if (p.month)      setBMonth(p.month);
         if (p.year)       setBYear(p.year);
         if (p.gender)     setGender(p.gender);
-        if (p.email)      setEmail(p.email);
-        if (p.phone)      setPhone(p.phone);
+        if (p.emails?.length) setEmails(p.emails);
+        if (p.phones?.length) setPhones(p.phones);
         if (p.smoking)    setSmoking(p.smoking);
         if (p.pets)       setPets(p.pets);
         if (p.occupation) setOccupation(p.occupation);
@@ -673,8 +675,8 @@ export default function LetterEditorPage() {
           if (d.bMonth)       setBMonth(d.bMonth);
           if (d.bYear)        setBYear(d.bYear);
           if (d.gender)       setGender(d.gender);
-          if (d.email)        setEmail(d.email);
-          if (d.phone)        setPhone(d.phone);
+          if (d.emails?.length) setEmails(d.emails);
+          if (d.phones?.length) setPhones(d.phones);
           if (d.smoking)      setSmoking(d.smoking);
           if (d.pets)         setPets(d.pets);
           if (d.occupation)   setOccupation(d.occupation);
@@ -795,7 +797,7 @@ export default function LetterEditorPage() {
     if (!initialized) return;
     try {
       sessionStorage.setItem("letter_draft", JSON.stringify({
-        name, patId, bDay, bMonth, bYear, gender, email, phone,
+        name, patId, bDay, bMonth, bYear, gender, emails, phones,
         smoking, pets, occupation, referredBy, location,
         dateDay, dateMonth, dateYear,
         diagItems,
@@ -820,7 +822,7 @@ export default function LetterEditorPage() {
     isInitialRenderRef.current = true;
   }, [
     initialized,
-    name, patId, bDay, bMonth, bYear, gender, email, phone,
+    name, patId, bDay, bMonth, bYear, gender, emails, phones,
     smoking, pets, occupation, referredBy, location,
     dateDay, dateMonth, dateYear,
     diagItems, summarySections, planSteps,
@@ -854,7 +856,6 @@ export default function LetterEditorPage() {
   const bYearRef     = useRef<HTMLInputElement>(null);
   const dMonthRef    = useRef<HTMLInputElement>(null);
   const dYearRef     = useRef<HTMLInputElement>(null);
-  const phoneRestRef = useRef<HTMLInputElement>(null);
 
   // Examination Enter-key navigation refs
   const bpRef    = useRef<HTMLInputElement>(null);
@@ -1029,7 +1030,7 @@ export default function LetterEditorPage() {
     // Pictures are now small metadata objects (not base64), so no quota issues.
     const _previewPayload = {
       name, patId, bDay, bMonth, bYear, gender,
-      email, phone, smoking, pets, occupation, referredBy, location,
+      emails, phones, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems, diagEN: _diagEN, diagHE: _diagHE,
       summarySections, sumEN: _sumEN, sumHE: _sumHE,
@@ -1057,7 +1058,7 @@ export default function LetterEditorPage() {
 
     const letterData = {
       name, patId, bDay, bMonth, bYear, gender,
-      email, phone, smoking, pets, occupation, referredBy, location,
+      emails, phones, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems,
       diagEN: diagItemsToEN(diagItems),
@@ -1137,6 +1138,18 @@ export default function LetterEditorPage() {
         }
       }
 
+      // Sync the emails/phones list back to the master patient record.
+      if (supabasePatientIdRef.current) {
+        try {
+          await updatePatient(supabase, supabasePatientIdRef.current, {
+            emails: emails.filter((e) => e.value.trim()),
+            phones: phones.filter((e) => e.value.trim()),
+          });
+        } catch (e) {
+          console.warn("[saveDraft] patient contact sync skipped:", e);
+        }
+      }
+
       if (approvedStatus) setApprovedStatus("");
       setDraftSaved(true);
       setHasUnsavedChanges(false);
@@ -1169,7 +1182,7 @@ export default function LetterEditorPage() {
     const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
     const letterData = {
       name, patId, bDay, bMonth, bYear, gender,
-      email, phone, smoking, pets, occupation, referredBy, location,
+      emails, phones, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems,
       diagEN: diagItemsToEN(diagItems),
@@ -1259,7 +1272,7 @@ export default function LetterEditorPage() {
     const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
     const letterData = {
       name, patId, bDay, bMonth, bYear, gender,
-      email, phone, smoking, pets, occupation, referredBy, location,
+      emails, phones, smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems,
       diagEN: diagItemsToEN(diagItems),
@@ -1558,52 +1571,12 @@ export default function LetterEditorPage() {
                 <div className="flex-1"><NavySelect value={gender} onChange={setGender} options={["Male","Female","Other"]} placeholder="Gender"/></div>
               </div>
             </F>
-            <F label="Email"><input type="email" className={ic} style={is} value={email} onChange={e=>setEmail(e.target.value)} placeholder="Patient email address"/></F>
-            <F label="Phone">
-              {/* Structure: 05 [X] - [XXXXXXX]  →  saved as e.g. 050-5004009 */}
-              <div className="flex items-center rounded-xl border overflow-hidden" style={{borderColor:"#E2E8F0"}}>
-                {/* Fixed prefix */}
-                <span className="px-3 py-2.5 bg-white text-sm font-semibold flex-shrink-0"
-                  style={{color:"#94A3B8", borderRight:"1px solid #F4F6F9"}}>05</span>
-                {/* 3rd digit — operator code (1 char, auto-advances) */}
-                <input
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={phone.replace(/\D/g,"").slice(2,3)}
-                  onChange={e => {
-                    const d1 = e.target.value.replace(/\D/g,"").slice(0,1);
-                    const d2 = phone.replace(/\D/g,"").slice(3,10);
-                    setPhone(d1 ? ("05"+d1+(d2 ? "-"+d2 : "")) : "");
-                    if (d1) phoneRestRef.current?.focus();
-                  }}
-                  className="w-9 py-2.5 bg-white text-sm focus:outline-none text-center"
-                  style={{color:"#1A2B4A"}}
-                  placeholder="0"
-                />
-                {/* Visual dash separator */}
-                <span className="text-sm select-none" style={{color:"#94A3B8"}}>-</span>
-                {/* Remaining 7 digits */}
-                <input
-                  ref={phoneRestRef}
-                  inputMode="numeric"
-                  maxLength={7}
-                  value={phone.replace(/\D/g,"").slice(3,10)}
-                  onChange={e => {
-                    const d2 = e.target.value.replace(/\D/g,"").slice(0,7);
-                    const d1 = phone.replace(/\D/g,"").slice(2,3);
-                    setPhone(d1 ? ("05"+d1+"-"+d2) : ("05"+d2));
-                  }}
-                  className="flex-1 px-2 py-2.5 bg-white text-sm focus:outline-none"
-                  style={{color:"#1A2B4A"}}
-                  placeholder="0000000"
-                />
-              </div>
-              {phone.replace(/\D/g,"").length > 2 && phone.replace(/\D/g,"").length < 10 && (
-                <p className="text-xs mt-1.5 font-medium" style={{color:"#BE123C"}}>
-                  Phone must be 10 digits (e.g. 050-5004009).
-                </p>
-              )}
-            </F>
+            <div className="col-span-1 sm:col-span-2">
+              <ContactListField type="email" label="Email" entries={emails} onChange={setEmails} />
+            </div>
+            <div className="col-span-1 sm:col-span-2">
+              <ContactListField type="phone" label="Phone" entries={phones} onChange={setPhones} />
+            </div>
             <F label="Smoking / Vaping"><input className={ic} style={is} value={smoking} onChange={e=>setSmoking(e.target.value)} placeholder="e.g. Non-smoker, 10/day"/></F>
             <F label="Pets"><input className={ic} style={is} value={pets} onChange={e=>setPets(e.target.value)} placeholder="e.g. Dog, Cat, None"/></F>
             <F label="Occupation"><input className={ic} style={is} value={occupation} onChange={e=>setOccupation(e.target.value)} placeholder="e.g. Teacher, Retired"/></F>
