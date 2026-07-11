@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import LetterHeader from "@/components/letter/LetterHeader";
 import LetterFooter from "@/components/letter/LetterFooter";
+import type { ContactEntry } from "@/lib/supabase/patients";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ export interface LungRow {
 export interface LetterData {
   name: string; patId: string;
   bDay: string; bMonth: string; bYear: string; gender: string;
-  email: string; phone: string;
+  emails: ContactEntry[]; phones: ContactEntry[];
   smoking: string; pets: string; occupation: string;
   referredBy: string; location: string;
   dateDay: string; dateMonth: string; dateYear: string;
@@ -440,8 +441,8 @@ export default function LetterPageRenderer({
               <LV label="ID"            value={d.patId} />
               <LV label="Date of Birth" value={dob} />
               <LV label="Age / Gender"  value={[age, d.gender].filter(Boolean).join("  ·  ")} />
-              <LV label="Email"         value={d.email} />
-              <LV label="Phone"         value={formatPhone(d.phone)} />
+              <LV label="Email"         value={(d.emails || []).map(e => e.value).filter(Boolean).join(", ")} />
+              <LV label="Phone"         value={(d.phones || []).map(e => formatPhone(e.value)).filter(Boolean).join(", ")} />
             </div>
             <div style={{ flex: 1, paddingLeft: 14 }}>
               <LV label="Smoking / Vaping" value={d.smoking} />
