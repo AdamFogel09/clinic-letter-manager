@@ -24,6 +24,7 @@ import {
   updateLetterData,
   updateStatus,
 } from "@/lib/letterStore";
+import { getPrimaryEmail, getPrimaryPhone } from "@/lib/supabase/patients";
 
 // ─── Section card: editable Hebrew + inline English reference ─────────────────
 
@@ -225,8 +226,8 @@ export default function AnatReviewLetterPage() {
         bMonth: updated.patients?.birthdate_month || "",
         bYear: updated.patients?.birthdate_year || "",
         gender: updated.patients?.gender || gender,
-        emails: updated.patients?.emails || [],
-        phones: updated.patients?.phones || [],
+        email: getPrimaryEmail(updated.patients?.emails),
+        phone: getPrimaryPhone(updated.patients?.phones),
         smoking: updated.patients?.smoking_vaping || "",
         pets: updated.patients?.pets || "",
         occupation: updated.patients?.occupation || "",

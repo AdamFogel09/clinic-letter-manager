@@ -14,7 +14,7 @@ import {
   diagItemsToEN, diagItemsToHE,
   planStepsToENArr, planStepsToHEArr,
 } from "@/lib/supabase/letters";
-import { updatePatientIdNumber, updatePatient, type ContactEntry } from "@/lib/supabase/patients";
+import { updatePatientIdNumber, updatePatient, getPrimaryEmail, getPrimaryPhone, type ContactEntry } from "@/lib/supabase/patients";
 import { ContactListField } from "@/components/patient/ContactListField";
 import PlanStepInput from "./PlanStepInput";
 
@@ -1030,7 +1030,8 @@ export default function LetterEditorPage() {
     // Pictures are now small metadata objects (not base64), so no quota issues.
     const _previewPayload = {
       name, patId, bDay, bMonth, bYear, gender,
-      emails, phones, smoking, pets, occupation, referredBy, location,
+      email: getPrimaryEmail(emails), phone: getPrimaryPhone(phones),
+      smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems, diagEN: _diagEN, diagHE: _diagHE,
       summarySections, sumEN: _sumEN, sumHE: _sumHE,
@@ -1058,7 +1059,8 @@ export default function LetterEditorPage() {
 
     const letterData = {
       name, patId, bDay, bMonth, bYear, gender,
-      emails, phones, smoking, pets, occupation, referredBy, location,
+      email: getPrimaryEmail(emails), phone: getPrimaryPhone(phones),
+      smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems,
       diagEN: diagItemsToEN(diagItems),
@@ -1182,7 +1184,8 @@ export default function LetterEditorPage() {
     const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
     const letterData = {
       name, patId, bDay, bMonth, bYear, gender,
-      emails, phones, smoking, pets, occupation, referredBy, location,
+      email: getPrimaryEmail(emails), phone: getPrimaryPhone(phones),
+      smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems,
       diagEN: diagItemsToEN(diagItems),
@@ -1272,7 +1275,8 @@ export default function LetterEditorPage() {
     const letterDate = [dateDay, dateMonth, dateYear].filter(Boolean).join("/");
     const letterData = {
       name, patId, bDay, bMonth, bYear, gender,
-      emails, phones, smoking, pets, occupation, referredBy, location,
+      email: getPrimaryEmail(emails), phone: getPrimaryPhone(phones),
+      smoking, pets, occupation, referredBy, location,
       dateDay, dateMonth, dateYear,
       diagItems,
       diagEN: diagItemsToEN(diagItems),

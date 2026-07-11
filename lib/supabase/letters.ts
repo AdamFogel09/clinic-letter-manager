@@ -3,7 +3,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StoredLetter, LetterStatus } from "@/lib/letterStore";
-import type { ContactEntry } from "@/lib/supabase/patients";
+import { getPrimaryEmail, getPrimaryPhone, type ContactEntry } from "@/lib/supabase/patients";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -180,6 +180,10 @@ export function supabaseLetterToStoredLetter(letter: SupabaseLetter): StoredLett
       bMonth:     p?.birthdate_month   || "",
       bYear:      p?.birthdate_year    || "",
       gender:     p?.gender            || "",
+      // Flat primary email/phone — consumed by LetterPageRenderer (preview/PDF).
+      email:      getPrimaryEmail(p?.emails),
+      phone:      getPrimaryPhone(p?.phones),
+      // Full ordered lists — consumed by the send-to-patient recipient picker.
       emails:     p?.emails            || [],
       phones:     p?.phones            || [],
       smoking:    p?.smoking_vaping    || "",
