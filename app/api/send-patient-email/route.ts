@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
   // ── Load logo from project files ──────────────────────────────────────────────
   let logoBase64: string;
   try {
-    const logoPath = path.join(process.cwd(), "updatedLogo.png");
+    const logoPath = path.join(process.cwd(), "public", "updatedLogo.png");
     logoBase64 = fs.readFileSync(logoPath).toString("base64");
   } catch {
     console.error("[send-patient-email] Could not load updatedLogo.png");
