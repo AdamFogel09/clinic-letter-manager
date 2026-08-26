@@ -1695,14 +1695,10 @@ export default function LetterEditorPage() {
                         <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#64748B" }}>
                           {isCopied ? "Previous visit" : "Review Date"}
                         </span>
-                        {isCopied ? (
-                          <span className="text-xs font-bold" style={{ color: "#1A2B4A" }}>{section.date || "—"}</span>
-                        ) : (
-                          <SplitDateInput
-                            value={section.date}
-                            onChange={date => updateSummarySection(section.id, { date })}
-                          />
-                        )}
+                        <SplitDateInput
+                          value={section.date}
+                          onChange={date => updateSummarySection(section.id, { date })}
+                        />
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: srcColor.badge, color: srcColor.badgeText }}>
