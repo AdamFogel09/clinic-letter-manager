@@ -1394,6 +1394,13 @@ export default function LetterEditorPage() {
   };
 
   const removeSummarySection = (id: string) => {
+    const section = summarySections.find(s => s.id === id);
+    if (section?.source === "copied") {
+      const confirmed = window.confirm(
+        `Delete the summary from ${section.date || "this previous visit"}?\n\nThis cannot be undone.`
+      );
+      if (!confirmed) return;
+    }
     setSummarySections(prev => prev.filter(s => s.id !== id));
   };
 
@@ -1702,39 +1709,26 @@ export default function LetterEditorPage() {
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
                         style={{ backgroundColor: srcColor.badge, color: srcColor.badgeText }}>
-                        {isCopied ? "Previous — Read-only" : srcColor.label}
+                        {isCopied ? "Previous" : srcColor.label}
                       </span>
-                      {!isCopied && (
-                        <button type="button" onClick={() => removeSummarySection(section.id)}
-                          className="text-xs flex-shrink-0 transition-colors duration-150"
-                          style={{ color: "#CBD5E1" }}
-                          onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
-                          onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
-                          Remove
-                        </button>
-                      )}
+                      <button type="button" onClick={() => removeSummarySection(section.id)}
+                        className="text-xs flex-shrink-0 transition-colors duration-150"
+                        style={{ color: "#CBD5E1" }}
+                        onMouseEnter={e => (e.currentTarget.style.color = "#BE123C")}
+                        onMouseLeave={e => (e.currentTarget.style.color = "#CBD5E1")}>
+                        Remove
+                      </button>
                     </div>
 
                     {/* English */}
-                    {isCopied ? (
-                      <div>
-                        <label className={lc} style={{ ...ls, color: "#94A3B8" }}>
-                          {`Summary (English) — visit ${idx + 1}`}
-                        </label>
-                        <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap" style={{ color: "#475569" }}>
-                          {section.textEN || "—"}
-                        </p>
-                      </div>
-                    ) : (
-                      <F label={`Summary (English)${idx > 0 ? ` — visit ${idx + 1}` : ""}`}>
-                        <textarea className={ta} style={is} rows={4}
-                          value={section.textEN}
-                          onChange={e => updateSummarySection(section.id, { textEN: e.target.value })}
-                          placeholder="Enter summary for this review date" />
-                      </F>
-                    )}
+                    <F label={`Summary (English)${idx > 0 ? ` — visit ${idx + 1}` : ""}`}>
+                      <textarea className={ta} style={is} rows={4}
+                        value={section.textEN}
+                        onChange={e => updateSummarySection(section.id, { textEN: e.target.value })}
+                        placeholder="Enter summary for this review date" />
+                    </F>
 
-                    {/* Translate button — only for non-locked sections */}
+                    {/* Translate button — hidden for unedited previous-visit sections */}
                     {!isCopied && (
                       <>
                         <div className="flex items-center gap-3 flex-wrap">
@@ -1759,22 +1753,12 @@ export default function LetterEditorPage() {
                     )}
 
                     {/* Hebrew */}
-                    {isCopied ? (
-                      <div>
-                        <label className={lc} style={{ ...ls, color: "#94A3B8" }}>סיכום — Summary (Hebrew) — locked</label>
-                        <p className="text-sm px-1 py-1 leading-relaxed whitespace-pre-wrap"
-                          style={{ color: "#1A2B4A", direction: "rtl", textAlign: "right" }}>
-                          {section.textHE || "—"}
-                        </p>
-                      </div>
-                    ) : (
-                      <F label="סיכום — Summary (Hebrew)">
-                        <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
-                          value={section.textHE}
-                          onChange={e => updateSummarySection(section.id, { textHE: e.target.value })}
-                          placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
-                      </F>
-                    )}
+                    <F label="סיכום — Summary (Hebrew)">
+                      <textarea className={ta} style={{ ...is, direction: "rtl", textAlign: "right" }} rows={4}
+                        value={section.textHE}
+                        onChange={e => updateSummarySection(section.id, { textHE: e.target.value })}
+                        placeholder="יופיע כאן לאחר תרגום — ניתן לערוך" />
+                    </F>
                   </div>
                 );
               })}
