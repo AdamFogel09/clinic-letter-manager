@@ -1140,15 +1140,25 @@ export default function LetterEditorPage() {
         }
       }
 
-      // Sync the emails/phones list back to the master patient record.
+      // Sync editable patient details back to the master patient record.
       if (supabasePatientIdRef.current) {
         try {
           await updatePatient(supabase, supabasePatientIdRef.current, {
+            full_name:       name,
+            birthdate_day:   bDay,
+            birthdate_month: bMonth,
+            birthdate_year:  bYear,
+            gender,
             emails: emails.filter((e) => e.value.trim()),
             phones: phones.filter((e) => e.value.trim()),
+            smoking_vaping: smoking,
+            pets,
+            occupation,
+            referred_by: referredBy,
+            location,
           });
         } catch (e) {
-          console.warn("[saveDraft] patient contact sync skipped:", e);
+          console.warn("[saveDraft] patient detail sync skipped:", e);
         }
       }
 
